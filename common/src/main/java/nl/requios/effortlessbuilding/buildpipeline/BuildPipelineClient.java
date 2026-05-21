@@ -70,6 +70,55 @@ public class BuildPipelineClient {
     /** Client-side break display tracker — updated each frame during breaking preview. */
     public static final BreakDisplayTracker BREAK_DISPLAY = new BreakDisplayTracker();
 
+    /** Preview lock state: when true, the last computed preview stays frozen. */
+    public static boolean previewLocked = false;
+
+    /** The frozen block set while preview is locked. */
+    @Nullable private static BlockSet lockedBlocks = null;
+
+    /** Click positions captured when locking (used to rebuild the server packet). */
+    @Nullable private static BlockPos lockedFirstPos = null;
+    @Nullable private static BlockPos lockedSecondPos = null;
+    @Nullable private static BlockPos lockedThirdPos = null;
+    @Nullable private static BlockHitResult lockedHit = null;
+    @Nullable private static BuildModeEnum lockedMode = null;
+
+    /** The most recently computed preview (used to initialize the lock). */
+    @Nullable private static BlockSet lastPreviewBlocks = null;
+
+    /** Toggles the preview lock on/off using the last computed preview. */
+    public static void togglePreviewLock() {
+        if (previewLocked) {
+            previewLocked = false;
+            lockedBlocks = null;
+            lockedFirstPos = null;
+            lockedSecondPos = null;
+            lockedThirdPos = null;
+            lockedHit = null;
+            lockedMode = null;
+        } else if (lastPreviewBlocks != null && !lastPreviewBlocks.isEmpty()) {
+            previewLocked = true;
+            lockedBlocks = lastPreviewBlocks;
+            lockedMode = BuildModes.CLIENT.getBuildMode();
+            // Capture the click positions from the current mult-click or look-target state
+            if (buildState != null) {
+                // Multi-click sequence in progress: use the internal mode positions
+                var mode = BuildModes.CLIENT.getBuildMode().instance;
+                lockedFirstPos = mode.getIntermediatePos(); // actually this is wrong for many modes
+                // Fallback: just store firstPos/lastPos from the preview blocks
+                lockedFirstPos = lastPreviewBlocks.firstPos;
+                lockedSecondPos = lastPreviewBlocks.lastPos;
+                lockedThirdPos = null;
+            } else {
+                // First-click: use the last preview's positions
+                lockedFirstPos = lastPreviewBlocks.firstPos;
+                lockedSecondPos = lastPreviewBlocks.lastPos;
+                lockedThirdPos = null;
+            }
+            lockedHit = firstClickHit;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Multi-click sequence state
     // -------------------------------------------------------------------------
@@ -121,7 +170,14 @@ public class BuildPipelineClient {
         BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
         Player player = mc.player;
         if (player == null || mc.level == null) return;
-        
+
+        // If preview is locked, use the locked blocks directly for placement
+        if (previewLocked && lockedBlocks != null && !lockedBlocks.isEmpty()
+                && action == BuildPipeline.BuildState.PLACING) {
+            sendLockedPlacement(mc, player);
+            return;
+        }
+
         BlockPos clickedPos;
         if (mode.instance.isFirstClick()) {
             Vec3 start = player.getEyePosition();
@@ -240,11 +296,15 @@ public class BuildPipelineClient {
         Player player = mc.player;
         if (player == null || mc.level == null) return null;
 
+        // If preview is locked, return the frozen block set
+        if (previewLocked && lockedBlocks != null && !lockedBlocks.isEmpty()) {
+            return lockedBlocks;
+        }
+
         BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
 
         BlockSet result;
         if (!mode.instance.isFirstClick()) {
-            // Multi-click sequence in progress: show the shape being built
             BlockSet previewBlocks = new BlockSet();
             mode.instance.findCoordinates(previewBlocks, player);
             BuildPipeline.BuildState action = buildState != null ? buildState : BuildPipeline.BuildState.PLACING;
@@ -254,7 +314,6 @@ public class BuildPipelineClient {
             previewBlocks.truncate(ServerConfig.INSTANCE.getMaxBlocksPlaced(player));
             result = previewBlocks;
         } else {
-            // First-click preview: show what would happen at the look target
             Vec3 start = player.getEyePosition();
             Vec3 end = start.add(player.getLookAngle().scale(ServerConfig.INSTANCE.getReach(player)));
             ClipContext ctx = new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player);
@@ -268,6 +327,9 @@ public class BuildPipelineClient {
             CLIENT.processBlocks(blockSet, player, BuildPipeline.BuildState.PLACING);
             result = blockSet;
         }
+
+        // Cache the result for preview lock
+        lastPreviewBlocks = result;
 
         // Update item usage tracker for the preview
         updateDisplayTrackers(player, result);
@@ -307,6 +369,42 @@ public class BuildPipelineClient {
     // -------------------------------------------------------------------------
     // Sequence cancellation
     // -------------------------------------------------------------------------
+
+    /** Sends a PlaceBuildModePacket using the currently locked blocks. */
+    private static void sendLockedPlacement(Minecraft mc, Player player) {
+        if (lockedBlocks == null || lockedFirstPos == null || lockedMode == null) {
+            previewLocked = false;
+            return;
+        }
+
+        SoundType soundType = player.getMainHandItem().getItem() instanceof BlockItem blockItem
+                ? blockItem.getBlock().defaultBlockState().getSoundType()
+                : SoundType.STONE;
+        mc.level.playLocalSound(lockedBlocks.firstPos, soundType.getPlaceSound(), SoundSource.BLOCKS,
+                soundType.getVolume(), soundType.getPitch(), false);
+
+        BlockPos secondPos = lockedSecondPos != null ? lockedSecondPos : lockedBlocks.lastPos;
+        Direction hitFace = lockedHit != null ? lockedHit.getDirection() : Direction.UP;
+        Vec3 hitLocation = lockedHit != null ? lockedHit.getLocation() : Vec3.atCenterOf(lockedFirstPos);
+
+        PacketHandler.sendToServer(new PlaceBuildModePacket(
+                lockedMode, lockedFirstPos, secondPos, lockedThirdPos,
+                hitFace, hitLocation,
+                ModeOptions.getFill(), ModeOptions.getCubeFill(),
+                ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
+                BuildSettings.CLIENT.getReplaceMode(),
+                ClientConfig.INSTANCE.shouldProtectTileEntities()));
+        PlacedBlockTracker.clientTrackAll(mc.level.dimension(), lockedBlocks.keySet());
+
+        // Auto-unlock after placement
+        previewLocked = false;
+        lockedBlocks = null;
+        lockedFirstPos = null;
+        lockedSecondPos = null;
+        lockedThirdPos = null;
+        lockedHit = null;
+        lockedMode = null;
+    }
 
     public static void cancelCurrentSequence() {
         if (buildState != null) {

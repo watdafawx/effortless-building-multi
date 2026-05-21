@@ -161,7 +161,10 @@ public class BlockPreviewRenderer {
 
         // Pass 3: wireframe as camera-facing quads (GL lineWidth is unreliable on most drivers).
         float outlineWidth = 0.02f; // half-width in world units
-        int oR = 255, oG = isBreaking ? 0 : 255, oB = isBreaking ? 0 : 255;
+        boolean isLocked = BuildPipelineClient.previewLocked;
+        int oR = isLocked ? 255 : 255;
+        int oG = isLocked ? 215 : (isBreaking ? 0 : 255);
+        int oB = isLocked ? 0 : (isBreaking ? 0 : 255);
 
         // Separate valid positions from missing positions for different edge colors
         Set<BlockPos> missingSet = BuildPipelineClient.ITEM_USAGE.missingPositions;

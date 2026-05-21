@@ -49,6 +49,11 @@
   "effortlessbuilding.action.open_server_config.description": "Operators only.",
   "effortlessbuilding.action.open_client_config": "Edit Client Config",
   "effortlessbuilding.action.open_client_config.description": "",
+  "effortlessbuilding.action.preview_lock": "Lock Preview",
+  "effortlessbuilding.action.preview_lock.description": "Freeze the current preview to plan your build. Right-click to place, lock again to unlock.",
+  "effortlessbuilding.message.preview_locked": "\u00a7aPreview locked \u00bb Right-click to build",
+  "effortlessbuilding.message.preview_unlocked": "\u00a77Preview unlocked",
+  "effortlessbuilding.message.preview_locked_subtitle": "\u00a7e\u00bb PREVIEW LOCKED \u00ab",
 
   "effortlessbuilding.action.replace_mode": "Replace Mode",
   "effortlessbuilding.action.cycle_replace_mode": "Cycle Replace Mode",

@@ -47,3 +47,7 @@ dependencies {
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+base {
+    archivesName = "${mod_id}-${project.name}-${minecraft_version}-fork"
+}
