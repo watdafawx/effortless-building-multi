@@ -275,16 +275,22 @@ public class RenderHandler {
     // =========================================================================
 
     private static void renderSubtitle(GuiGraphics graphics) {
+        boolean locked = BuildPipelineClient.previewLocked;
         BuildPipeline.BuildState pendingAction = BuildPipelineClient.getBuildState();
-        if (pendingAction == null) return;
+        if (pendingAction == null && !locked) return;
 
         Minecraft mc = Minecraft.getInstance();
         boolean isToolInteraction = pendingAction == BuildPipeline.BuildState.PLACING
                 && mc.player != null
                 && BuildPipeline.isToolInteractionItem(mc.player.getMainHandItem());
-        Component text = pendingAction == BuildPipeline.BuildState.BREAKING
-                ? BREAKING_TEXT
-                : (isToolInteraction ? INTERACTING_TEXT : PLACING_TEXT);
+        Component text;
+        if (locked) {
+            text = Component.translatable("effortlessbuilding.message.preview_locked_subtitle");
+        } else {
+            text = pendingAction == BuildPipeline.BuildState.BREAKING
+                    ? BREAKING_TEXT
+                    : (isToolInteraction ? INTERACTING_TEXT : PLACING_TEXT);
+        }
 
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();

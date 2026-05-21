@@ -144,6 +144,7 @@ public class ModeOptions {
 
 		CIRCLE_START_CORNER("start_corner", AllIcons.I_CIRCLE_START_CORNER),
 		CIRCLE_START_CENTER("start_center", AllIcons.I_CIRCLE_START_CENTER),
+		PREVIEW_LOCK("preview_lock", AllIcons.I_LOCK),
 		OPEN_SERVER_CONFIG("open_server_config", AllIcons.I_SERVER_SETTINGS),
 		OPEN_CLIENT_CONFIG("open_client_config", AllIcons.I_CLIENT_SETTINGS);
 

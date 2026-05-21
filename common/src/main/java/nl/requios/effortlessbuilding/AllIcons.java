@@ -83,7 +83,9 @@ public class AllIcons {
     I_Z_OFF = next(),
     I_Z_ON = next(),
     I_ALTERNATE_OFF = next(),
-    I_ALTERNATE_ON = next();
+    I_ALTERNATE_ON = next(),
+    I_LOCK = next(),
+    I_LOCKED = next();
 
 
     public AllIcons(int x, int y) {
