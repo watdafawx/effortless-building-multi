@@ -82,24 +82,20 @@ public class ItemUsageTracker {
         boolean isClient = player.level().isClientSide();
 
         if (networkCount > 0) {
-            // Server-side: real count from getLinkedGrid()
             fromNetwork.put(heldItem, networkCount);
         } else if (hasLinkedTerminal && isClient) {
-            // Client-side: getLinkedGrid() doesn't work (needs ServerLevel).
-            // Check if we have a server-synced cached count.
             int cached = AE2Integration.getCachedCount(heldItem);
             if (cached >= 0) {
                 fromNetwork.put(heldItem, cached);
             } else {
-                // No cached count yet — send a query packet to the server.
-                // Use optimistic assumption for this frame; next frame will have real data.
                 PacketHandler.sendToServer(new QueryAE2CountC2SPacket(heldItem));
                 fromNetwork.put(heldItem, Math.max(0, count - have));
             }
         }
 
-        // Total available = inventory + AE2
-        int totalAvailable = have + fromNetwork.getOrDefault(heldItem, 0);
+        // Total available = inventory + AE2 (use long to avoid overflow with huge AE2 cells)
+        long totalAvailableLong = (long) have + fromNetwork.getOrDefault(heldItem, 0);
+        int totalAvailable = (int) Math.min(totalAvailableLong, Integer.MAX_VALUE);
 
         int canPlace = Math.min(count, totalAvailable);
         placed.put(heldItem, canPlace);

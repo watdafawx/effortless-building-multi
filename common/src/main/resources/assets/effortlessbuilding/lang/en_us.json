@@ -40,7 +40,7 @@
   "effortlessbuilding.modedescription.sphere": "",
   "effortlessbuilding.modedescription.pyramid": "",
   "effortlessbuilding.modedescription.cone": "",
-  "effortlessbuilding.modedescription.dome": "",
+  "effortlessbuilding.modedescription.dome": "Build a domed roof. Click center, set radius, then height.",
 
   "effortlessbuilding.action.undo": "Undo",
   "effortlessbuilding.action.redo": "Redo",
