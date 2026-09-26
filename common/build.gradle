@@ -27,6 +27,15 @@ dependencies {
     // Adjust the version to match the AE2 release for your target Minecraft version.
     // Available on Maven Central: https://central.sonatype.com/artifact/org.appliedenergistics/appliedenergistics2
     compileOnly("org.appliedenergistics:appliedenergistics2:${ae2_version}")
+
+    // Unit tests for pure logic (shape generation) — no Minecraft classes on the test path
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 configurations {
