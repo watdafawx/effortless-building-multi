@@ -124,7 +124,7 @@ public class PacketHandler {
                 packet.buildMode(), packet.firstPos(), packet.secondPos(), packet.thirdPos(),
                 player, BuildPipeline.BuildState.PLACING,
                 packet.fill(), packet.cubeFill(), packet.raisedEdge(), packet.circleStart(), 
-                packet.protectTileEntities());
+                packet.shape(), packet.protectTileEntities());
 
         if (blockSet == null) {
             Constants.LOG.warn("[EffortlessBuilding] Received PlaceBuildModePacket but mode {} returned no blocks", packet.buildMode());
@@ -421,7 +421,7 @@ public class PacketHandler {
                 packet.buildMode(), packet.firstPos(), packet.secondPos(), packet.thirdPos(),
                 player, BuildPipeline.BuildState.BREAKING,
                 packet.fill(), packet.cubeFill(), packet.raisedEdge(), packet.circleStart(),
-                packet.protectTileEntities());
+                packet.shape(), packet.protectTileEntities());
 
         if (blockSet == null) {
             Constants.LOG.warn("[EffortlessBuilding] Received BreakBuildModePacket but mode {} returned no blocks", packet.buildMode());

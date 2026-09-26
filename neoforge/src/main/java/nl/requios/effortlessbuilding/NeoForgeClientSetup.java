@@ -21,6 +21,7 @@ import nl.requios.effortlessbuilding.network.RedoPacket;
 import nl.requios.effortlessbuilding.render.RenderHandler;
 import nl.requios.effortlessbuilding.utilities.KeyBindings;
 import nl.requios.effortlessbuilding.screen.ModifiersScreen;
+import nl.requios.effortlessbuilding.shape.ShapeTemplateStorage;
 import nl.requios.effortlessbuilding.screen.RadialMenu;
 import nl.requios.effortlessbuilding.screen.RandomizerScreen;
 import nl.requios.effortlessbuilding.screen.RandomizerTooltipComponent;
@@ -37,11 +38,14 @@ public class NeoForgeClientSetup {
         @SubscribeEvent
         public static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
             ClientConfig.INSTANCE.load();
+            ShapeTemplateStorage.load();
 
             event.register(KeyBindings.openRadialMenu);
             event.register(KeyBindings.openModifiersScreen);
             event.register(KeyBindings.undo);
             event.register(KeyBindings.redo);
+            event.register(KeyBindings.openShapeGenerator);
+            event.register(KeyBindings.anchorPreview);
         }
 
         @SubscribeEvent
@@ -66,6 +70,7 @@ public class NeoForgeClientSetup {
             if (KeyBindings.openModifiersScreen.consumeClick()) {
                 Minecraft.getInstance().setScreen(new ModifiersScreen());
             }
+            KeyBindings.handleShapeKeys();
             // Undo/redo keybindings — require Ctrl held
             Minecraft mc = Minecraft.getInstance();
             while (KeyBindings.undo.consumeClick()) {

@@ -25,6 +25,7 @@ import nl.requios.effortlessbuilding.network.RedoPacket;
 import nl.requios.effortlessbuilding.render.RenderHandler;
 import nl.requios.effortlessbuilding.utilities.KeyBindings;
 import nl.requios.effortlessbuilding.screen.ModifiersScreen;
+import nl.requios.effortlessbuilding.shape.ShapeTemplateStorage;
 import nl.requios.effortlessbuilding.screen.RadialMenu;
 import nl.requios.effortlessbuilding.screen.RandomizerScreen;
 import nl.requios.effortlessbuilding.screen.RandomizerTooltipComponent;
@@ -41,6 +42,7 @@ public class EffortlessBuildingClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientConfig.INSTANCE.load();
+        ShapeTemplateStorage.load();
         MenuScreens.register(ModMenus.RANDOMIZER, RandomizerScreen::new);
         TooltipComponentCallback.EVENT.register(data -> data instanceof RandomizerTooltipData randomizerData
                 ? new RandomizerTooltipComponent(randomizerData) : null);
@@ -49,6 +51,8 @@ public class EffortlessBuildingClient implements ClientModInitializer {
         KeyBindingHelper.registerKeyBinding(KeyBindings.openModifiersScreen);
         KeyBindingHelper.registerKeyBinding(KeyBindings.undo);
         KeyBindingHelper.registerKeyBinding(KeyBindings.redo);
+        KeyBindingHelper.registerKeyBinding(KeyBindings.openShapeGenerator);
+        KeyBindingHelper.registerKeyBinding(KeyBindings.anchorPreview);
 
         // Register client-side handler for S2C modifier sync packet
         ClientPlayNetworking.registerGlobalReceiver(SyncModifiersS2CPacket.TYPE, (payload, context) ->
@@ -91,6 +95,7 @@ public class EffortlessBuildingClient implements ClientModInitializer {
             if (KeyBindings.openModifiersScreen.consumeClick()) {
                 Minecraft.getInstance().setScreen(new ModifiersScreen());
             }
+            KeyBindings.handleShapeKeys();
             // Undo/redo keybindings — require Ctrl held
             while (KeyBindings.undo.consumeClick()) {
                 if (InputConstants.isKeyDown(client.getWindow().getWindow(), GLFW.GLFW_KEY_LEFT_CONTROL)

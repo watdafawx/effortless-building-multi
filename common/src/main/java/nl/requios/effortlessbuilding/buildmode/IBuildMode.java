@@ -2,6 +2,7 @@ package nl.requios.effortlessbuilding.buildmode;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import org.jetbrains.annotations.Nullable;
 
@@ -24,6 +25,13 @@ public interface IBuildMode {
 	// firstPos/secondPos are always required; thirdPos is null for two-click modes.
 	default List<BlockPos> getServerBlocks(Player player, BlockPos firstPos, BlockPos secondPos, @Nullable BlockPos thirdPos) {
 		return List.of();
+	}
+
+	// Server-side entry point used by the pipeline. shape carries the Shape Generator settings
+	// (only SHAPE mode uses them); other modes ignore it.
+	default List<BlockPos> getServerBlocks(Player player, BlockPos firstPos, BlockPos secondPos, @Nullable BlockPos thirdPos,
+										   @Nullable ShapeParams shape) {
+		return getServerBlocks(player, firstPos, secondPos, thirdPos);
 	}
 
 	// Returns the intermediate (second) position stored after the second click of a three-click mode.

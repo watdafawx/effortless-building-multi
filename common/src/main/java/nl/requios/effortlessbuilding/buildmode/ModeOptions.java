@@ -6,6 +6,8 @@ import nl.requios.effortlessbuilding.AllIcons;
 import nl.requios.effortlessbuilding.network.PacketHandler;
 import nl.requios.effortlessbuilding.network.UndoPacket;
 import nl.requios.effortlessbuilding.network.RedoPacket;
+import nl.requios.effortlessbuilding.shape.ShapeClientState;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 
 public class ModeOptions {
 
@@ -30,6 +32,9 @@ public class ModeOptions {
 				return getLineThickness();
 			case CIRCLE_START:
 				return getCircleStart();
+			case SHAPE_SIZING:
+				return ShapeClientState.getActive().sizing() == ShapeParams.Sizing.CLICKS
+						? ActionEnum.SHAPE_SIZE_CLICKS : ActionEnum.SHAPE_SIZE_SCREEN;
 			default:
 				return null;
 		}
@@ -96,6 +101,20 @@ public class ModeOptions {
 			case CIRCLE_START_CENTER -> circleStart = ActionEnum.CIRCLE_START_CENTER;
 			case CIRCLE_START_CORNER -> circleStart = ActionEnum.CIRCLE_START_CORNER;
 
+			case SHAPE_SIZE_SCREEN -> ShapeClientState.setActiveKeepTemplate(
+					ShapeClientState.getActive().withSizing(ShapeParams.Sizing.SCREEN));
+			case SHAPE_SIZE_CLICKS -> ShapeClientState.setActiveKeepTemplate(
+					ShapeClientState.getActive().withSizing(ShapeParams.Sizing.CLICKS));
+			case PREVIOUS_SHAPE_TEMPLATE, NEXT_SHAPE_TEMPLATE -> {
+				var template = ShapeClientState.cycleTemplate(action == ActionEnum.NEXT_SHAPE_TEMPLATE ? 1 : -1);
+				if (player.level().isClientSide) {
+					player.displayClientMessage(template != null
+							? Component.literal(template.name())
+							: Component.translatable("effortlessbuilding.message.no_shape_templates"), true);
+				}
+				return;
+			}
+
 			default -> {}
 		}
 
@@ -104,6 +123,7 @@ public class ModeOptions {
 				&& action != ActionEnum.OPEN_MODIFIER_SETTINGS
 				&& action != ActionEnum.OPEN_SERVER_CONFIG
 				&& action != ActionEnum.OPEN_CLIENT_CONFIG
+				&& action != ActionEnum.OPEN_SHAPE_GENERATOR
 				&& action != ActionEnum.PREVIOUS_BUILD_MODE
 				&& action != ActionEnum.DISABLE_BUILD_MODE_TOGGLE
 				&& action != ActionEnum.UNDO
@@ -146,7 +166,12 @@ public class ModeOptions {
 		CIRCLE_START_CENTER("start_center", AllIcons.I_CIRCLE_START_CENTER),
 		PREVIEW_LOCK("preview_lock", AllIcons.I_LOCK),
 		OPEN_SERVER_CONFIG("open_server_config", AllIcons.I_SERVER_SETTINGS),
-		OPEN_CLIENT_CONFIG("open_client_config", AllIcons.I_CLIENT_SETTINGS);
+		OPEN_CLIENT_CONFIG("open_client_config", AllIcons.I_CLIENT_SETTINGS),
+		OPEN_SHAPE_GENERATOR("open_shape_generator", AllIcons.I_SHAPE_GENERATOR),
+		SHAPE_SIZE_SCREEN("shape_size_screen", AllIcons.I_SHAPE_SIZE_SCREEN),
+		SHAPE_SIZE_CLICKS("shape_size_clicks", AllIcons.I_SHAPE_SIZE_CLICKS),
+		PREVIOUS_SHAPE_TEMPLATE("previous_shape_template", AllIcons.I_PREVIOUS),
+		NEXT_SHAPE_TEMPLATE("next_shape_template", AllIcons.I_NEXT);
 
 		public String name;
 		public AllIcons icon;
@@ -175,7 +200,9 @@ public class ModeOptions {
 		CUBE_FILL("effortlessbuilding.action.filling", ActionEnum.CUBE_FULL, ActionEnum.CUBE_HOLLOW, ActionEnum.CUBE_SKELETON),
 		RAISED_EDGE("effortlessbuilding.action.raised_edge", ActionEnum.SHORT_EDGE, ActionEnum.LONG_EDGE),
 		LINE_THICKNESS("effortlessbuilding.action.thickness", ActionEnum.THICKNESS_1, ActionEnum.THICKNESS_3, ActionEnum.THICKNESS_5),
-		CIRCLE_START("effortlessbuilding.action.circle_start", ActionEnum.CIRCLE_START_CORNER, ActionEnum.CIRCLE_START_CENTER);
+		CIRCLE_START("effortlessbuilding.action.circle_start", ActionEnum.CIRCLE_START_CORNER, ActionEnum.CIRCLE_START_CENTER),
+		SHAPE_TEMPLATE("effortlessbuilding.action.shape_template", ActionEnum.PREVIOUS_SHAPE_TEMPLATE, ActionEnum.OPEN_SHAPE_GENERATOR, ActionEnum.NEXT_SHAPE_TEMPLATE),
+		SHAPE_SIZING("effortlessbuilding.action.shape_sizing", ActionEnum.SHAPE_SIZE_SCREEN, ActionEnum.SHAPE_SIZE_CLICKS);
 
 		public String name;
 		public ActionEnum[] actions;

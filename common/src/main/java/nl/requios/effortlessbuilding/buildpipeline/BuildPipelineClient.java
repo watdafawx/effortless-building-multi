@@ -5,6 +5,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
@@ -20,6 +21,10 @@ import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.BuildModes;
 import nl.requios.effortlessbuilding.buildmode.BuildSettings;
 import nl.requios.effortlessbuilding.buildmode.ModeOptions;
+import nl.requios.effortlessbuilding.buildmode.ThreeClicksBuildMode;
+import nl.requios.effortlessbuilding.buildmode.buildmodes.ShapeMode;
+import nl.requios.effortlessbuilding.shape.ShapeClientState;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.config.ClientConfig;
 import nl.requios.effortlessbuilding.config.ServerConfig;
 import nl.requios.effortlessbuilding.modifier.ModifierSystem;
@@ -72,18 +77,21 @@ public class BuildPipelineClient {
     /** Client-side break display tracker — updated each frame during breaking preview. */
     public static final BreakDisplayTracker BREAK_DISPLAY = new BreakDisplayTracker();
 
-    /** Preview lock state: when true, the last computed preview stays frozen. */
+    /** Preview lock (anchor) state: when true, the ghost preview stays frozen in the world. */
     public static boolean previewLocked = false;
 
-    /** The frozen block set while preview is locked. */
-    @Nullable private static BlockSet lockedBlocks = null;
+    /**
+     * Everything needed to place the anchored preview later, captured when locking, so the server
+     * regenerates exactly the frozen shape no matter where the player walks or which options change.
+     */
+    private record Anchor(BlockSet blocks, ResourceKey<Level> dimension, BuildModeEnum mode,
+                          BlockPos firstPos, BlockPos secondPos, @Nullable BlockPos thirdPos,
+                          Direction hitFace, Vec3 hitLocation,
+                          ModeOptions.ActionEnum fill, ModeOptions.ActionEnum cubeFill,
+                          ModeOptions.ActionEnum raisedEdge, ModeOptions.ActionEnum circleStart,
+                          @Nullable ShapeParams shape) {}
 
-    /** Click positions captured when locking (used to rebuild the server packet). */
-    @Nullable private static BlockPos lockedFirstPos = null;
-    @Nullable private static BlockPos lockedSecondPos = null;
-    @Nullable private static BlockPos lockedThirdPos = null;
-    @Nullable private static BlockHitResult lockedHit = null;
-    @Nullable private static BuildModeEnum lockedMode = null;
+    @Nullable private static Anchor anchor = null;
 
     /** The most recently computed preview (used to initialize the lock). */
     @Nullable private static BlockSet lastPreviewBlocks = null;
@@ -91,34 +99,56 @@ public class BuildPipelineClient {
     /** Toggles the preview lock on/off using the last computed preview. */
     public static void togglePreviewLock() {
         if (previewLocked) {
-            previewLocked = false;
-            lockedBlocks = null;
-            lockedFirstPos = null;
-            lockedSecondPos = null;
-            lockedThirdPos = null;
-            lockedHit = null;
-            lockedMode = null;
-        } else if (lastPreviewBlocks != null && !lastPreviewBlocks.isEmpty()) {
-            previewLocked = true;
-            lockedBlocks = lastPreviewBlocks;
-            lockedMode = BuildModes.CLIENT.getBuildMode();
-            // Capture the click positions from the current mult-click or look-target state
-            if (buildState != null) {
-                // Multi-click sequence in progress: use the internal mode positions
-                var mode = BuildModes.CLIENT.getBuildMode().instance;
-                lockedFirstPos = mode.getIntermediatePos(); // actually this is wrong for many modes
-                // Fallback: just store firstPos/lastPos from the preview blocks
-                lockedFirstPos = lastPreviewBlocks.firstPos;
-                lockedSecondPos = lastPreviewBlocks.lastPos;
-                lockedThirdPos = null;
-            } else {
-                // First-click: use the last preview's positions
-                lockedFirstPos = lastPreviewBlocks.firstPos;
-                lockedSecondPos = lastPreviewBlocks.lastPos;
-                lockedThirdPos = null;
-            }
-            lockedHit = firstClickHit;
+            clearAnchor();
+            return;
         }
+        Minecraft mc = Minecraft.getInstance();
+        BlockSet preview = lastPreviewBlocks;
+        if (mc.level == null || preview == null || preview.isEmpty()
+                || preview.firstPos == null || preview.lastPos == null) return;
+
+        BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
+        // Same position semantics as a finished click sequence (see handleClick). A three-click
+        // mode locked before its second click is sent as a single layer (third = second).
+        BlockPos intermediate = buildState != null ? mode.instance.getIntermediatePos() : null;
+        BlockPos secondPos = intermediate != null ? intermediate : preview.lastPos;
+        BlockPos thirdPos = intermediate != null ? preview.lastPos
+                : mode.instance instanceof ThreeClicksBuildMode ? preview.lastPos : null;
+
+        BlockHitResult hit = firstClickHit != null ? firstClickHit
+                : mc.hitResult instanceof BlockHitResult b ? b : null;
+        ShapeParams shape = shapeFor(mode);
+        // Before the first click the preview shows the shape at the screen's size
+        if (shape != null && buildState == null) shape = shape.withSizing(ShapeParams.Sizing.SCREEN);
+
+        anchor = new Anchor(preview, mc.level.dimension(), mode, preview.firstPos, secondPos, thirdPos,
+                hit != null ? hit.getDirection() : Direction.UP,
+                hit != null ? hit.getLocation() : Vec3.atCenterOf(preview.firstPos),
+                ModeOptions.getFill(), ModeOptions.getCubeFill(),
+                ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(), shape);
+        previewLocked = true;
+
+        // The click sequence is captured; start over so the next right-click places the anchor
+        mode.instance.initialize();
+        buildState = null;
+        firstClickHit = null;
+    }
+
+    /** Toggles the lock and tells the player the new state on the action bar. */
+    public static void togglePreviewLockWithMessage() {
+        togglePreviewLock();
+        Player player = Minecraft.getInstance().player;
+        if (player != null) {
+            player.displayClientMessage(Component.translatable(previewLocked
+                    ? "effortlessbuilding.message.preview_locked"
+                    : "effortlessbuilding.message.preview_unlocked"), true);
+        }
+    }
+
+    /** Drops the anchored preview, e.g. when the build mode changes. */
+    public static void clearAnchor() {
+        previewLocked = false;
+        anchor = null;
     }
 
     // -------------------------------------------------------------------------
@@ -193,10 +223,14 @@ public class BuildPipelineClient {
         Player player = mc.player;
         if (player == null || mc.level == null) return;
 
-        // If preview is locked, use the locked blocks directly for placement
-        if (previewLocked && lockedBlocks != null && !lockedBlocks.isEmpty()
-                && action == BuildPipeline.BuildState.PLACING) {
-            sendLockedPlacement(mc, player);
+        // While anchored, right-click builds the anchored shape and left-click releases it
+        if (previewLocked && anchor != null) {
+            if (action == BuildPipeline.BuildState.PLACING) {
+                sendLockedPlacement(mc, player);
+            } else {
+                clearAnchor();
+                player.displayClientMessage(Component.translatable("effortlessbuilding.message.preview_unlocked"), true);
+            }
             return;
         }
 
@@ -273,7 +307,8 @@ public class BuildPipelineClient {
                             ModeOptions.getFill(), ModeOptions.getCubeFill(),
                             ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
                             BuildSettings.CLIENT.getReplaceMode(),
-                            ClientConfig.INSTANCE.shouldProtectTileEntities()));
+                            ClientConfig.INSTANCE.shouldProtectTileEntities(),
+                            shapeFor(mode)));
                     // Client-side placement tracking
                     PlacedBlockTracker.clientTrackAll(mc.level.dimension(), blocks.keySet());
                 } else {
@@ -300,7 +335,8 @@ public class BuildPipelineClient {
                             mode, blocks.firstPos, secondPos, thirdPos,
                             ModeOptions.getFill(), ModeOptions.getCubeFill(),
                             ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
-                            ClientConfig.INSTANCE.shouldProtectTileEntities()));
+                            ClientConfig.INSTANCE.shouldProtectTileEntities(),
+                            shapeFor(mode)));
                 }
             } else {
                 Constants.LOG.warn("[EffortlessBuilding] Build mode {} produced no block positions", mode);
@@ -323,9 +359,10 @@ public class BuildPipelineClient {
         Player player = mc.player;
         if (player == null || mc.level == null) return null;
 
-        // If preview is locked, return the frozen block set
-        if (previewLocked && lockedBlocks != null && !lockedBlocks.isEmpty()) {
-            return lockedBlocks;
+        // If preview is locked, return the frozen block set (released when leaving its dimension)
+        if (previewLocked && anchor != null) {
+            if (anchor.dimension() == mc.level.dimension()) return anchor.blocks();
+            clearAnchor();
         }
 
         BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
@@ -348,9 +385,14 @@ public class BuildPipelineClient {
             if (hit.getType() != HitResult.Type.BLOCK) return null;
             BlockPos targetPos = resolveFirstClickPos(hit, BuildPipeline.BuildState.PLACING, mc.level);
             BlockSet blockSet = new BlockSet();
-            blockSet.add(new BlockEntry(targetPos));
-            blockSet.firstPos = targetPos;
-            blockSet.lastPos = targetPos;
+            if (mode == BuildModeEnum.SHAPE) {
+                // Show the whole shape where it would stand, not just the targeted block
+                ((ShapeMode) mode.instance).previewAt(blockSet, player, targetPos);
+            } else {
+                blockSet.add(new BlockEntry(targetPos));
+                blockSet.firstPos = targetPos;
+                blockSet.lastPos = targetPos;
+            }
             CLIENT.processBlocks(blockSet, player, BuildPipeline.BuildState.PLACING);
             result = blockSet;
         }
@@ -399,40 +441,26 @@ public class BuildPipelineClient {
     // Sequence cancellation
     // -------------------------------------------------------------------------
 
-    /** Sends a PlaceBuildModePacket using the currently locked blocks. */
+    /** Builds the anchored shape with the settings captured when it was locked, then releases it. */
     private static void sendLockedPlacement(Minecraft mc, Player player) {
-        if (lockedBlocks == null || lockedFirstPos == null || lockedMode == null) {
-            previewLocked = false;
-            return;
-        }
+        Anchor a = anchor;
+        clearAnchor();
+        if (a == null) return;
 
         SoundType soundType = player.getMainHandItem().getItem() instanceof BlockItem blockItem
                 ? blockItem.getBlock().defaultBlockState().getSoundType()
                 : SoundType.STONE;
-        mc.level.playLocalSound(lockedBlocks.firstPos, soundType.getPlaceSound(), SoundSource.BLOCKS,
+        mc.level.playLocalSound(a.firstPos(), soundType.getPlaceSound(), SoundSource.BLOCKS,
                 soundType.getVolume(), soundType.getPitch(), false);
 
-        BlockPos secondPos = lockedSecondPos != null ? lockedSecondPos : lockedBlocks.lastPos;
-        Direction hitFace = lockedHit != null ? lockedHit.getDirection() : Direction.UP;
-        Vec3 hitLocation = lockedHit != null ? lockedHit.getLocation() : Vec3.atCenterOf(lockedFirstPos);
-
         PacketHandler.sendToServer(new PlaceBuildModePacket(
-                lockedMode, lockedFirstPos, secondPos, lockedThirdPos,
-                hitFace, hitLocation,
-                ModeOptions.getFill(), ModeOptions.getCubeFill(),
-                ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
+                a.mode(), a.firstPos(), a.secondPos(), a.thirdPos(),
+                a.hitFace(), a.hitLocation(),
+                a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(),
                 BuildSettings.CLIENT.getReplaceMode(),
-                ClientConfig.INSTANCE.shouldProtectTileEntities()));
-        PlacedBlockTracker.clientTrackAll(mc.level.dimension(), lockedBlocks.keySet());
-
-        // Auto-unlock after placement
-        previewLocked = false;
-        lockedBlocks = null;
-        lockedFirstPos = null;
-        lockedSecondPos = null;
-        lockedThirdPos = null;
-        lockedHit = null;
-        lockedMode = null;
+                ClientConfig.INSTANCE.shouldProtectTileEntities(),
+                a.shape()));
+        PlacedBlockTracker.clientTrackAll(mc.level.dimension(), a.blocks().keySet());
     }
 
     public static void cancelCurrentSequence() {
@@ -443,11 +471,17 @@ public class BuildPipelineClient {
         BuildModes.CLIENT.getBuildMode().instance.initialize();
         buildState = null;
         firstClickHit = null;
+        clearAnchor();
     }
 
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /** The Shape Generator settings to send with a build, only for SHAPE mode. */
+    private static @Nullable ShapeParams shapeFor(BuildModeEnum mode) {
+        return mode == BuildModeEnum.SHAPE ? ShapeClientState.getActive() : null;
+    }
 
     private static BlockPos resolveFirstClickPos(BlockHitResult hit, BuildPipeline.BuildState action, Level level) {
         BlockPos hitPos = hit.getBlockPos();

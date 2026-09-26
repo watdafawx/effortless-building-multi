@@ -1,6 +1,7 @@
 package nl.requios.effortlessbuilding.buildpipeline;
 
 import net.minecraft.core.BlockPos;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BucketItem;
@@ -140,9 +141,10 @@ public class BuildPipeline {
                                                 Player player, BuildState action,
                                                 ModeOptions.ActionEnum fill, ModeOptions.ActionEnum cubeFill,
                                                 ModeOptions.ActionEnum raisedEdge, ModeOptions.ActionEnum circleStart,
+                                                @Nullable ShapeParams shape,
                                                 boolean protectTileEntities) {
         BuildModeSystem.setContext(new BuildModeSystem.Context(
-                mode, firstPos, secondPos, thirdPos, fill, cubeFill, raisedEdge, circleStart));
+                mode, firstPos, secondPos, thirdPos, fill, cubeFill, raisedEdge, circleStart, shape));
         ConstraintSystem.setPlacementContext(new ConstraintSystem.PlacementContext(protectTileEntities));
         try {
             BlockSet blockSet = new BlockSet();

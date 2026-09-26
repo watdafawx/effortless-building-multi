@@ -30,7 +30,7 @@ public class ScreenWidgets {
 
     // ---- records ----
     public record IntFieldEntry(EditBox field, IntConsumer setter) {}
-    public record DoubleFieldEntry(EditBox field, DoubleConsumer setter) {}
+    public record DoubleFieldEntry(EditBox field, DoubleConsumer setter, double step) {}
     public record CheckboxEntry(int x, int y, int w, int h, String label, boolean value, Runnable toggle) {}
 
     // ---- state ----
@@ -96,6 +96,11 @@ public class ScreenWidgets {
     // =========================================================================
 
     public void addDoubleField(int x, int y, String value, DoubleConsumer setter) {
+        addDoubleField(x, y, value, setter, 0.5);
+    }
+
+    /** @param step how much the −/+ buttons and scrolling change the value */
+    public void addDoubleField(int x, int y, String value, DoubleConsumer setter, double step) {
         EditBox field = new EditBox(font, x + LABEL_W + 16, y, EDIT_W, FIELD_H, Component.empty());
         field.setValue(value);
         field.setFilter(s -> s.matches("-?\\d*\\.?\\d*"));
@@ -105,21 +110,21 @@ public class ScreenWidgets {
         });
 
         widgetAdder.accept(Button.builder(Component.literal("−"),
-                        btn -> stepDouble(field, setter, -0.5))
+                        btn -> stepDouble(field, setter, -step))
                 .bounds(x + LABEL_W + 2, y, 12, FIELD_H).build());
         widgetAdder.accept(field);
         widgetAdder.accept(Button.builder(Component.literal("+"),
-                        btn -> stepDouble(field, setter, +0.5))
+                        btn -> stepDouble(field, setter, +step))
                 .bounds(x + LABEL_W + 80, y, 12, FIELD_H).build());
 
-        doubleFields.add(new DoubleFieldEntry(field, setter));
+        doubleFields.add(new DoubleFieldEntry(field, setter, step));
     }
 
     public void stepDouble(EditBox field, DoubleConsumer setter, double delta) {
         double cur;
         try { cur = Double.parseDouble(field.getValue()); }
         catch (NumberFormatException e) { cur = 0; }
-        double next = cur + delta;
+        double next = Math.round((cur + delta) * 1000) / 1000.0; // avoid 0.45000000000000007
         field.setValue(formatDouble(next));
         setter.accept(next);
     }
@@ -156,7 +161,7 @@ public class ScreenWidgets {
         });
         field.setTooltip(Tooltip.create(Component.literal("Scroll to adjust")));
         widgetAdder.accept(field);
-        doubleFields.add(new DoubleFieldEntry(field, setter));
+        doubleFields.add(new DoubleFieldEntry(field, setter, 0.5));
     }
 
     private void addSmallIntField(int x, int y, String value, IntConsumer setter) {
@@ -225,12 +230,11 @@ public class ScreenWidgets {
                 return true;
             }
         }
-        double halfDelta = scrollY > 0 ? 0.5 : -0.5;
         for (DoubleFieldEntry entry : doubleFields) {
             EditBox field = entry.field();
             if (mouseX >= field.getX() && mouseX <= field.getX() + field.getWidth()
                     && mouseY >= field.getY() && mouseY <= field.getY() + field.getHeight()) {
-                stepDouble(field, entry.setter(), halfDelta);
+                stepDouble(field, entry.setter(), scrollY > 0 ? entry.step() : -entry.step());
                 return true;
             }
         }

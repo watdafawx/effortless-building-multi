@@ -18,7 +18,8 @@ public enum BuildModeEnum {
     SPHERE("sphere", new Sphere(), BuildModeCategoryEnum.CIRCULAR, AllIcons.I_SPHERE, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL),
 //		PYRAMID("pyramid", new Pyramid(), BuildModeCategoryEnum.ROOF),
 //		CONE("cone", new Cone(), BuildModeCategoryEnum.ROOF),
-    DOME("dome", new Dome(), BuildModeCategoryEnum.ROOF, AllIcons.I_DOME, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL);
+    DOME("dome", new Dome(), BuildModeCategoryEnum.ROOF, AllIcons.I_DOME, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL),
+    SHAPE("shape", new ShapeMode(), BuildModeCategoryEnum.SHAPES, AllIcons.I_SHAPE, ModeOptions.OptionEnum.SHAPE_TEMPLATE, ModeOptions.OptionEnum.SHAPE_SIZING);
 
     private final String name;
     public final IBuildMode instance;

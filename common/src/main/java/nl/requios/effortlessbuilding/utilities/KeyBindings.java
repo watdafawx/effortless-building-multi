@@ -3,7 +3,9 @@ package nl.requios.effortlessbuilding.utilities;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import nl.requios.effortlessbuilding.buildpipeline.BuildPipelineClient;
 import nl.requios.effortlessbuilding.mixin.KeyMappingAccessor;
+import nl.requios.effortlessbuilding.screen.ShapeGeneratorScreen;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -41,6 +43,32 @@ public class KeyBindings {
             GLFW.GLFW_KEY_Y,
             CATEGORY
     );
+
+    public static KeyMapping openShapeGenerator = new KeyMapping(
+            "key.effortlessbuilding.open_shape_generator",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_KP_MULTIPLY,
+            CATEGORY
+    );
+
+    /** Freezes the ghost preview in place; unbound by default (the radial menu has a button too). */
+    public static KeyMapping anchorPreview = new KeyMapping(
+            "key.effortlessbuilding.anchor_preview",
+            InputConstants.Type.KEYSYM,
+            InputConstants.UNKNOWN.getValue(),
+            CATEGORY
+    );
+
+    /** Called every client tick by both loaders. */
+    public static void handleShapeKeys() {
+        Minecraft mc = Minecraft.getInstance();
+        if (openShapeGenerator.consumeClick()) {
+            mc.setScreen(new ShapeGeneratorScreen());
+        }
+        while (anchorPreview.consumeClick()) {
+            BuildPipelineClient.togglePreviewLockWithMessage();
+        }
+    }
 
     /**
      * Checks if the physical key bound to a KeyMapping is currently held down.

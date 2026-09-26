@@ -11,6 +11,7 @@ import nl.requios.effortlessbuilding.Constants;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.BuildSettings;
 import nl.requios.effortlessbuilding.buildmode.ModeOptions;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -42,7 +43,8 @@ public record PlaceBuildModePacket(
         ModeOptions.ActionEnum raisedEdge,
         ModeOptions.ActionEnum circleStart,
         BuildSettings.ReplaceMode replaceMode,
-        boolean protectTileEntities
+        boolean protectTileEntities,
+        @Nullable ShapeParams shape
 ) implements CustomPacketPayload {
 
     public static final Type<PlaceBuildModePacket> TYPE =
@@ -69,6 +71,7 @@ public record PlaceBuildModePacket(
         buf.writeVarInt(p.circleStart.ordinal());
         buf.writeVarInt(p.replaceMode.ordinal());
         buf.writeBoolean(p.protectTileEntities);
+        ShapeParamsCodec.write(buf, p.shape);
     }
 
     private static PlaceBuildModePacket decode(FriendlyByteBuf buf) {
@@ -84,9 +87,10 @@ public record PlaceBuildModePacket(
         ModeOptions.ActionEnum circleStart = ModeOptions.ActionEnum.values()[buf.readVarInt()];
         BuildSettings.ReplaceMode replaceMode = BuildSettings.ReplaceMode.values()[buf.readVarInt()];
         boolean protectTileEntities = buf.readBoolean();
+        ShapeParams shape = ShapeParamsCodec.read(buf);
         return new PlaceBuildModePacket(buildMode, firstPos, secondPos, thirdPos,
                 hitFace, hitLocation, fill, cubeFill, raisedEdge, circleStart,
-                replaceMode, protectTileEntities);
+                replaceMode, protectTileEntities, shape);
     }
 
     @Override

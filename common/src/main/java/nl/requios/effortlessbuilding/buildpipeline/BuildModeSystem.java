@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.ModeOptions;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import org.jetbrains.annotations.Nullable;
@@ -39,7 +40,8 @@ public class BuildModeSystem implements IBuildSystem {
             ModeOptions.ActionEnum fill,
             ModeOptions.ActionEnum cubeFill,
             ModeOptions.ActionEnum raisedEdge,
-            ModeOptions.ActionEnum circleStart
+            ModeOptions.ActionEnum circleStart,
+            @Nullable ShapeParams shape
     ) {}
 
     /**
@@ -62,7 +64,8 @@ public class BuildModeSystem implements IBuildSystem {
 
         ModeOptions.applyForCalculation(ctx.fill(), ctx.cubeFill(), ctx.raisedEdge(), ctx.circleStart());
 
-        List<BlockPos> rawPositions = ctx.mode().instance.getServerBlocks(player, ctx.firstPos(), ctx.secondPos(), ctx.thirdPos());
+        List<BlockPos> rawPositions = ctx.mode().instance.getServerBlocks(
+                player, ctx.firstPos(), ctx.secondPos(), ctx.thirdPos(), ctx.shape());
         if (rawPositions.isEmpty()) return;
 
         // Populate the block set with the mode's positions
