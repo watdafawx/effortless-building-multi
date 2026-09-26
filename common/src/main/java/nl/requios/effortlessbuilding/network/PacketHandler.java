@@ -124,7 +124,7 @@ public class PacketHandler {
                 packet.buildMode(), packet.firstPos(), packet.secondPos(), packet.thirdPos(),
                 player, BuildPipeline.BuildState.PLACING,
                 packet.fill(), packet.cubeFill(), packet.raisedEdge(), packet.circleStart(), 
-                packet.shape(), packet.protectTileEntities());
+                packet.shape(), packet.palette(), packet.protectTileEntities());
 
         if (blockSet == null) {
             Constants.LOG.warn("[EffortlessBuilding] Received PlaceBuildModePacket but mode {} returned no blocks", packet.buildMode());
@@ -147,7 +147,10 @@ public class PacketHandler {
         boolean paidWithItems = true;
 
         int placed = 0;
-        if (held.getItem() instanceof RandomizerToolItem) {
+        // Per-block items: from the Randomizer tool, or from the palette sent with the build
+        boolean perBlockItems = held.getItem() instanceof RandomizerToolItem
+                || packet.palette() != null && blockSet.values().stream().anyMatch(e -> e.item instanceof BlockItem);
+        if (perBlockItems) {
             Map<Item, Integer> required = new LinkedHashMap<>();
             for (var mapEntry : blockSet.validEntries()) {
                 if (!BuildSettings.canPlaceAt(level, mapEntry.getKey(), replaceMode, offHand)) continue;
@@ -421,7 +424,7 @@ public class PacketHandler {
                 packet.buildMode(), packet.firstPos(), packet.secondPos(), packet.thirdPos(),
                 player, BuildPipeline.BuildState.BREAKING,
                 packet.fill(), packet.cubeFill(), packet.raisedEdge(), packet.circleStart(),
-                packet.shape(), packet.protectTileEntities());
+                packet.shape(), null, packet.protectTileEntities());
 
         if (blockSet == null) {
             Constants.LOG.warn("[EffortlessBuilding] Received BreakBuildModePacket but mode {} returned no blocks", packet.buildMode());

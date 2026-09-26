@@ -19,6 +19,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import nl.requios.effortlessbuilding.AllIcons;
 import nl.requios.effortlessbuilding.buildpipeline.BuildPipelineClient;
+import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.BuildModes;
 import nl.requios.effortlessbuilding.buildmode.BuildSettings;
@@ -144,6 +145,7 @@ public class RadialMenu extends Screen {
 		}
 
 		//Add actions
+		buttons.add(new MenuButton(ActionEnum.OPEN_PALETTE, -buttonDistance - 104, -13, Direction.UP));
 		buttons.add(new MenuButton(ActionEnum.OPEN_SHAPE_GENERATOR, -buttonDistance - 78, -13, Direction.UP));
 		buttons.add(new MenuButton(ActionEnum.OPEN_MODIFIER_SETTINGS, -buttonDistance - 52, -13, Direction.UP));
 		buttons.add(new MenuButton(ActionEnum.UNDO, -buttonDistance - 26, -13, Direction.UP));
@@ -283,7 +285,8 @@ public class RadialMenu extends Screen {
 					btn.action == ModeOptions.getCircleStart() ||
 					btn.action == ModeOptions.getOptionSetting(ModeOptions.OptionEnum.SHAPE_SIZING) ||
 					(btn.action == ActionEnum.CYCLE_REPLACE_MODE && BuildSettings.CLIENT.getReplaceMode() != BuildSettings.ReplaceMode.ONLY_AIR) ||
-					(btn.action == ActionEnum.PREVIEW_LOCK && BuildPipelineClient.previewLocked));
+					(btn.action == ActionEnum.PREVIEW_LOCK && BuildPipelineClient.previewLocked) ||
+					(btn.action == ActionEnum.OPEN_PALETTE && PaletteClientState.isEnabled()));
 
 
 
@@ -505,6 +508,12 @@ public class RadialMenu extends Screen {
 			if (action == ActionEnum.OPEN_CLIENT_CONFIG) {
 				performedActionUsingMouse = true;
 				minecraft.setScreen(new ClientConfigScreen());
+				return;
+			}
+
+			if (action == ActionEnum.OPEN_PALETTE) {
+				performedActionUsingMouse = true;
+				minecraft.setScreen(new PaletteScreen(null));
 				return;
 			}
 

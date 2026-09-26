@@ -32,6 +32,7 @@ import nl.requios.effortlessbuilding.buildmode.BuildModes;
 import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import nl.requios.effortlessbuilding.item.RandomizerToolItem;
+import nl.requios.effortlessbuilding.palette.PaletteClientState;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -117,7 +118,9 @@ public class BlockPreviewRenderer {
                     baseState = fluid.defaultFluidState().createLegacyBlock();
                 }
             }
-            boolean randomized = held.getItem() instanceof RandomizerToolItem;
+            // Randomizer tool or palette: each block shows its own item
+            boolean randomized = held.getItem() instanceof RandomizerToolItem
+                    || PaletteClientState.isActiveFor(mc.player);
             if (baseState != null || randomized) {
                 try {
                     var wrappedSource = new AlphaMultiBufferSource(bufferSource, blockAlpha);

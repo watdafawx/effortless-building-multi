@@ -24,6 +24,9 @@ import nl.requios.effortlessbuilding.buildmode.ModeOptions;
 import nl.requios.effortlessbuilding.buildmode.ThreeClicksBuildMode;
 import nl.requios.effortlessbuilding.buildmode.buildmodes.ShapeMode;
 import nl.requios.effortlessbuilding.shape.ShapeClientState;
+import nl.requios.effortlessbuilding.palette.BlockPalette;
+import nl.requios.effortlessbuilding.palette.PaletteClientState;
+import nl.requios.effortlessbuilding.palette.PaletteSystem;
 import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.config.ClientConfig;
 import nl.requios.effortlessbuilding.config.ServerConfig;
@@ -67,6 +70,7 @@ public class BuildPipelineClient {
         BuildPipeline pipeline = new BuildPipeline();
         pipeline.addSystem(ModifierSystem.CLIENT);
         pipeline.addSystem(RandomizerSystem.INSTANCE);
+        pipeline.addSystem(PaletteSystem.CLIENT);
         pipeline.addSystem(ConstraintSystem.INSTANCE);
         return pipeline;
     }
@@ -89,7 +93,7 @@ public class BuildPipelineClient {
                           Direction hitFace, Vec3 hitLocation,
                           ModeOptions.ActionEnum fill, ModeOptions.ActionEnum cubeFill,
                           ModeOptions.ActionEnum raisedEdge, ModeOptions.ActionEnum circleStart,
-                          @Nullable ShapeParams shape) {}
+                          @Nullable ShapeParams shape, @Nullable BlockPalette palette) {}
 
     @Nullable private static Anchor anchor = null;
 
@@ -125,7 +129,7 @@ public class BuildPipelineClient {
                 hit != null ? hit.getDirection() : Direction.UP,
                 hit != null ? hit.getLocation() : Vec3.atCenterOf(preview.firstPos),
                 ModeOptions.getFill(), ModeOptions.getCubeFill(),
-                ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(), shape);
+                ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(), shape, PaletteClientState.getActive());
         previewLocked = true;
 
         // The click sequence is captured; start over so the next right-click places the anchor
@@ -308,7 +312,7 @@ public class BuildPipelineClient {
                             ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
                             BuildSettings.CLIENT.getReplaceMode(),
                             ClientConfig.INSTANCE.shouldProtectTileEntities(),
-                            shapeFor(mode)));
+                            shapeFor(mode), PaletteClientState.getActive()));
                     // Client-side placement tracking
                     PlacedBlockTracker.clientTrackAll(mc.level.dimension(), blocks.keySet());
                 } else {
@@ -426,7 +430,7 @@ public class BuildPipelineClient {
                 }
             }
 
-            if (held.getItem() instanceof RandomizerToolItem) {
+            if (held.getItem() instanceof RandomizerToolItem || PaletteClientState.isActiveFor(player)) {
                 ITEM_USAGE.compute(player, blockSet, player.getAbilities().instabuild);
             } else if (heldItem != null) {
                 ITEM_USAGE.compute(player, blockSet.validPositions(), heldItem, player.getAbilities().instabuild);
@@ -459,7 +463,7 @@ public class BuildPipelineClient {
                 a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(),
                 BuildSettings.CLIENT.getReplaceMode(),
                 ClientConfig.INSTANCE.shouldProtectTileEntities(),
-                a.shape()));
+                a.shape(), a.palette()));
         PlacedBlockTracker.clientTrackAll(mc.level.dimension(), a.blocks().keySet());
     }
 

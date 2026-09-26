@@ -72,7 +72,8 @@ public class AllIcons {
     I_CIRCLE_START_CENTER = next(),
     I_THICKNESS_1 = next(),
     I_THICKNESS_3 = next(),
-    I_THICKNESS_5 = next();
+    I_THICKNESS_5 = next(),
+    I_PALETTE = next();
 
     public static final AllIcons
     I_PLAYER = newRow(),

@@ -39,6 +39,7 @@ public class NeoForgeClientSetup {
         public static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
             ClientConfig.INSTANCE.load();
             ShapeTemplateStorage.load();
+            nl.requios.effortlessbuilding.palette.PaletteClientState.load();
 
             event.register(KeyBindings.openRadialMenu);
             event.register(KeyBindings.openModifiersScreen);

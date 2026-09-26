@@ -17,7 +17,12 @@ import nl.requios.effortlessbuilding.buildpipeline.BuildPipelineClient;
 import nl.requios.effortlessbuilding.config.ServerConfig;
 import nl.requios.effortlessbuilding.network.BuildModeHintC2SPacket;
 import nl.requios.effortlessbuilding.network.PacketHandler;
+import nl.requios.effortlessbuilding.palette.BlockColorCache;
+import nl.requios.effortlessbuilding.palette.BlockPalette;
+import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.shape.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Item;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
 import org.joml.Matrix4f;
 
@@ -34,20 +39,16 @@ import java.util.function.IntConsumer;
  */
 public class ShapeGeneratorScreen extends Screen {
 
-    // ---- layout ----
-    private static final int PANEL_W = 460;
-    private static final int PANEL_H = 262;
-    private static final int LIST_W = 108;
+    // ---- layout (the panel grows with the window; the preview takes the extra space) ----
+    private static final int LIST_W = 112;
     private static final int PARAM_X = LIST_W + 12;
-    private static final int PARAM_W = 164;
+    private static final int PARAM_W = 184;
     private static final int PREVIEW_X = PARAM_X + PARAM_W + 6;
-    private static final int PREVIEW_W = PANEL_W - PREVIEW_X - 6;
-    private static final int PREVIEW_H = 150;
     private static final int TOP = 22;
     private static final int ROW_H = 20;
     private static final int LIST_ROW_H = 13;
-    private static final int PARAM_ROWS = 10;
     private static final int BLOCK_COLOR = 0xE8A33D;
+    private int panelW = 460, panelH = 262, previewW = 150, previewH = 150, paramRows = 10;
 
     /** How the preview shows the shape: rotatable 3D, or a slice through one plane. */
     private enum View { THREE_D, TOP, FRONT, SIDE }
@@ -80,6 +81,7 @@ public class ShapeGeneratorScreen extends Screen {
     private ShapeParams previewParams;
     private List<Cell> previewCells = List.of();
     private ShapeParams facesParams;
+    private Object facesPalette;
     private int facesLayer = Integer.MIN_VALUE;
     /** Visible cube faces: x, y, z of four corners, then an ARGB color, per face. */
     private float[][] faces = new float[0][];
@@ -118,6 +120,12 @@ public class ShapeGeneratorScreen extends Screen {
 
     @Override
     protected void init() {
+        panelW = Math.max(Math.min(width - 16, 960), Math.min(470, width));
+        panelH = Math.max(Math.min(height - 16, 560), Math.min(262, height));
+        previewW = panelW - PREVIEW_X - 6;
+        previewH = panelH - TOP - 80;
+        paramRows = Math.max(4, (panelH - TOP - 52) / ROW_H);
+        BlockColorCache.ensureReady();
         widgets = new ScreenWidgets(font, this::addRenderableWidget);
         widgets.clear();
         if (editing >= params.parts().size()) editing = -1;
@@ -125,26 +133,30 @@ public class ShapeGeneratorScreen extends Screen {
 
         buildListWidgets(px, py);
         buildRows(px + PARAM_X);
-        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - PARAM_ROWS));
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + PARAM_ROWS); i++) {
+        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - paramRows));
+        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + paramRows); i++) {
             rows.get(i).build().accept(py + TOP + (i - paramScroll) * ROW_H);
         }
         buildPreviewWidgets(px + PREVIEW_X, py + TOP);
 
         // Bottom bar: template name, save, use, close
-        int by = py + PANEL_H - 20;
-        nameBox = new EditBox(font, px + PARAM_X, by, 100, 16, Component.translatable("effortlessbuilding.screen.template_name"));
+        int by = py + panelH - 20;
+        nameBox = new EditBox(font, px + PARAM_X, by, 90, 16, Component.translatable("effortlessbuilding.screen.template_name"));
         nameBox.setMaxLength(40);
         nameBox.setValue(nameDraft != null ? nameDraft : templateName != null ? templateName : defaultName());
         nameBox.setResponder(s -> nameDraft = s);
         addRenderableWidget(nameBox);
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.save_template"), b -> saveTemplate())
-                .bounds(px + PARAM_X + 104, by, 60, 16).build());
+                .bounds(px + PARAM_X + 94, by, 44, 16).build());
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.palette_button"),
+                        b -> { if (minecraft != null) minecraft.setScreen(new PaletteScreen(this)); })
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.palette_button.description")))
+                .bounds(px + PARAM_X + 142, by, 42, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.use_shape"), b -> useShape())
                 .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.use_shape.description")))
                 .bounds(px + PREVIEW_X, by, 70, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
-                .bounds(px + PANEL_W - 76, by, 70, 16).build());
+                .bounds(px + panelW - 76, by, 70, 16).build());
     }
 
     private void buildListWidgets(int px, int py) {
@@ -166,7 +178,7 @@ public class ShapeGeneratorScreen extends Screen {
         }
     }
 
-    /** All settings rows for what is being edited; only {@link #PARAM_ROWS} are shown at once. */
+    /** All settings rows for what is being edited; only {@link #paramRows} are shown at once. */
     private void buildRows(int x) {
         List<Row> list = new ArrayList<>();
         int buttonX = x + ScreenWidgets.LABEL_W, buttonW = PARAM_W - ScreenWidgets.LABEL_W;
@@ -253,13 +265,13 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private void buildPreviewWidgets(int x, int y) {
-        int by = y + PREVIEW_H + 4;
+        int by = y + previewH + 4;
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.view." + view.name().toLowerCase()),
                         b -> { view = next(View.values(), view); layer = -1; rebuildWidgets(); })
                 .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.view.description")))
                 .bounds(x, by, 44, 16).build());
         addRenderableWidget(Button.builder(Component.literal("◀"), b -> stepLayer(-1)).bounds(x + 48, by, 16, 16).build());
-        addRenderableWidget(Button.builder(Component.literal("▶"), b -> stepLayer(1)).bounds(x + PREVIEW_W - 16, by, 16, 16).build());
+        addRenderableWidget(Button.builder(Component.literal("▶"), b -> stepLayer(1)).bounds(x + previewW - 16, by, 16, 16).build());
     }
 
     private String editingLabel() {
@@ -416,7 +428,7 @@ public class ShapeGeneratorScreen extends Screen {
             return true;
         }
         if (mouseX < px + PREVIEW_X) {
-            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - PARAM_ROWS), paramScroll + dir));
+            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - paramRows), paramScroll + dir));
             rebuildWidgets();
             return true;
         }
@@ -430,7 +442,7 @@ public class ShapeGeneratorScreen extends Screen {
 
     private boolean inPreview(double mouseX, double mouseY) {
         int x = panelX() + PREVIEW_X, y = panelY() + TOP;
-        return mouseX >= x && mouseX < x + PREVIEW_W && mouseY >= y && mouseY < y + PREVIEW_H;
+        return mouseX >= x && mouseX < x + previewW && mouseY >= y && mouseY < y + previewH;
     }
 
     // =========================================================================
@@ -447,8 +459,8 @@ public class ShapeGeneratorScreen extends Screen {
         super.render(g, mouseX, mouseY, partialTick);
         int px = panelX(), py = panelY();
 
-        g.fill(px + LIST_W + 6, py + 2, px + LIST_W + 7, py + PANEL_H - 24, 0xFF555555);
-        g.fill(px + PREVIEW_X - 4, py + 2, px + PREVIEW_X - 3, py + PANEL_H - 24, 0xFF555555);
+        g.fill(px + LIST_W + 6, py + 2, px + LIST_W + 7, py + panelH - 24, 0xFF555555);
+        g.fill(px + PREVIEW_X - 4, py + 2, px + PREVIEW_X - 3, py + panelH - 24, 0xFF555555);
 
         g.drawString(font, title, px + 5, py + 8, 0xFFFFFF);
         String header = templateName != null ? templateName : I18n.get(params.type().getNameKey());
@@ -495,26 +507,26 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private void renderRowLabels(GuiGraphics g, int x, int y) {
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + PARAM_ROWS); i++) {
+        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + paramRows); i++) {
             g.drawString(font, font.plainSubstrByWidth(rows.get(i).label(), ScreenWidgets.LABEL_W - 2),
                     x, y + (i - paramScroll) * ROW_H + 4, 0xCCCCCC);
         }
-        if (rows.size() > PARAM_ROWS) {
-            String more = (paramScroll + 1) + "–" + Math.min(rows.size(), paramScroll + PARAM_ROWS) + " / " + rows.size()
+        if (rows.size() > paramRows) {
+            String more = (paramScroll + 1) + "–" + Math.min(rows.size(), paramScroll + paramRows) + " / " + rows.size()
                     + "  " + I18n.get("effortlessbuilding.screen.scroll_for_more");
-            g.drawString(font, more, x, y + PARAM_ROWS * ROW_H + 2, 0x777777);
+            g.drawString(font, more, x, y + paramRows * ROW_H + 2, 0x777777);
         }
         if (params.type() != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS) {
-            g.drawString(font, I18n.get("effortlessbuilding.screen.click_sizing_hint"), x, y + PARAM_ROWS * ROW_H + 12, 0x999999);
+            g.drawString(font, I18n.get("effortlessbuilding.screen.click_sizing_hint"), x, y + paramRows * ROW_H + 12, 0x999999);
         }
     }
 
     /** 3D view or a slice/projection through one plane, plus block count and size. */
     private void renderPreview(GuiGraphics g, int x, int y) {
         List<Cell> cells = cells();
-        g.fill(x, y, x + PREVIEW_W, y + PREVIEW_H, 0xFF1E1E1E);
+        g.fill(x, y, x + previewW, y + previewH, 0xFF1E1E1E);
         if (cells.isEmpty()) {
-            g.drawCenteredString(font, I18n.get("effortlessbuilding.screen.nothing_to_build"), x + PREVIEW_W / 2, y + PREVIEW_H / 2 - 4, 0x888888);
+            g.drawCenteredString(font, I18n.get("effortlessbuilding.screen.nothing_to_build"), x + previewW / 2, y + previewH / 2 - 4, 0x888888);
             return;
         }
         int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
@@ -529,10 +541,10 @@ public class ShapeGeneratorScreen extends Screen {
         if (view == View.THREE_D) render3D(g, x, y, cells, min[1]);
         else renderSlice(g, x, y, cells, min, max, depth);
 
-        int iy = y + PREVIEW_H + 24;
+        int iy = y + previewH + 24;
         String layerText = layer < 0 ? I18n.get("effortlessbuilding.screen.all_layers")
                 : I18n.get(view == View.THREE_D ? "effortlessbuilding.screen.up_to_layer" : "effortlessbuilding.screen.layer", layer + 1, depth);
-        g.drawCenteredString(font, layerText, x + 48 + 16 + (PREVIEW_W - 48 - 32) / 2, y + PREVIEW_H + 8, 0xDDDDDD);
+        g.drawCenteredString(font, layerText, x + 48 + 16 + (previewW - 48 - 32) / 2, y + previewH + 8, 0xDDDDDD);
         g.drawString(font, I18n.get("effortlessbuilding.screen.block_count", cells.size()), x, iy, 0xDDDDDD);
         g.drawString(font, (max[0] - min[0] + 1) + " × " + (max[1] - min[1] + 1) + " × " + (max[2] - min[2] + 1)
                 + " " + I18n.get("effortlessbuilding.screen.dimensions"), x, iy + 11, 0xAAAAAA);
@@ -546,12 +558,12 @@ public class ShapeGeneratorScreen extends Screen {
     /** Solid cubes with a light per face direction, depth-tested, rotatable by dragging. */
     private void render3D(GuiGraphics g, int x, int y, List<Cell> cells, int minY) {
         updateFaces(cells, minY);
-        float scale = zoom * 0.46f * Math.min(PREVIEW_W, PREVIEW_H) / facesRadius;
+        float scale = zoom * 0.46f * Math.min(previewW, previewH) / facesRadius;
 
-        g.enableScissor(x, y, x + PREVIEW_W, y + PREVIEW_H);
+        g.enableScissor(x, y, x + previewW, y + previewH);
         PoseStack pose = g.pose();
         pose.pushPose();
-        pose.translate(x + PREVIEW_W / 2f, y + PREVIEW_H / 2f, 100);
+        pose.translate(x + previewW / 2f, y + previewH / 2f, 100);
         // World y up = screen up. Depth is squashed (order kept) so the cubes stay between
         // the panel background (z 0) and tooltips (z 400) at any zoom.
         pose.scale(scale, -scale, Math.min(scale, 60f / facesRadius));
@@ -571,9 +583,13 @@ public class ShapeGeneratorScreen extends Screen {
 
     /** Rebuilds the visible-face list when the shape or the shown layers change. */
     private void updateFaces(List<Cell> cells, int minY) {
-        if (params.equals(facesParams) && layer == facesLayer) return;
+        Object paletteKey = paletteKey();
+        if (params.equals(facesParams) && layer == facesLayer && paletteKey.equals(facesPalette)) return;
         facesParams = params;
         facesLayer = layer;
+        facesPalette = paletteKey;
+        int maxY = Integer.MIN_VALUE;
+        for (Cell c : cells) maxY = Math.max(maxY, c.y());
 
         Set<Cell> shown = new HashSet<>();
         for (Cell c : cells) if (layer < 0 || c.y() - minY <= layer) shown.add(c);
@@ -610,7 +626,7 @@ public class ShapeGeneratorScreen extends Screen {
                     f[v * 3 + 2] = c.z() + corners[d][v][2];
                 }
                 float dim = layer >= 0 && !topLayer ? 0.6f : 1f; // layers below the chosen one are dimmed
-                f[12] = shade(BLOCK_COLOR, light[d] * checker * dim);
+                f[12] = shade(cellColor(c, minY, maxY), light[d] * checker * dim);
                 out.add(f);
             }
         }
@@ -618,6 +634,27 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private static float sq(float v) { return v * v; }
+
+    /** The block color a cell gets: from the palette when it is on, else the plain preview color. */
+    private int cellColor(Cell c, int minY, int maxY) {
+        List<Item> blocks = paletteBlocks();
+        if (blocks.isEmpty()) return BLOCK_COLOR;
+        BlockPalette palette = PaletteClientState.getPalette();
+        int index = palette.pattern().index(blocks.size(), palette.band(), c.x(), c.y(), c.z(), minY, maxY,
+                BlockPos.asLong(c.x(), c.y(), c.z()));
+        return BlockColorCache.colorOf(blocks.get(index));
+    }
+
+    private List<Item> paletteBlocks() {
+        BlockPalette palette = PaletteClientState.getActive();
+        if (palette == null || minecraft == null || minecraft.player == null) return List.of();
+        return palette.resolve(minecraft.player);
+    }
+
+    /** Changes when anything that affects preview colors changes. */
+    private Object paletteKey() {
+        return List.of(paletteBlocks(), PaletteClientState.getPalette(), BlockColorCache.colors().size());
+    }
 
     /** Slice (or projection when all layers) through the chosen plane. */
     private void renderSlice(GuiGraphics g, int x, int y, List<Cell> cells, int[] min, int[] max, int depth) {
@@ -629,21 +666,23 @@ public class ShapeGeneratorScreen extends Screen {
         };
         boolean flipVertical = view != View.TOP; // y up on screen
         int spanU = max[axes[0]] - min[axes[0]] + 1, spanV = max[axes[1]] - min[axes[1]] + 1;
-        int scale = Math.max(1, Math.min((PREVIEW_W - 4) / spanU, (PREVIEW_H - 4) / spanV));
-        int ox = x + (PREVIEW_W - spanU * scale) / 2, oy = y + (PREVIEW_H - spanV * scale) / 2;
+        int scale = Math.max(1, Math.min((previewW - 4) / spanU, (previewH - 4) / spanV));
+        int ox = x + (previewW - spanU * scale) / 2, oy = y + (previewH - spanV * scale) / 2;
 
         // Nearest-to-viewer depth per column (projection), or the chosen slice
         int[][] top = new int[spanU][spanV];
+        Cell[][] topCell = new Cell[spanU][spanV];
         for (int[] col : top) Arrays.fill(col, Integer.MIN_VALUE);
         for (Cell c : cells) {
             int[] v = {c.x(), c.y(), c.z()};
             int d = v[axes[2]] - min[axes[2]];
             int u = v[axes[0]] - min[axes[0]], w = v[axes[1]] - min[axes[1]];
             if (layer >= 0) {
-                if (d == layer) top[u][w] = d;
+                if (d == layer) { top[u][w] = d; topCell[u][w] = c; }
                 else if (d == layer - 1 && top[u][w] == Integer.MIN_VALUE) top[u][w] = -2; // ghost of the layer below
             } else if (d > top[u][w]) {
                 top[u][w] = d;
+                topCell[u][w] = c;
             }
         }
         for (int u = 0; u < spanU; u++) {
@@ -657,7 +696,7 @@ public class ShapeGeneratorScreen extends Screen {
                 } else {
                     float light = layer >= 0 ? 1f : 0.55f + 0.45f * (d + 1) / depth;
                     if (((u + w + d) & 1) == 1) light *= 0.85f; // alternating shades make blocks countable
-                    color = shade(BLOCK_COLOR, light);
+                    color = shade(cellColor(topCell[u][w], min[1], max[1]), light);
                 }
                 g.fill(ox + u * scale, oy + sy * scale, ox + (u + 1) * scale - (scale > 3 ? 1 : 0),
                         oy + (sy + 1) * scale - (scale > 3 ? 1 : 0), color);
@@ -710,9 +749,9 @@ public class ShapeGeneratorScreen extends Screen {
         return params.type() == ShapeType.SCHEMATIC ? base + " " + params.schematic() : base + " " + params.size();
     }
 
-    private int listRows() { return (PANEL_H - TOP - 26) / LIST_ROW_H; }
-    private int panelX() { return (width - PANEL_W) / 2; }
-    private int panelY() { return (height - PANEL_H) / 2; }
+    private int listRows() { return (panelH - TOP - 26) / LIST_ROW_H; }
+    private int panelX() { return (width - panelW) / 2; }
+    private int panelY() { return (height - panelH) / 2; }
 
     @Override
     public boolean isPauseScreen() {

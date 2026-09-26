@@ -43,6 +43,7 @@ public class EffortlessBuildingClient implements ClientModInitializer {
     public void onInitializeClient() {
         ClientConfig.INSTANCE.load();
         ShapeTemplateStorage.load();
+        nl.requios.effortlessbuilding.palette.PaletteClientState.load();
         MenuScreens.register(ModMenus.RANDOMIZER, RandomizerScreen::new);
         TooltipComponentCallback.EVENT.register(data -> data instanceof RandomizerTooltipData randomizerData
                 ? new RandomizerTooltipComponent(randomizerData) : null);
