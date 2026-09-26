@@ -1,11 +1,14 @@
 package nl.requios.effortlessbuilding.screen;
 
-import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
@@ -16,22 +19,23 @@ import nl.requios.effortlessbuilding.network.BuildModeHintC2SPacket;
 import nl.requios.effortlessbuilding.network.PacketHandler;
 import nl.requios.effortlessbuilding.shape.*;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
+import org.joml.Matrix4f;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Consumer;
+import java.util.*;
+import java.util.function.IntConsumer;
 
 /**
- * Shape Generator: pick a parametric shape (or a template, or a schematic), tune it with a live
- * slice preview, then build it with SHAPE mode or save it as a template.
+ * Shape Generator: pick a parametric shape (or a template, or a schematic), combine more shapes into it
+ * (unite, subtract, intersect, exclude), check it in a 3D or slice preview, then build it with
+ * SHAPE mode or save it as a template.
  * <p>
- * Layout: shape types and templates on the left, parameters in the middle (scrolls),
+ * Layout: shape types and templates on the left, settings in the middle (scrolls),
  * preview on the right, name/save/use along the bottom.
  */
 public class ShapeGeneratorScreen extends Screen {
 
     // ---- layout ----
-    private static final int PANEL_W = 440;
+    private static final int PANEL_W = 460;
     private static final int PANEL_H = 262;
     private static final int LIST_W = 108;
     private static final int PARAM_X = LIST_W + 12;
@@ -43,31 +47,69 @@ public class ShapeGeneratorScreen extends Screen {
     private static final int ROW_H = 20;
     private static final int LIST_ROW_H = 13;
     private static final int PARAM_ROWS = 10;
+    private static final int BLOCK_COLOR = 0xE8A33D;
 
-    /** Which plane the preview slices through. */
-    private enum View { TOP, FRONT, SIDE }
+    /** How the preview shows the shape: rotatable 3D, or a slice through one plane. */
+    private enum View { THREE_D, TOP, FRONT, SIDE }
+
+    /** One settings row: its label and how to build its widgets at a given y. */
+    private record Row(String label, IntConsumer build) {}
 
     // ---- state ----
     private ShapeParams params;
+    /** Which part the settings edit: -1 for the main shape, otherwise an index into its parts. */
+    private int editing = -1;
     /** Name of the template being edited, or null for an unsaved shape. */
     private String templateName;
     private int paramScroll = 0;
     private int listScroll = 0;
-    private View view = View.TOP;
-    /** Slice index along the view's depth axis, or -1 for all layers. */
+    private View view = View.THREE_D;
+    /** Slice index along the view's depth axis (in 3D: build up to this layer), or -1 for all. */
     private int layer = -1;
     private String nameDraft = null;
 
+    // ---- 3D camera ----
+    private float yaw = 35, pitch = 28, zoom = 1;
+    private boolean dragging = false;
+
     private ScreenWidgets widgets;
     private EditBox nameBox;
+    private List<Row> rows = List.of();
 
     // ---- preview cache ----
     private ShapeParams previewParams;
     private List<Cell> previewCells = List.of();
+    private ShapeParams facesParams;
+    private int facesLayer = Integer.MIN_VALUE;
+    /** Visible cube faces: x, y, z of four corners, then an ARGB color, per face. */
+    private float[][] faces = new float[0][];
+    private float[] facesCenter = new float[3];
+    private float facesRadius = 1;
 
     public ShapeGeneratorScreen() {
         super(Component.translatable("effortlessbuilding.screen.shape_generator"));
         params = ShapeClientState.getActive();
+    }
+
+    // =========================================================================
+    // Editing target: the main shape or one of its parts
+    // =========================================================================
+
+    private ShapeParams current() {
+        return editing < 0 ? params : params.parts().get(editing).shape();
+    }
+
+    private void setCurrent(ShapeParams shape) {
+        params = editing < 0 ? shape.withParts(params.parts())
+                : params.withPart(editing, params.parts().get(editing).withShape(shape));
+    }
+
+    private ShapeParams.Part currentPart() {
+        return params.parts().get(editing);
+    }
+
+    private void setCurrentPart(ShapeParams.Part part) {
+        params = params.withPart(editing, part);
     }
 
     // =========================================================================
@@ -78,10 +120,15 @@ public class ShapeGeneratorScreen extends Screen {
     protected void init() {
         widgets = new ScreenWidgets(font, this::addRenderableWidget);
         widgets.clear();
+        if (editing >= params.parts().size()) editing = -1;
         int px = panelX(), py = panelY();
 
         buildListWidgets(px, py);
-        buildParamWidgets(px + PARAM_X, py + TOP);
+        buildRows(px + PARAM_X);
+        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - PARAM_ROWS));
+        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + PARAM_ROWS); i++) {
+            rows.get(i).build().accept(py + TOP + (i - paramScroll) * ROW_H);
+        }
         buildPreviewWidgets(px + PREVIEW_X, py + TOP);
 
         // Bottom bar: template name, save, use, close
@@ -119,55 +166,86 @@ public class ShapeGeneratorScreen extends Screen {
         }
     }
 
-    /** One row per setting; the rows past {@link #PARAM_ROWS} scroll. */
-    private void buildParamWidgets(int x, int y) {
-        List<Consumer<Integer>> rows = new ArrayList<>();
-        ShapeType type = params.type();
+    /** All settings rows for what is being edited; only {@link #PARAM_ROWS} are shown at once. */
+    private void buildRows(int x) {
+        List<Row> list = new ArrayList<>();
+        int buttonX = x + ScreenWidgets.LABEL_W, buttonW = PARAM_W - ScreenWidgets.LABEL_W;
 
+        // Which part to edit, plus add/remove
+        list.add(new Row(I18n.get("effortlessbuilding.screen.editing"), y -> {
+            addRenderableWidget(Button.builder(Component.literal(editingLabel()), b -> {
+                        editing = editing + 1 >= params.parts().size() ? -1 : editing + 1;
+                        paramScroll = 0;
+                        rebuildWidgets();
+                    })
+                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.editing.description")))
+                    .bounds(buttonX, y, buttonW - 34, 16).build());
+            Button add = addRenderableWidget(Button.builder(Component.literal("+"), b -> addPart())
+                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.add_part")))
+                    .bounds(buttonX + buttonW - 32, y, 16, 16).build());
+            add.active = params.parts().size() < ShapeParams.MAX_PARTS;
+            Button remove = addRenderableWidget(Button.builder(Component.literal("×"), b -> removePart())
+                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.remove_part")))
+                    .bounds(buttonX + buttonW - 16, y, 16, 16).build());
+            remove.active = editing >= 0;
+        }));
+
+        if (editing >= 0) {
+            list.add(new Row(I18n.get("effortlessbuilding.screen.operation"), y -> addCycleButton(x, y,
+                    I18n.get(currentPart().operation().getNameKey()),
+                    () -> setCurrentPart(currentPart().withOperation(next(ShapeParams.Operation.values(), currentPart().operation()))))));
+            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_x"), y -> widgets.addIntField(x, y, String.valueOf(currentPart().x()),
+                    v -> setCurrentPart(currentPart().withOffset(v, currentPart().y(), currentPart().z())))));
+            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_y"), y -> widgets.addIntField(x, y, String.valueOf(currentPart().y()),
+                    v -> setCurrentPart(currentPart().withOffset(currentPart().x(), v, currentPart().z())))));
+            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_z"), y -> widgets.addIntField(x, y, String.valueOf(currentPart().z()),
+                    v -> setCurrentPart(currentPart().withOffset(currentPart().x(), currentPart().y(), v)))));
+        }
+
+        ShapeParams shape = current();
+        ShapeType type = shape.type();
         if (type == ShapeType.SCHEMATIC) {
-            rows.add(ry -> {
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.file"), y -> {
                 List<String> names = SchematicLibrary.list();
-                String current = params.schematic().isEmpty() && !names.isEmpty() ? names.getFirst() : params.schematic();
-                if (!current.equals(params.schematic())) params = params.withSchematic(current);
+                String name = current().schematic().isEmpty() && !names.isEmpty() ? names.getFirst() : current().schematic();
+                if (!name.equals(current().schematic())) setCurrent(current().withSchematic(name));
                 addRenderableWidget(Button.builder(Component.literal(names.isEmpty()
-                                        ? I18n.get("effortlessbuilding.screen.no_schematics") : current),
+                                        ? I18n.get("effortlessbuilding.screen.no_schematics") : name),
                                 b -> { cycleSchematic(names); rebuildWidgets(); })
                         .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.schematic.description")))
-                        .bounds(x + ScreenWidgets.LABEL_W, ry, PARAM_W - ScreenWidgets.LABEL_W, 16).build());
-            });
-        } else {
-            rows.add(ry -> widgets.addIntField(x, ry, String.valueOf(params.size()), v -> {
-                params = params.withSize(v);
+                        .bounds(buttonX, y, buttonW, 16).build());
             }));
-            rows.add(ry -> addCycleButton(x, ry, I18n.get(params.orientation().getNameKey()), () ->
-                    params = params.withOrientation(next(ShapeParams.Orientation.values(), params.orientation()))));
-            rows.add(ry -> addCycleButton(x, ry, I18n.get(params.sizing().getNameKey()), () ->
-                    params = params.withSizing(next(ShapeParams.Sizing.values(), params.sizing()))));
+        } else {
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.size"), y ->
+                    widgets.addIntField(x, y, String.valueOf(current().size()), v -> setCurrent(current().withSize(v)))));
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.orientation"), y -> addCycleButton(x, y,
+                    I18n.get(current().orientation().getNameKey()),
+                    () -> setCurrent(current().withOrientation(next(ShapeParams.Orientation.values(), current().orientation()))))));
+            if (editing < 0) {
+                // Sizing belongs to the whole shape: parts scale along with it
+                list.add(new Row(I18n.get("effortlessbuilding.shape.param.sizing"), y -> addCycleButton(x, y,
+                        I18n.get(params.sizing().getNameKey()),
+                        () -> params = params.withSizing(next(ShapeParams.Sizing.values(), params.sizing())))));
+            }
             if (type.hollowable) {
-                rows.add(ry -> widgets.addCheckbox(x + ScreenWidgets.LABEL_W, ry + 4, "", params.hollow(),
-                        () -> { params = params.withHollow(!params.hollow()); rebuildWidgets(); }));
+                list.add(new Row(I18n.get("effortlessbuilding.shape.param.hollow"), y ->
+                        widgets.addCheckbox(buttonX, y + 4, "", current().hollow(),
+                                () -> { setCurrent(current().withHollow(!current().hollow())); rebuildWidgets(); })));
             }
             for (ShapeType.ParamSpec spec : type.params) {
-                rows.add(ry -> {
+                list.add(new Row(I18n.get(spec.getNameKey()), y -> {
                     if (spec.integer()) {
-                        widgets.addIntField(x, ry, String.valueOf(params.getInt(spec.key())),
-                                v -> params = params.with(spec.key(), v));
+                        widgets.addIntField(x, y, String.valueOf(current().getInt(spec.key())),
+                                v -> setCurrent(current().with(spec.key(), v)));
                     } else {
-                        widgets.addDoubleField(x, ry, ScreenWidgets.formatDouble(params.get(spec.key())),
-                                v -> params = params.with(spec.key(), v), 0.05);
+                        widgets.addDoubleField(x, y, ScreenWidgets.formatDouble(current().get(spec.key())),
+                                v -> setCurrent(current().with(spec.key(), v)), 0.05);
                     }
-                });
+                }));
             }
         }
-
-        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - PARAM_ROWS));
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + PARAM_ROWS); i++) {
-            rows.get(i).accept(y + (i - paramScroll) * ROW_H);
-        }
-        paramRowCount = rows.size();
+        rows = list;
     }
-
-    private int paramRowCount;
 
     private void addCycleButton(int x, int y, String label, Runnable cycle) {
         addRenderableWidget(Button.builder(Component.literal(label), b -> { cycle.run(); rebuildWidgets(); })
@@ -177,15 +255,45 @@ public class ShapeGeneratorScreen extends Screen {
     private void buildPreviewWidgets(int x, int y) {
         int by = y + PREVIEW_H + 4;
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.view." + view.name().toLowerCase()),
-                        b -> { view = next(View.values(), view); layer = -1; })
+                        b -> { view = next(View.values(), view); layer = -1; rebuildWidgets(); })
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.view.description")))
                 .bounds(x, by, 44, 16).build());
         addRenderableWidget(Button.builder(Component.literal("◀"), b -> stepLayer(-1)).bounds(x + 48, by, 16, 16).build());
         addRenderableWidget(Button.builder(Component.literal("▶"), b -> stepLayer(1)).bounds(x + PREVIEW_W - 16, by, 16, 16).build());
     }
 
+    private String editingLabel() {
+        if (editing < 0) return I18n.get("effortlessbuilding.screen.main_shape");
+        ShapeParams.Part part = currentPart();
+        return (editing + 1) + ". " + I18n.get(part.operation().getNameKey()) + " " + I18n.get(part.shape().type().getNameKey());
+    }
+
     // =========================================================================
     // Actions
     // =========================================================================
+
+    private void addPart() {
+        if (params.parts().size() >= ShapeParams.MAX_PARTS) return;
+        // Start with a smaller copy of the main shape, cutting a hole: the most common first step
+        ShapeParams shape = ShapeParams.defaults(params.type() == ShapeType.SCHEMATIC ? ShapeType.ELLIPSOID : params.type())
+                .withSize(Math.max(1, params.size() / 2));
+        List<ShapeParams.Part> parts = new ArrayList<>(params.parts());
+        parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.SUBTRACT, 0, 0, 0));
+        params = params.withParts(parts);
+        editing = parts.size() - 1;
+        paramScroll = 0;
+        rebuildWidgets();
+    }
+
+    private void removePart() {
+        if (editing < 0) return;
+        List<ShapeParams.Part> parts = new ArrayList<>(params.parts());
+        parts.remove(editing);
+        params = params.withParts(parts);
+        editing = Math.min(editing, parts.size() - 1);
+        paramScroll = 0;
+        rebuildWidgets();
+    }
 
     private void saveTemplate() {
         String name = nameBox.getValue().trim();
@@ -212,11 +320,16 @@ public class ShapeGeneratorScreen extends Screen {
         onClose();
     }
 
+    /** Picking a shape type changes what is being edited: the main shape (keeping its parts) or a part. */
     private void selectType(ShapeType type) {
-        if (type == params.type()) return;
-        params = ShapeParams.defaults(type).withSizing(params.sizing());
-        templateName = null;
-        nameDraft = null;
+        if (type == current().type()) return;
+        if (editing < 0) {
+            params = ShapeParams.defaults(type).withSizing(params.sizing()).withParts(params.parts());
+            templateName = null;
+            nameDraft = null;
+        } else {
+            setCurrent(ShapeParams.defaults(type));
+        }
         paramScroll = 0;
         layer = -1;
         rebuildWidgets();
@@ -225,6 +338,7 @@ public class ShapeGeneratorScreen extends Screen {
     private void selectTemplate(ShapeClientState.Template template) {
         params = template.params();
         templateName = template.name();
+        editing = -1;
         nameDraft = null;
         paramScroll = 0;
         layer = -1;
@@ -233,8 +347,8 @@ public class ShapeGeneratorScreen extends Screen {
 
     private void cycleSchematic(List<String> names) {
         if (names.isEmpty()) return;
-        int i = names.indexOf(params.schematic());
-        params = params.withSchematic(names.get((i + 1) % names.size()));
+        int i = names.indexOf(current().schematic());
+        setCurrent(current().withSchematic(names.get((i + 1) % names.size())));
     }
 
     private void stepLayer(int dir) {
@@ -267,7 +381,27 @@ public class ShapeGeneratorScreen extends Screen {
                 return true;
             }
         }
+        if (view == View.THREE_D && inPreview(mouseX, mouseY)) {
+            dragging = true;
+            return true;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (dragging) {
+            yaw += (float) dragX * 0.9f;
+            pitch = Math.max(-89, Math.min(89, pitch + (float) dragY * 0.9f));
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        dragging = false;
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
@@ -282,12 +416,21 @@ public class ShapeGeneratorScreen extends Screen {
             return true;
         }
         if (mouseX < px + PREVIEW_X) {
-            paramScroll = Math.max(0, Math.min(Math.max(0, paramRowCount - PARAM_ROWS), paramScroll + dir));
+            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - PARAM_ROWS), paramScroll + dir));
             rebuildWidgets();
             return true;
         }
-        stepLayer(-dir);
+        if (view == View.THREE_D && inPreview(mouseX, mouseY)) {
+            zoom = Math.max(0.3f, Math.min(6f, zoom * (scrollY > 0 ? 1.15f : 1 / 1.15f)));
+        } else {
+            stepLayer(-dir);
+        }
         return true;
+    }
+
+    private boolean inPreview(double mouseX, double mouseY) {
+        int x = panelX() + PREVIEW_X, y = panelY() + TOP;
+        return mouseX >= x && mouseX < x + PREVIEW_W && mouseY >= y && mouseY < y + PREVIEW_H;
     }
 
     // =========================================================================
@@ -309,10 +452,11 @@ public class ShapeGeneratorScreen extends Screen {
 
         g.drawString(font, title, px + 5, py + 8, 0xFFFFFF);
         String header = templateName != null ? templateName : I18n.get(params.type().getNameKey());
-        g.drawString(font, header, px + PARAM_X, py + 8, 0xFFFFFF);
+        if (!params.parts().isEmpty()) header += " + " + params.parts().size();
+        g.drawString(font, font.plainSubstrByWidth(header, PARAM_W), px + PARAM_X, py + 8, 0xFFFFFF);
 
         renderList(g, px + 4, py + TOP, mouseX, mouseY);
-        renderParamLabels(g, px + PARAM_X, py + TOP);
+        renderRowLabels(g, px + PARAM_X, py + TOP);
         widgets.renderCheckboxes(g, mouseX, mouseY);
         renderPreview(g, px + PREVIEW_X, py + TOP);
     }
@@ -329,13 +473,13 @@ public class ShapeGeneratorScreen extends Screen {
             int color = 0xEEEEEE;
             if (i < types.length) {
                 text = I18n.get(types[i].getNameKey());
-                selected = templateName == null && params.type() == types[i];
+                selected = (editing >= 0 || templateName == null) && current().type() == types[i];
             } else if (i == types.length) {
                 g.drawString(font, I18n.get("effortlessbuilding.screen.templates"), x + 1, ry + 3, 0xAAAAAA);
                 continue;
             } else if (i - types.length - 1 < templates.size()) {
                 text = templates.get(i - types.length - 1).name();
-                selected = text.equals(templateName);
+                selected = text.equals(templateName) && editing < 0;
                 color = 0xFFD37F;
             } else {
                 if (templates.isEmpty() && i == types.length + 1) {
@@ -350,32 +494,22 @@ public class ShapeGeneratorScreen extends Screen {
         }
     }
 
-    private void renderParamLabels(GuiGraphics g, int x, int y) {
-        List<String> labels = new ArrayList<>();
-        ShapeType type = params.type();
-        if (type == ShapeType.SCHEMATIC) {
-            labels.add(I18n.get("effortlessbuilding.shape.param.file"));
-        } else {
-            labels.add(I18n.get("effortlessbuilding.shape.param.size"));
-            labels.add(I18n.get("effortlessbuilding.shape.param.orientation"));
-            labels.add(I18n.get("effortlessbuilding.shape.param.sizing"));
-            if (type.hollowable) labels.add(I18n.get("effortlessbuilding.shape.param.hollow"));
-            for (ShapeType.ParamSpec spec : type.params) labels.add(I18n.get(spec.getNameKey()));
-        }
-        for (int i = paramScroll; i < Math.min(labels.size(), paramScroll + PARAM_ROWS); i++) {
-            g.drawString(font, font.plainSubstrByWidth(labels.get(i), ScreenWidgets.LABEL_W - 2),
+    private void renderRowLabels(GuiGraphics g, int x, int y) {
+        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + PARAM_ROWS); i++) {
+            g.drawString(font, font.plainSubstrByWidth(rows.get(i).label(), ScreenWidgets.LABEL_W - 2),
                     x, y + (i - paramScroll) * ROW_H + 4, 0xCCCCCC);
         }
-        if (labels.size() > PARAM_ROWS) {
-            String more = (paramScroll + 1) + "–" + Math.min(labels.size(), paramScroll + PARAM_ROWS) + " / " + labels.size();
+        if (rows.size() > PARAM_ROWS) {
+            String more = (paramScroll + 1) + "–" + Math.min(rows.size(), paramScroll + PARAM_ROWS) + " / " + rows.size()
+                    + "  " + I18n.get("effortlessbuilding.screen.scroll_for_more");
             g.drawString(font, more, x, y + PARAM_ROWS * ROW_H + 2, 0x777777);
         }
-        if (type != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS) {
+        if (params.type() != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS) {
             g.drawString(font, I18n.get("effortlessbuilding.screen.click_sizing_hint"), x, y + PARAM_ROWS * ROW_H + 12, 0x999999);
         }
     }
 
-    /** Slice (or projection when all layers) of the shape through the chosen plane, block count and size. */
+    /** 3D view or a slice/projection through one plane, plus block count and size. */
     private void renderPreview(GuiGraphics g, int x, int y) {
         List<Cell> cells = cells();
         g.fill(x, y, x + PREVIEW_W, y + PREVIEW_H, 0xFF1E1E1E);
@@ -389,22 +523,118 @@ public class ShapeGeneratorScreen extends Screen {
             int[] v = {c.x(), c.y(), c.z()};
             for (int a = 0; a < 3; a++) { min[a] = Math.min(min[a], v[a]); max[a] = Math.max(max[a], v[a]); }
         }
+        int depth = previewDepth();
+        if (layer >= depth) layer = -1;
+
+        if (view == View.THREE_D) render3D(g, x, y, cells, min[1]);
+        else renderSlice(g, x, y, cells, min, max, depth);
+
+        int iy = y + PREVIEW_H + 24;
+        String layerText = layer < 0 ? I18n.get("effortlessbuilding.screen.all_layers")
+                : I18n.get(view == View.THREE_D ? "effortlessbuilding.screen.up_to_layer" : "effortlessbuilding.screen.layer", layer + 1, depth);
+        g.drawCenteredString(font, layerText, x + 48 + 16 + (PREVIEW_W - 48 - 32) / 2, y + PREVIEW_H + 8, 0xDDDDDD);
+        g.drawString(font, I18n.get("effortlessbuilding.screen.block_count", cells.size()), x, iy, 0xDDDDDD);
+        g.drawString(font, (max[0] - min[0] + 1) + " × " + (max[1] - min[1] + 1) + " × " + (max[2] - min[2] + 1)
+                + " " + I18n.get("effortlessbuilding.screen.dimensions"), x, iy + 11, 0xAAAAAA);
+        if (view == View.THREE_D) {
+            g.drawString(font, I18n.get("effortlessbuilding.screen.drag_to_rotate"), x, iy + 22, 0x777777);
+        } else if (params.sizing() == ShapeParams.Sizing.CLICKS && params.type().resizable()) {
+            g.drawString(font, I18n.get("effortlessbuilding.screen.preview_at_size", params.size()), x, iy + 22, 0x888888);
+        }
+    }
+
+    /** Solid cubes with a light per face direction, depth-tested, rotatable by dragging. */
+    private void render3D(GuiGraphics g, int x, int y, List<Cell> cells, int minY) {
+        updateFaces(cells, minY);
+        float scale = zoom * 0.46f * Math.min(PREVIEW_W, PREVIEW_H) / facesRadius;
+
+        g.enableScissor(x, y, x + PREVIEW_W, y + PREVIEW_H);
+        PoseStack pose = g.pose();
+        pose.pushPose();
+        pose.translate(x + PREVIEW_W / 2f, y + PREVIEW_H / 2f, 100);
+        // World y up = screen up. Depth is squashed (order kept) so the cubes stay between
+        // the panel background (z 0) and tooltips (z 400) at any zoom.
+        pose.scale(scale, -scale, Math.min(scale, 60f / facesRadius));
+        pose.mulPose(Axis.XP.rotationDegrees(pitch));
+        pose.mulPose(Axis.YP.rotationDegrees(yaw));
+        pose.translate(-facesCenter[0], -facesCenter[1], -facesCenter[2]);
+        Matrix4f matrix = pose.last().pose();
+        VertexConsumer buffer = g.bufferSource().getBuffer(RenderType.debugQuads());
+        for (float[] f : faces) {
+            int color = (int) f[12];
+            for (int v = 0; v < 4; v++) buffer.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color);
+        }
+        g.flush();
+        pose.popPose();
+        g.disableScissor();
+    }
+
+    /** Rebuilds the visible-face list when the shape or the shown layers change. */
+    private void updateFaces(List<Cell> cells, int minY) {
+        if (params.equals(facesParams) && layer == facesLayer) return;
+        facesParams = params;
+        facesLayer = layer;
+
+        Set<Cell> shown = new HashSet<>();
+        for (Cell c : cells) if (layer < 0 || c.y() - minY <= layer) shown.add(c);
+
+        float[] lo = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE};
+        float[] hi = {-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        for (Cell c : cells) {
+            float[] v = {c.x(), c.y(), c.z()};
+            for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a] + 1); }
+        }
+        facesCenter = new float[]{(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2};
+        facesRadius = Math.max(1, (float) Math.sqrt(sq(hi[0] - lo[0]) + sq(hi[1] - lo[1]) + sq(hi[2] - lo[2])) / 2);
+
+        // Neighbor offset, brightness, and the four corners of that face on a unit cube
+        int[][] dirs = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+        float[] light = {1f, 0.5f, 0.8f, 0.8f, 0.65f, 0.65f};
+        float[][][] corners = {
+                {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}},
+                {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}},
+                {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}},
+                {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}},
+                {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}},
+                {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}};
+        List<float[]> out = new ArrayList<>();
+        for (Cell c : shown) {
+            boolean topLayer = layer >= 0 && c.y() - minY == layer;
+            float checker = ((c.x() + c.y() + c.z()) & 1) == 1 ? 0.88f : 1f; // alternating shades make blocks countable
+            for (int d = 0; d < 6; d++) {
+                if (shown.contains(new Cell(c.x() + dirs[d][0], c.y() + dirs[d][1], c.z() + dirs[d][2]))) continue;
+                float[] f = new float[13];
+                for (int v = 0; v < 4; v++) {
+                    f[v * 3] = c.x() + corners[d][v][0];
+                    f[v * 3 + 1] = c.y() + corners[d][v][1];
+                    f[v * 3 + 2] = c.z() + corners[d][v][2];
+                }
+                float dim = layer >= 0 && !topLayer ? 0.6f : 1f; // layers below the chosen one are dimmed
+                f[12] = shade(BLOCK_COLOR, light[d] * checker * dim);
+                out.add(f);
+            }
+        }
+        faces = out.toArray(new float[0][]);
+    }
+
+    private static float sq(float v) { return v * v; }
+
+    /** Slice (or projection when all layers) through the chosen plane. */
+    private void renderSlice(GuiGraphics g, int x, int y, List<Cell> cells, int[] min, int[] max, int depth) {
         // Axes of the view: (horizontal, vertical-on-screen, depth)
         int[] axes = switch (view) {
-            case TOP -> new int[]{0, 2, 1};
             case FRONT -> new int[]{0, 1, 2};
             case SIDE -> new int[]{2, 1, 0};
+            default -> new int[]{0, 2, 1};
         };
         boolean flipVertical = view != View.TOP; // y up on screen
         int spanU = max[axes[0]] - min[axes[0]] + 1, spanV = max[axes[1]] - min[axes[1]] + 1;
-        int depth = max[axes[2]] - min[axes[2]] + 1;
-        if (layer >= depth) layer = -1;
         int scale = Math.max(1, Math.min((PREVIEW_W - 4) / spanU, (PREVIEW_H - 4) / spanV));
         int ox = x + (PREVIEW_W - spanU * scale) / 2, oy = y + (PREVIEW_H - spanV * scale) / 2;
 
         // Nearest-to-viewer depth per column (projection), or the chosen slice
         int[][] top = new int[spanU][spanV];
-        for (int[] col : top) java.util.Arrays.fill(col, Integer.MIN_VALUE);
+        for (int[] col : top) Arrays.fill(col, Integer.MIN_VALUE);
         for (Cell c : cells) {
             int[] v = {c.x(), c.y(), c.z()};
             int d = v[axes[2]] - min[axes[2]];
@@ -427,28 +657,19 @@ public class ShapeGeneratorScreen extends Screen {
                 } else {
                     float light = layer >= 0 ? 1f : 0.55f + 0.45f * (d + 1) / depth;
                     if (((u + w + d) & 1) == 1) light *= 0.85f; // alternating shades make blocks countable
-                    color = shade(0xE8A33D, light);
+                    color = shade(BLOCK_COLOR, light);
                 }
                 g.fill(ox + u * scale, oy + sy * scale, ox + (u + 1) * scale - (scale > 3 ? 1 : 0),
                         oy + (sy + 1) * scale - (scale > 3 ? 1 : 0), color);
             }
         }
-
-        int iy = y + PREVIEW_H + 24;
-        String layerText = layer < 0 ? I18n.get("effortlessbuilding.screen.all_layers") : I18n.get("effortlessbuilding.screen.layer", layer + 1, depth);
-        g.drawCenteredString(font, layerText, x + 48 + 16 + (PREVIEW_W - 48 - 32) / 2, y + PREVIEW_H + 8, 0xDDDDDD);
-        g.drawString(font, I18n.get("effortlessbuilding.screen.block_count", cells.size()), x, iy, 0xDDDDDD);
-        g.drawString(font, (max[0] - min[0] + 1) + " × " + (max[1] - min[1] + 1) + " × " + (max[2] - min[2] + 1)
-                + " " + I18n.get("effortlessbuilding.screen.dimensions"), x, iy + 11, 0xAAAAAA);
-        if (params.sizing() == ShapeParams.Sizing.CLICKS && params.type().resizable()) {
-            g.drawString(font, I18n.get("effortlessbuilding.screen.preview_at_size", params.size()), x, iy + 22, 0x888888);
-        }
     }
 
+    /** Number of layers the ◀ ▶ buttons step through: height in 3D and top view, else the view's depth. */
     private int previewDepth() {
         List<Cell> cells = cells();
         if (cells.isEmpty()) return 0;
-        int axis = switch (view) { case TOP -> 1; case FRONT -> 2; case SIDE -> 0; };
+        int axis = switch (view) { case FRONT -> 2; case SIDE -> 0; default -> 1; };
         int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
         for (Cell c : cells) {
             int v = axis == 0 ? c.x() : axis == 1 ? c.y() : c.z();
@@ -462,9 +683,7 @@ public class ShapeGeneratorScreen extends Screen {
         if (!params.equals(previewParams)) {
             int maxAxis = minecraft != null && minecraft.player != null
                     ? ServerConfig.INSTANCE.getMaxBlocksPerAxis(minecraft.player) : 1000;
-            previewCells = params.type() == ShapeType.SCHEMATIC
-                    ? SchematicLibrary.cells(params.schematic(), maxAxis)
-                    : ShapeGenerator.generate(params, maxAxis);
+            previewCells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
             previewParams = params;
         }
         return previewCells;

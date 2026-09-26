@@ -54,9 +54,13 @@ public final class SchematicLibrary {
     /**
      * Block offsets of the named schematic: x/z centered on its footprint, y = 0 at its bottom,
      * sorted bottom layer first. Empty when the file is missing or unreadable.
-     *
-     * @param maxAxis blocks further than this from the anchor along any axis are dropped
+     * The size limit is applied by {@link ShapeGenerator}.
      */
+    public static List<Cell> cells(String name) {
+        return cells(name, Integer.MAX_VALUE);
+    }
+
+    /** Like {@link #cells(String)}, dropping blocks further than {@code maxAxis} from the anchor along any axis. */
     public static synchronized List<Cell> cells(String name, int maxAxis) {
         Path file = find(name);
         if (file == null) return List.of();

@@ -76,6 +76,19 @@ public final class ShapeTemplateStorage {
         JsonObject values = new JsonObject();
         p.values().forEach(values::addProperty);
         o.add("values", values);
+        if (!p.parts().isEmpty()) {
+            JsonArray parts = new JsonArray();
+            for (ShapeParams.Part part : p.parts()) {
+                JsonObject po = new JsonObject();
+                po.add("shape", toJson(part.shape()));
+                po.addProperty("operation", part.operation().name());
+                po.addProperty("x", part.x());
+                po.addProperty("y", part.y());
+                po.addProperty("z", part.z());
+                parts.add(po);
+            }
+            o.add("parts", parts);
+        }
         return o;
     }
 
@@ -86,6 +99,16 @@ public final class ShapeTemplateStorage {
             if (o.has("values")) {
                 for (var e : o.getAsJsonObject("values").entrySet()) values.put(e.getKey(), e.getValue().getAsDouble());
             }
+            List<ShapeParams.Part> parts = new ArrayList<>();
+            if (o.has("parts")) {
+                for (JsonElement e : o.getAsJsonArray("parts")) {
+                    JsonObject po = e.getAsJsonObject();
+                    ShapeParams shape = fromJson(po.getAsJsonObject("shape"));
+                    if (shape == null) continue;
+                    parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.valueOf(po.get("operation").getAsString()),
+                            po.get("x").getAsInt(), po.get("y").getAsInt(), po.get("z").getAsInt()));
+                }
+            }
             return new ShapeParams(
                     ShapeType.valueOf(o.get("type").getAsString()),
                     o.get("size").getAsInt(),
@@ -93,7 +116,8 @@ public final class ShapeTemplateStorage {
                     ShapeParams.Orientation.valueOf(o.get("orientation").getAsString()),
                     o.get("hollow").getAsBoolean(),
                     ShapeParams.Sizing.valueOf(o.get("sizing").getAsString()),
-                    o.has("schematic") ? o.get("schematic").getAsString() : "");
+                    o.has("schematic") ? o.get("schematic").getAsString() : "",
+                    parts);
         } catch (RuntimeException e) {
             return null;
         }

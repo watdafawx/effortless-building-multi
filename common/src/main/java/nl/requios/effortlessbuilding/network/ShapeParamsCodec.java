@@ -5,7 +5,9 @@ import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.shape.ShapeType;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -22,6 +24,33 @@ public final class ShapeParamsCodec {
     public static void write(FriendlyByteBuf buf, @Nullable ShapeParams p) {
         buf.writeBoolean(p != null);
         if (p == null) return;
+        writeShape(buf, p);
+        buf.writeVarInt(p.parts().size());
+        for (ShapeParams.Part part : p.parts()) {
+            writeShape(buf, part.shape());
+            buf.writeVarInt(part.operation().ordinal());
+            buf.writeVarInt(part.x());
+            buf.writeVarInt(part.y());
+            buf.writeVarInt(part.z());
+        }
+    }
+
+    public static @Nullable ShapeParams read(FriendlyByteBuf buf) {
+        if (!buf.readBoolean()) return null;
+        ShapeParams shape = readShape(buf);
+        int count = buf.readVarInt();
+        if (count < 0 || count > ShapeParams.MAX_PARTS) throw new IllegalArgumentException("Too many shape parts: " + count);
+        List<ShapeParams.Part> parts = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            ShapeParams partShape = readShape(buf);
+            ShapeParams.Operation op = byOrdinal(ShapeParams.Operation.values(), buf.readVarInt());
+            parts.add(new ShapeParams.Part(partShape, op, buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
+        }
+        return shape.withParts(parts);
+    }
+
+    /** One shape without its parts. */
+    private static void writeShape(FriendlyByteBuf buf, ShapeParams p) {
         buf.writeVarInt(p.type().ordinal());
         buf.writeVarInt(p.size());
         buf.writeVarInt(p.values().size());
@@ -35,8 +64,7 @@ public final class ShapeParamsCodec {
         buf.writeUtf(p.schematic(), MAX_STRING);
     }
 
-    public static @Nullable ShapeParams read(FriendlyByteBuf buf) {
-        if (!buf.readBoolean()) return null;
+    private static ShapeParams readShape(FriendlyByteBuf buf) {
         ShapeType type = byOrdinal(ShapeType.values(), buf.readVarInt());
         int size = buf.readVarInt();
         int count = buf.readVarInt();

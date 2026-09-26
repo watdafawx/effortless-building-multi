@@ -98,10 +98,7 @@ public class ShapeMode extends BaseBuildMode {
 
     private synchronized List<Cell> cells(ShapeParams params, int maxAxis) {
         if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis) {
-            cachedCells = switch (params.type()) {
-                case SCHEMATIC -> SchematicLibrary.cells(params.schematic(), maxAxis);
-                default -> ShapeGenerator.generate(params, maxAxis);
-            };
+            cachedCells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
             cachedParams = params;
             cachedAxis = maxAxis;
         }

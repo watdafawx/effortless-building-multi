@@ -35,7 +35,8 @@ public enum ShapeType {
             ParamSpec.length("thickness", 2, 1),
             ParamSpec.length("depth", 3, 1))),
     HELIX(6, false, ShapeParams.Orientation.FLAT, List.of(
-            ParamSpec.length("inner_radius", 1, 0),
+            ParamSpec.length("pole_radius", 1, 0),
+            ParamSpec.length("inner_radius", 2, 0),
             ParamSpec.length("height", 16, 1),
             ParamSpec.ratio("turns", 2, 0.25, 32),
             ParamSpec.length("thickness", 1, 1))),
@@ -54,6 +55,31 @@ public enum ShapeType {
     CONE(8, true, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.length("height", 12, 1),
             ParamSpec.count("sides", 0, 0, 64))),
+    PYRAMID(8, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("height", 9, 1))),
+    /** Paraboloid dish opening upward. */
+    BOWL(8, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("depth", 4, 1),
+            ParamSpec.length("thickness", 1, 1))),
+    /** Rim, spokes and hub. */
+    WHEEL(10, false, ShapeParams.Orientation.UPRIGHT_NS, List.of(
+            ParamSpec.length("wheel_rim", 2, 1),
+            ParamSpec.count("spokes", 6, 2, 32),
+            ParamSpec.length("spoke_width", 1, 1),
+            ParamSpec.length("hub_size", 2, 0),
+            ParamSpec.length("thickness", 1, 1))),
+    /** Round or polygonal tower wall topped with battlements. */
+    TOWER(6, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("height", 14, 1),
+            ParamSpec.count("sides", 0, 0, 64),
+            ParamSpec.length("wall", 1, 1),
+            ParamSpec.length("battlement", 1, 0))),
+    /** Flat spiral with one or more arms, like a galaxy or a maze path. */
+    SPIRAL(10, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.ratio("turns", 2, 0.25, 16),
+            ParamSpec.count("arms", 2, 1, 12),
+            ParamSpec.length("arm_width", 1, 1),
+            ParamSpec.length("height", 1, 1))),
     /** Positions of a .schem file; no parameters and a fixed size. */
     SCHEMATIC(0, false, ShapeParams.Orientation.FLAT, List.of());
 

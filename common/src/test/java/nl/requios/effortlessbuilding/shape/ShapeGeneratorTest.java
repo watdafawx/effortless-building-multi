@@ -58,7 +58,7 @@ class ShapeGeneratorTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ShapeType.class, names = {"TORUS", "ELLIPSOID", "CONE", "PRISM", "STAR", "GEAR"})
+    @EnumSource(value = ShapeType.class, names = {"TORUS", "ELLIPSOID", "CONE", "PRISM", "STAR", "GEAR", "PYRAMID"})
     void hollowIsASubsetWithFewerBlocks(ShapeType type) {
         ShapeParams p = ShapeParams.defaults(type);
         Set<Cell> solid = new HashSet<>(gen(p));
@@ -96,12 +96,136 @@ class ShapeGeneratorTest {
     }
 
     @Test
+    void helixWindsAroundAFullHeightPole() {
+        ShapeParams helix = ShapeParams.defaults(ShapeType.HELIX);
+        Set<Cell> cells = new HashSet<>(gen(helix));
+        for (int y = 0; y < helix.getInt("height"); y++) {
+            assertTrue(cells.contains(new Cell(0, y, 0)), "pole at y " + y);
+        }
+        Set<Cell> noPole = new HashSet<>(gen(helix.with("pole_radius", 0)));
+        assertFalse(noPole.contains(new Cell(0, 5, 0)), "no pole when its radius is 0");
+    }
+
+    @Test
+    void spiralArmsAreUnbroken() {
+        // Every arm block touches another arm block, so the path can be walked
+        Set<Cell> cells = new HashSet<>(gen(ShapeParams.defaults(ShapeType.SPIRAL)));
+        for (Cell c : cells) {
+            boolean touches = false;
+            for (int dx = -1; dx <= 1 && !touches; dx++)
+                for (int dz = -1; dz <= 1 && !touches; dz++)
+                    touches = (dx != 0 || dz != 0) && cells.contains(new Cell(c.x() + dx, c.y(), c.z() + dz));
+            assertTrue(touches, "isolated block " + c);
+        }
+    }
+
+    @Test
     void archStandsUprightWithAnOpening() {
         ShapeParams arch = ShapeParams.defaults(ShapeType.ARCH);
         Set<Cell> cells = new HashSet<>(gen(arch));
         assertFalse(cells.contains(new Cell(0, 0, 0)), "doorway at the base center is open");
         assertTrue(cells.contains(new Cell(arch.size(), 0, 0)), "arch foot");
         assertTrue(cells.contains(new Cell(0, arch.size(), 0)), "arch crown");
+    }
+
+    @Test
+    void pyramidNarrowsToAPoint() {
+        ShapeParams pyramid = ShapeParams.defaults(ShapeType.PYRAMID);
+        List<Cell> cells = gen(pyramid);
+        int top = pyramid.getInt("height") - 1;
+        assertEquals(List.of(new Cell(0, top, 0)), cells.stream().filter(c -> c.y() == top).toList());
+        assertEquals((2 * pyramid.size() + 1) * (2 * pyramid.size() + 1), cells.stream().filter(c -> c.y() == 0).count());
+    }
+
+    @Test
+    void towerHasBattlementsAboveTheWall() {
+        ShapeParams tower = ShapeParams.defaults(ShapeType.TOWER);
+        List<Cell> cells = gen(tower);
+        int wallTop = tower.getInt("height");
+        long merlonBlocks = cells.stream().filter(c -> c.y() == wallTop).count();
+        long wallRing = cells.stream().filter(c -> c.y() == 0).count();
+        assertTrue(merlonBlocks > wallRing / 4 && merlonBlocks < wallRing * 3 / 4, "about half the ring has merlons");
+        assertFalse(new HashSet<>(cells).contains(new Cell(0, 0, 0)), "tower is open inside");
+    }
+
+    @Test
+    void wheelHasHubRimAndGaps() {
+        ShapeParams wheel = ShapeParams.defaults(ShapeType.WHEEL).withOrientation(ShapeParams.Orientation.FLAT);
+        Set<Cell> cells = new HashSet<>(gen(wheel));
+        assertTrue(cells.contains(new Cell(0, 0, 0)), "hub");
+        assertTrue(cells.contains(new Cell(wheel.size(), 0, 0)), "rim");
+        int filledInside = 0, inside = 0;
+        for (int x = -5; x <= 5; x++) for (int z = -5; z <= 5; z++) {
+            if (Math.hypot(x, z) < 4 || Math.hypot(x, z) > 6) continue;
+            inside++;
+            if (cells.contains(new Cell(x, 0, z))) filledInside++;
+        }
+        assertTrue(filledInside > 0 && filledInside < inside, "spokes with gaps between them");
+    }
+
+    @Test
+    void bowlRimIsHigherThanItsCenter() {
+        ShapeParams bowl = ShapeParams.defaults(ShapeType.BOWL);
+        Set<Cell> cells = new HashSet<>(gen(bowl));
+        assertTrue(cells.contains(new Cell(0, 0, 0)), "bottom center");
+        assertTrue(cells.contains(new Cell(bowl.size(), bowl.getInt("depth"), 0)), "rim at full depth");
+        assertFalse(cells.contains(new Cell(0, bowl.getInt("depth"), 0)), "open above the center");
+    }
+
+    @Test
+    void spiralArmsLeaveGapsBetweenThem() {
+        ShapeParams spiral = ShapeParams.defaults(ShapeType.SPIRAL);
+        long cells = gen(spiral).size();
+        long disc = gen(ShapeParams.defaults(ShapeType.PRISM).with("sides", 64).withSize(spiral.size()).with("height", 1)).size();
+        assertTrue(cells > disc / 8 && cells < disc * 3 / 4, "spiral covers part of its disc: " + cells + " of " + disc);
+    }
+
+    // ---- combining parts ----------------------------------------------------
+
+    private static ShapeParams box(int half, int height) {
+        return ShapeParams.defaults(ShapeType.PRISM).with("sides", 4).with("rotation", 0.5)
+                .withSize(half).with("height", height);
+    }
+
+    private static ShapeParams combine(ShapeParams.Operation op, int dx) {
+        return box(3, 1).withParts(List.of(new ShapeParams.Part(box(3, 1), op, dx, 0, 0)));
+    }
+
+    @Test
+    void uniteSubtractIntersectExclude() {
+        int square = gen(box(3, 1)).size();
+        int side = (int) Math.round(Math.sqrt(square));
+        int overlap = (side - 2) * side; // two squares shifted 2 blocks overlap in side-2 columns
+        assertEquals(2 * square - overlap, gen(combine(ShapeParams.Operation.UNITE, 2)).size());
+        assertEquals(square - overlap, gen(combine(ShapeParams.Operation.SUBTRACT, 2)).size());
+        assertEquals(overlap, gen(combine(ShapeParams.Operation.INTERSECT, 2)).size());
+        assertEquals(2 * (square - overlap), gen(combine(ShapeParams.Operation.EXCLUDE, 2)).size());
+    }
+
+    @Test
+    void subtractingASmallerCylinderHollowsATube() {
+        ShapeParams tube = ShapeParams.defaults(ShapeType.CONE).with("sides", 0).with("height", 256).withSize(6)
+                .withParts(List.of(new ShapeParams.Part(
+                        ShapeParams.defaults(ShapeType.CONE).with("sides", 0).with("height", 256).withSize(4),
+                        ShapeParams.Operation.SUBTRACT, 0, 0, 0)));
+        Set<Cell> cells = new HashSet<>(gen(tube));
+        assertFalse(cells.contains(new Cell(0, 0, 0)), "center cut out");
+        assertTrue(cells.contains(new Cell(6, 0, 0)), "outer wall kept");
+    }
+
+    @Test
+    void partsScaleWithTheShape() {
+        ShapeParams p = combine(ShapeParams.Operation.UNITE, 2).scaledTo(6);
+        assertEquals(6, p.size());
+        assertEquals(6, p.parts().getFirst().shape().size());
+        assertEquals(4, p.parts().getFirst().x());
+    }
+
+    @Test
+    void partsCannotNest() {
+        ShapeParams inner = combine(ShapeParams.Operation.UNITE, 1);
+        ShapeParams outer = box(2, 1).withParts(List.of(new ShapeParams.Part(inner, ShapeParams.Operation.UNITE, 0, 0, 0)));
+        assertTrue(outer.parts().getFirst().shape().parts().isEmpty());
     }
 
     @Test
