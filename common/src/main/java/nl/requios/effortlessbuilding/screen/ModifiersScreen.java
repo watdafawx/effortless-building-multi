@@ -164,6 +164,8 @@ public class ModifiersScreen extends Screen {
             selectedIndex = filteredModifiers.size() - 1;
             rebuildWidgets();
         }).bounds(px + 122, addY, 56, 16).build());
+
+
     }
 
     // =========================================================================

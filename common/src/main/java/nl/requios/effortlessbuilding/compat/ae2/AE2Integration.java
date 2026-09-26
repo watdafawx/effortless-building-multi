@@ -392,7 +392,8 @@ public class AE2Integration {
 
             long available = storage.extract(key, Long.MAX_VALUE,
                     appeng.api.config.Actionable.SIMULATE, playerSource(player));
-            return (int) Math.min(available, Integer.MAX_VALUE);
+            return (int) Math.min(available,
+                    nl.requios.effortlessbuilding.config.ServerConfig.INSTANCE.getMaxBlocksPlaced(player));
         }
 
         // ---- extraction (for building — items are consumed, not spawned) ----
@@ -406,7 +407,8 @@ public class AE2Integration {
 
             long extracted = storage.extract(key, count,
                     appeng.api.config.Actionable.MODULATE, playerSource(player));
-            return (int) Math.min(extracted, Integer.MAX_VALUE);
+            return (int) Math.min(extracted,
+                    nl.requios.effortlessbuilding.config.ServerConfig.INSTANCE.getMaxBlocksPlaced(player));
         }
 
         // ---- restock --------------------------------------------------------

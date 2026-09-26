@@ -15,10 +15,10 @@ public enum BuildModeEnum {
     SLOPE_FLOOR("slope_floor", new SlopeFloor(), BuildModeCategoryEnum.DIAGONAL, AllIcons.I_SLOPED_FLOOR, ModeOptions.OptionEnum.RAISED_EDGE),
     CIRCLE("circle", new Circle(), BuildModeCategoryEnum.CIRCULAR, AllIcons.I_CIRCLE, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL),
     CYLINDER("cylinder", new Cylinder(), BuildModeCategoryEnum.CIRCULAR, AllIcons.I_CYLINDER, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL),
-    SPHERE("sphere", new Sphere(), BuildModeCategoryEnum.CIRCULAR, AllIcons.I_SPHERE, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL);
+    SPHERE("sphere", new Sphere(), BuildModeCategoryEnum.CIRCULAR, AllIcons.I_SPHERE, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL),
 //		PYRAMID("pyramid", new Pyramid(), BuildModeCategoryEnum.ROOF),
 //		CONE("cone", new Cone(), BuildModeCategoryEnum.ROOF),
-//		DOME("dome", new Dome(), BuildModeCategoryEnum.ROOF);
+    DOME("dome", new Dome(), BuildModeCategoryEnum.ROOF, AllIcons.I_DOME, ModeOptions.OptionEnum.CIRCLE_START, ModeOptions.OptionEnum.FILL);
 
     private final String name;
     public final IBuildMode instance;
