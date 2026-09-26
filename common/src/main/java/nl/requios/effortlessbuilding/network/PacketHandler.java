@@ -141,6 +141,10 @@ public class PacketHandler {
         BuildSettings.ReplaceMode replaceMode = packet.replaceMode();
 
         Map<BlockPos, UndoManager.BlockChange> undoChanges = new LinkedHashMap<>();
+        // Per item, how many placed blocks were paid from the AE2 network (refunded there on undo)
+        Map<Item, Integer> networkDebit = new HashMap<>();
+        // Tool interactions and fluids are undone without moving block items
+        boolean paidWithItems = true;
 
         int placed = 0;
         if (held.getItem() instanceof RandomizerToolItem) {
@@ -152,6 +156,8 @@ public class PacketHandler {
             }
 
             Map<Item, Integer> available = new HashMap<>();
+            Map<Item, Integer> inventoryCounts = new HashMap<>();
+            Map<Item, Integer> networkExtracted = new HashMap<>();
             for (var requirement : required.entrySet()) {
                 if (creative) {
                     available.put(requirement.getKey(), Integer.MAX_VALUE);
@@ -160,6 +166,8 @@ public class PacketHandler {
                     int networkNeeded = Math.max(0, requirement.getValue() - inventoryCount);
                     int fromNetwork = InventoryHelper.supplementFromNetwork(
                             player, requirement.getKey(), networkNeeded);
+                    inventoryCounts.put(requirement.getKey(), inventoryCount);
+                    networkExtracted.put(requirement.getKey(), fromNetwork);
                     available.put(requirement.getKey(), inventoryCount + fromNetwork);
                 }
             }
@@ -180,7 +188,7 @@ public class PacketHandler {
                             : player.getMainHandItem();
                     var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos), player, toolForDrops);
                     for (ItemStack drop : drops) {
-                        InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                        InventoryHelper.giveOrDropItems(player, drop);
                     }
                     if (ServerConfig.INSTANCE.survivalUseDurability) {
                         InventoryHelper.damageCorrectTool(player, oldState);
@@ -202,8 +210,12 @@ public class PacketHandler {
             }
 
             if (!creative) {
-                for (var usage : used.entrySet()) {
-                    InventoryHelper.consumeItems(player, usage.getKey(), usage.getValue());
+                // Every requirement is settled, including ones that ended up unused, so
+                // unneeded network items go back to the network
+                for (Item item : required.keySet()) {
+                    int fromNetwork = InventoryHelper.settleBuild(player, item, inventoryCounts.get(item),
+                            networkExtracted.get(item), used.getOrDefault(item, 0));
+                    if (fromNetwork > 0) networkDebit.put(item, fromNetwork);
                 }
             }
         } else if (held.getItem() instanceof BlockItem blockItem) {
@@ -215,17 +227,19 @@ public class PacketHandler {
 
             // Determine how many blocks we can afford BEFORE placing any
             int available;
+            int inventoryCount = 0;
+            int ae2Extracted = 0;
             if (creative) {
                 available = Integer.MAX_VALUE;
             } else if (hasStackData) {
                 available = held.getCount();
             } else {
-                int inventoryCount = InventoryHelper.findTotalItemsInInventory(player, heldItem);
+                inventoryCount = InventoryHelper.findTotalItemsInInventory(player, heldItem);
                 int validCount = blockSet.validEntries().size();
 
-                // Pre-extract from AE2 what exceeds inventory (digital — no ItemStack created)
+                // Pre-extract from AE2 what exceeds inventory (digital — no ItemStack created).
+                // settleBuild below returns whatever placement did not use.
                 int neededFromNetwork = Math.max(0, validCount - inventoryCount);
-                int ae2Extracted = 0;
                 if (neededFromNetwork > 0) {
                     ae2Extracted = InventoryHelper.supplementFromNetwork(player, heldItem, neededFromNetwork);
                 }
@@ -248,7 +262,7 @@ public class PacketHandler {
                         var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos),
                                 player, toolForDrops);
                         for (ItemStack drop : drops) {
-                            InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                            InventoryHelper.giveOrDropItems(player, drop);
                         }
                         if (ServerConfig.INSTANCE.survivalUseDurability) {
                             InventoryHelper.damageCorrectTool(player, oldState);
@@ -271,17 +285,19 @@ public class PacketHandler {
                 }
             }
 
-            if (!creative && placed > 0) {
+            if (!creative) {
                 if (hasStackData) {
                     held.shrink(placed);
                 } else {
-                    // Consume from player inventory (AE2 was already debited before placement)
-                    InventoryHelper.consumeItems(player, heldItem, placed);
-                    // Restock held stack from AE2 network (e.g. top-up from 4 → 64)
-                    InventoryHelper.restockFromNetwork(player);
+                    // Pay from inventory first; unused network items go back to the network
+                    int fromNetwork = InventoryHelper.settleBuild(player, heldItem, inventoryCount, ae2Extracted, placed);
+                    if (fromNetwork > 0) networkDebit.put(heldItem, fromNetwork);
+                    // Restock held stack from AE2 network (e.g. top-up from 4 → 64, or refill an emptied hand)
+                    if (placed > 0) InventoryHelper.restockFromNetwork(player, heldItem);
                 }
             }
         } else if (held.getItem() instanceof BucketItem bucketItem) {
+            paidWithItems = false;
             var fluid = ((BucketItemAccessor) bucketItem).effortlessbuilding$getFluid();
             if (!fluid.isSame(Fluids.EMPTY)) {
                 BlockState fluidState = fluid.defaultFluidState().createLegacyBlock();
@@ -300,7 +316,7 @@ public class PacketHandler {
                             var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos),
                                     player, toolForDrops);
                             for (ItemStack drop : drops) {
-                                InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                                InventoryHelper.giveOrDropItems(player, drop);
                             }
                             if (ServerConfig.INSTANCE.survivalUseDurability) {
                                 InventoryHelper.damageCorrectTool(player, oldState);
@@ -318,6 +334,7 @@ public class PacketHandler {
                 }
             }
         } else if (held.getItem() instanceof DiggerItem) {
+            paidWithItems = false;
             // Tool interactions: axe strips logs, shovel makes paths, hoe tills dirt, etc.
             // Calls useOn for each position — works for vanilla and modded tools.
             net.minecraft.world.level.Level worldLevel = level;
@@ -344,9 +361,20 @@ public class PacketHandler {
         }
 
         if (!undoChanges.isEmpty()) {
-            UndoManager.recordOperation(player, level.dimension(), undoChanges);
+            if (paidWithItems) {
+                UndoManager.recordOperation(player, level.dimension(), undoChanges, networkDebit);
+            } else {
+                UndoManager.recordFreeOperation(player, level.dimension(), undoChanges);
+            }
             PlacedBlockTracker.trackAll(player.getUUID(), level.dimension(), undoChanges.keySet());
         }
+        networkDebit.keySet().forEach(item -> pushAE2Count(player, item));
+    }
+
+    /** Sends the player's current network count for {@code item}, so the preview does not show a stale number. */
+    private static void pushAE2Count(ServerPlayer player, Item item) {
+        if (item == net.minecraft.world.item.Items.AIR || !AE2Integration.hasLinkedTerminal(player)) return;
+        sendToClient(player, new SyncAE2CountS2CPacket(item, AE2Integration.countOnNetwork(player, item)));
     }
 
     /**
@@ -418,7 +446,7 @@ public class PacketHandler {
                 var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos),
                         player, toolForDrops);
                 for (ItemStack drop : drops) {
-                    InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                    InventoryHelper.giveOrDropItems(player, drop);
                 }
                 // Use tool durability if enabled
                 if (ServerConfig.INSTANCE.survivalUseDurability) {
@@ -433,7 +461,7 @@ public class PacketHandler {
         }
 
         if (!undoChanges.isEmpty()) {
-            UndoManager.recordOperation(player, level.dimension(), undoChanges);
+            UndoManager.recordOperation(player, level.dimension(), undoChanges, Map.of());
         }
     }
 
@@ -442,6 +470,7 @@ public class PacketHandler {
      */
     public static void handleUndo(ServerPlayer player) {
         int count = UndoManager.undo(player);
+        pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
             player.displayClientMessage(
                     Component.translatable("effortlessbuilding.message.undo", count), true);
@@ -456,6 +485,7 @@ public class PacketHandler {
      */
     public static void handleRedo(ServerPlayer player) {
         int count = UndoManager.redo(player);
+        pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
             player.displayClientMessage(
                     Component.translatable("effortlessbuilding.message.redo", count), true);

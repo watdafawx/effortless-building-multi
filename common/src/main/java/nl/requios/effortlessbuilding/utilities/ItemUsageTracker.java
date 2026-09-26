@@ -111,13 +111,12 @@ public class ItemUsageTracker {
         if (networkCount > 0) {
             fromNetwork.put(heldItem, networkCount);
         } else if (hasLinkedTerminal && isClient) {
-            int cached = AE2Integration.getCachedCount(heldItem);
-            if (cached >= 0) {
-                fromNetwork.put(heldItem, cached);
-            } else {
+            if (AE2Integration.shouldQueryCount(heldItem)) {
                 PacketHandler.sendToServer(new QueryAE2CountC2SPacket(heldItem));
-                fromNetwork.put(heldItem, Math.max(0, count - have));
             }
+            int cached = AE2Integration.getCachedCount(heldItem);
+            // Until the first answer arrives, assume the network can cover the rest
+            fromNetwork.put(heldItem, cached >= 0 ? cached : Math.max(0, count - have));
         }
 
         // Total available = inventory + AE2 (use long to avoid overflow with huge AE2 cells)

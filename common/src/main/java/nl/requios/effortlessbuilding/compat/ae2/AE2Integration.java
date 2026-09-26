@@ -94,15 +94,32 @@ public class AE2Integration {
     }
 
     /**
-     * Refills the player's main-hand stack from the ME network up to its max stack size.
-     * Items are physically added to the held stack.
+     * Inserts {@code count} of {@code item} into the player's ME network, e.g. to refund
+     * building material that was taken from it.
+     *
+     * @return number of items the network accepted (0 if AE2 or a terminal is missing).
+     */
+    public static int insertIntoNetwork(Player player, Item item, int count) {
+        if (!available || bridge == null || count <= 0) return 0;
+        try {
+            return bridge.insertItems(player, item, count);
+        } catch (Exception e) {
+            Constants.LOG.warn("[AE2] insertIntoNetwork failed", e);
+            return 0;
+        }
+    }
+
+    /**
+     * Refills the player's main-hand stack of {@code item} from the ME network up to its max
+     * stack size. An empty main hand is refilled too (the build may have used the whole stack);
+     * a hand holding anything else is left alone.
      *
      * @return number of items restocked.
      */
-    public static int restockMainHand(Player player) {
+    public static int restockMainHand(Player player, Item item) {
         if (!available || bridge == null) return 0;
         try {
-            return bridge.restockMainHand(player);
+            return bridge.restockMainHand(player, item);
         } catch (Exception e) {
             Constants.LOG.warn("[AE2] restockMainHand failed", e);
             return 0;
@@ -148,18 +165,42 @@ public class AE2Integration {
     }
 
     // ---- Server-synced count cache (client-side preview) -------------------
-    // The server sends SyncAE2CountS2CPacket to populate this.
+    // The server sends SyncAE2CountS2CPacket to populate this: on request, and after
+    // every build/undo/redo that touched the network.
 
-    private static final Map<Item, Integer> cachedCounts = new HashMap<>();
+    /** Re-query a cached count after this long, so changes made elsewhere on the network show up. */
+    private static final long REFRESH_MS = 2000;
+    /** Re-send a query after this long if the answer never came. */
+    private static final long QUERY_TIMEOUT_MS = 5000;
+
+    private record CachedCount(int count, long time) {}
+    private static final Map<Item, CachedCount> cachedCounts = new HashMap<>();
+    private static final Map<Item, Long> pendingQueries = new HashMap<>();
 
     /** Called on the client when SyncAE2CountS2CPacket arrives. */
     public static void setCachedCount(Item item, int count) {
-        cachedCounts.put(item, count);
+        cachedCounts.put(item, new CachedCount(count, System.currentTimeMillis()));
+        pendingQueries.remove(item);
     }
 
     /** Returns the last server-synced count, or -1 if not yet received. */
     public static int getCachedCount(Item item) {
-        return cachedCounts.getOrDefault(item, -1);
+        CachedCount cached = cachedCounts.get(item);
+        return cached == null ? -1 : cached.count();
+    }
+
+    /**
+     * Client: whether a count query should be sent for {@code item} now. True at most once per
+     * refresh interval; marks the query as in flight so it is not re-sent every frame.
+     */
+    public static boolean shouldQueryCount(Item item) {
+        long now = System.currentTimeMillis();
+        Long sent = pendingQueries.get(item);
+        if (sent != null && now - sent < QUERY_TIMEOUT_MS) return false;
+        CachedCount cached = cachedCounts.get(item);
+        if (sent == null && cached != null && now - cached.time() < REFRESH_MS) return false;
+        pendingQueries.put(item, now);
+        return true;
     }
 
     // -------------------------------------------------------------------------
@@ -405,20 +446,35 @@ public class AE2Integration {
             appeng.api.storage.MEStorage storage = getStorage(grid);
             appeng.api.stacks.AEItemKey key = appeng.api.stacks.AEItemKey.of(item);
 
-            long extracted = storage.extract(key, count,
+            // Never clamp after MODULATE: whatever was extracted is gone from the network
+            // and the caller must account for it. The request is an int, so the cast is safe.
+            return (int) storage.extract(key, count,
                     appeng.api.config.Actionable.MODULATE, playerSource(player));
-            return (int) Math.min(extracted,
-                    nl.requios.effortlessbuilding.config.ServerConfig.INSTANCE.getMaxBlocksPlaced(player));
+        }
+
+        // ---- insertion (refunds) --------------------------------------------
+
+        int insertItems(Player player, Item item, int count) {
+            appeng.api.networking.IGrid grid = findGrid(player);
+            if (grid == null) return 0;
+
+            appeng.api.storage.MEStorage storage = getStorage(grid);
+            appeng.api.stacks.AEItemKey key = appeng.api.stacks.AEItemKey.of(item);
+            return (int) storage.insert(key, count,
+                    appeng.api.config.Actionable.MODULATE, playerSource(player));
         }
 
         // ---- restock --------------------------------------------------------
 
-        int restockMainHand(Player player) {
+        int restockMainHand(Player player, Item item) {
             ItemStack held = player.getMainHandItem();
-            if (held.isEmpty()) return 0;
+            // An empty stack reports Items.AIR, so work from the item itself.
+            // Only refill plain stacks: a stack with components must not gain plain copies.
+            boolean emptyHand = held.isEmpty();
+            if (!emptyHand && (!held.is(item) || !held.getComponentsPatch().isEmpty())) return 0;
 
-            int maxStack = held.getMaxStackSize();
-            int currentCount = held.getCount();
+            int maxStack = new ItemStack(item).getMaxStackSize();
+            int currentCount = emptyHand ? 0 : held.getCount();
             int needed = maxStack - currentCount;
             if (needed <= 0) return 0;
 
@@ -426,7 +482,7 @@ public class AE2Integration {
             if (grid == null) return 0;
 
             appeng.api.storage.MEStorage storage = getStorage(grid);
-            appeng.api.stacks.AEItemKey key = appeng.api.stacks.AEItemKey.of(held);
+            appeng.api.stacks.AEItemKey key = appeng.api.stacks.AEItemKey.of(item);
 
             // Extract from network
             long extracted = storage.extract(key, needed,
@@ -434,7 +490,12 @@ public class AE2Integration {
 
             if (extracted > 0) {
                 // Grow the held stack directly — avoids inventory slot ambiguity
-                held.grow((int) extracted);
+                if (emptyHand) {
+                    held = new ItemStack(item, (int) extracted);
+                    player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, held);
+                } else {
+                    held.grow((int) extracted);
+                }
                 // Safety clamp: if we somehow overshot, drop the excess
                 int over = held.getCount() - maxStack;
                 if (over > 0) {
