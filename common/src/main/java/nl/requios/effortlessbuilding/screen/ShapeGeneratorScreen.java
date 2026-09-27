@@ -15,6 +15,7 @@ import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.BuildModes;
 import nl.requios.effortlessbuilding.buildpipeline.BuildPipelineClient;
 import nl.requios.effortlessbuilding.config.ServerConfig;
+import nl.requios.effortlessbuilding.compat.create.CreateGlue;
 import nl.requios.effortlessbuilding.network.BuildModeHintC2SPacket;
 import nl.requios.effortlessbuilding.network.PacketHandler;
 import nl.requios.effortlessbuilding.palette.BlockColorCache;
@@ -230,6 +231,7 @@ public class ShapeGeneratorScreen extends Screen {
                         .bounds(buttonX, y, buttonW, 16).build());
             }));
             for (ShapeType.ParamSpec spec : type.params) {
+                if (hidden(spec)) continue;
                 list.add(new Row(I18n.get(spec.getNameKey()), y -> widgets.addDoubleField(x, y,
                         ScreenWidgets.formatDouble(current().get(spec.key())),
                         v -> setCurrent(current().with(spec.key(), v)), spec.step())));
@@ -267,6 +269,7 @@ public class ShapeGeneratorScreen extends Screen {
                                 () -> { setCurrent(current().withHollow(!current().hollow())); rebuildWidgets(); })));
             }
             for (ShapeType.ParamSpec spec : type.params) {
+                if (hidden(spec)) continue;
                 list.add(new Row(I18n.get(spec.getNameKey()), y -> {
                     if (!spec.options().isEmpty()) {
                         int chosen = current().getInt(spec.key());
@@ -283,6 +286,11 @@ public class ShapeGeneratorScreen extends Screen {
             }
         }
         rows = list;
+    }
+
+    /** Super glue is offered only for the main shape, and only when Create is installed. */
+    private boolean hidden(ShapeType.ParamSpec spec) {
+        return spec.key().equals(ShapeType.SUPER_GLUE) && (editing >= 0 || !CreateGlue.isAvailable());
     }
 
     private void addCycleButton(int x, int y, String label, Runnable cycle) {

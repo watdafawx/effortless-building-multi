@@ -36,6 +36,8 @@ import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import nl.requios.effortlessbuilding.utilities.InventoryHelper;
 import nl.requios.effortlessbuilding.compat.ae2.AE2Integration;
+import nl.requios.effortlessbuilding.compat.create.CreateGlue;
+import nl.requios.effortlessbuilding.shape.ShapeType;
 import nl.requios.effortlessbuilding.utilities.PlacedBlockTracker;
 import nl.requios.effortlessbuilding.utilities.UndoManager;
 import nl.requios.effortlessbuilding.item.RandomizerToolItem;
@@ -367,6 +369,10 @@ public class PacketHandler {
         }
 
         if (!undoChanges.isEmpty()) {
+            // Glue exactly the blocks that were placed, when the shape asks for it
+            if (paidWithItems && packet.shape() != null && packet.shape().getInt(ShapeType.SUPER_GLUE) == 1) {
+                CreateGlue.glue(player, level, undoChanges.keySet());
+            }
             if (paidWithItems) {
                 UndoManager.recordOperation(player, level.dimension(), undoChanges, networkDebit);
             } else {

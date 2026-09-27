@@ -103,10 +103,14 @@ public enum ShapeType {
         all.add(ParamSpec.angle(ROTATE_X));
         all.add(ParamSpec.angle(ROTATE_Y));
         all.add(ParamSpec.angle(ROTATE_Z));
+        // Only used on the main shape, and only offered when Create is installed
+        all.add(ParamSpec.choice(SUPER_GLUE, 0, "off", "on"));
         this.params = List.copyOf(all);
     }
 
     public static final String ROTATE_X = "rotate_x", ROTATE_Y = "rotate_y", ROTATE_Z = "rotate_z";
+    /** Glue the built shape together with Create's super glue (1) or not (0). */
+    public static final String SUPER_GLUE = "super_glue";
 
     public String getNameKey() {
         return "effortlessbuilding.shape." + name().toLowerCase();

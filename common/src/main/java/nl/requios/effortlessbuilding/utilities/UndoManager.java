@@ -10,6 +10,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import nl.requios.effortlessbuilding.Constants;
+import nl.requios.effortlessbuilding.compat.create.CreateGlue;
 
 import java.util.*;
 
@@ -165,6 +166,9 @@ public class UndoManager {
             budget.refundUnspent(player);
             PlacedBlockTracker.trackAll(player.getUUID(), entry.dimension(), restoredPlacements);
         }
+
+        // Super glue laid over this build would otherwise stay behind and glue whatever is built there next
+        CreateGlue.removeWithin(level, entry.changes().keySet());
 
         push(redoStacks.computeIfAbsent(id, k -> new ArrayDeque<>()), entry);
         return restored;

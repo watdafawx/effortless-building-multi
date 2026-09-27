@@ -344,5 +344,9 @@
   "effortlessbuilding.shape.param.body_start": "Body start",
   "effortlessbuilding.shape.param.frame_start": "Frame start",
   "effortlessbuilding.shape.param.inner_start": "Ring start",
-  "effortlessbuilding.shape.param.hub_start": "Hub start"
+  "effortlessbuilding.shape.param.hub_start": "Hub start",
+  "effortlessbuilding.shape.param.super_glue": "Super glue",
+  "effortlessbuilding.shape.param.super_glue.off": "Off",
+  "effortlessbuilding.shape.param.super_glue.on": "Glue it (Create)",
+  "effortlessbuilding.message.out_of_super_glue": "Out of Super Glue: part of the shape was not glued"
 }
