@@ -37,6 +37,7 @@ import nl.requios.effortlessbuilding.utilities.BlockSet;
 import nl.requios.effortlessbuilding.utilities.InventoryHelper;
 import nl.requios.effortlessbuilding.compat.ae2.AE2Integration;
 import nl.requios.effortlessbuilding.compat.create.CreateGlue;
+import nl.requios.effortlessbuilding.utilities.BuildQueue;
 import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.shape.ShapeType;
 import nl.requios.effortlessbuilding.shape.TerrainBlender;
@@ -46,6 +47,8 @@ import nl.requios.effortlessbuilding.item.RandomizerToolItem;
 
 import java.util.LinkedHashMap;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 
@@ -222,7 +225,8 @@ public class PacketHandler {
                         : blockItem.getBlock().getStateForPlacement(ctx);
                 if (state == null) state = blockItem.getBlock().defaultBlockState();
                 state = entry.applyTransforms(state);
-                level.setBlock(pos, state, 3);
+                BlockState placedState = state;
+                BuildQueue.submit(player, () -> level.setBlock(pos, placedState, 3));
                 recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
                 used.merge(item, 1, Integer::sum);
                 placed++;
@@ -297,8 +301,12 @@ public class PacketHandler {
                     if (entry != null) {
                         state = entry.applyTransforms(state);
                     }
-                    level.setBlock(pos, state, 3);
-                    transferBlockItemData(level, player, pos, held);
+                    BlockState placedState = state;
+                    ItemStack placedFrom = held.copyWithCount(1); // the held stack shrinks before a queued step runs
+                    BuildQueue.submit(player, () -> {
+                        level.setBlock(pos, placedState, 3);
+                        transferBlockItemData(level, player, pos, placedFrom);
+                    });
                     recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
                     placed++;
                 }
@@ -342,7 +350,7 @@ public class PacketHandler {
                             }
                         }
 
-                        level.setBlock(pos, fluidState, 3);
+                        BuildQueue.submit(player, () -> level.setBlock(pos, fluidState, 3));
                         recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, fluidState));
                         placed++;
                     }
@@ -382,7 +390,9 @@ public class PacketHandler {
         if (!undoChanges.isEmpty()) {
             // Glue exactly the blocks that were placed, when the shape asks for it
             if (paidWithItems && packet.shape() != null && packet.shape().getInt(ShapeType.SUPER_GLUE) == 1) {
-                CreateGlue.glue(player, level, undoChanges.keySet());
+                // Queued last, so it runs once every block of a gradual build is in place
+                Set<BlockPos> toGlue = new HashSet<>(undoChanges.keySet());
+                BuildQueue.submit(player, () -> CreateGlue.glue(player, level, toGlue));
             }
             if (paidWithItems) {
                 UndoManager.recordOperation(player, level.dimension(), undoChanges, networkDebit);
@@ -480,9 +490,9 @@ public class PacketHandler {
                 if (ServerConfig.INSTANCE.survivalUseDurability) {
                     InventoryHelper.damageCorrectTool(player, oldState);
                 }
-                level.setBlock(pos, airState, 3);
+                BuildQueue.submit(player, () -> level.setBlock(pos, airState, 3));
             } else {
-                level.destroyBlock(pos, false, player);
+                BuildQueue.submit(player, () -> level.destroyBlock(pos, false, player));
             }
             recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, airState));
             broken++;
@@ -497,6 +507,7 @@ public class PacketHandler {
      * Called on the server when an {@link UndoPacket} is received.
      */
     public static void handleUndo(ServerPlayer player) {
+        BuildQueue.finish(player.getUUID()); // a gradual build finishes before it can be undone
         int count = UndoManager.undo(player);
         pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
@@ -512,6 +523,7 @@ public class PacketHandler {
      * Called on the server when a {@link RedoPacket} is received.
      */
     public static void handleRedo(ServerPlayer player) {
+        BuildQueue.finish(player.getUUID());
         int count = UndoManager.redo(player);
         pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {

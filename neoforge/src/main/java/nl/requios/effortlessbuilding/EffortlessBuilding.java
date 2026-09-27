@@ -142,9 +142,14 @@ public class EffortlessBuilding {
                 ModifierServerStorage.savePlayer(serverPlayer.server, serverPlayer.getUUID());
                 ModifierServerStorage.removePlayer(serverPlayer.getUUID());
             }
+            nl.requios.effortlessbuilding.utilities.BuildQueue.finish(event.getEntity().getUUID());
             UndoManager.clearPlayer(event.getEntity().getUUID());
             PlacedBlockTracker.clearPlayer(event.getEntity().getUUID());
         });
+
+        // Gradual building: place queued blocks a batch per tick
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) ->
+                nl.requios.effortlessbuilding.utilities.BuildQueue.tick(event.getServer()));
 
         // Clear all cached data when the server stops (singleplayer world changes)
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> {

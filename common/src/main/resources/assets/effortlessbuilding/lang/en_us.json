@@ -418,5 +418,9 @@
   "effortlessbuilding.screen.anchor_terrain_off": "Terrain: hidden",
   "effortlessbuilding.screen.anchor_terrain_too_big": "Too big to show the terrain as well",
   "effortlessbuilding.screen.anchor_release": "Release",
-  "effortlessbuilding.screen.anchor_none": "Nothing is anchored. Lock a preview first (the anchor button in the radial menu)."
+  "effortlessbuilding.screen.anchor_none": "Nothing is anchored. Lock a preview first (the anchor button in the radial menu).",
+  "effortlessbuilding.config.blocks_per_tick": "Blocks per tick",
+  "effortlessbuilding.config.blocks_per_tick.tooltip": "Big builds are placed this many blocks per server tick, over several ticks, so the server does not freeze. 0 places everything at once.",
+  "effortlessbuilding.message.building": "Building\u2026 %s%% (%s / %s)",
+  "effortlessbuilding.message.build_done": "Done: %s blocks"
 }

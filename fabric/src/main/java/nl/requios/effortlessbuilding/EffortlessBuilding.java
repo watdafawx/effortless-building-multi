@@ -97,9 +97,14 @@ public class EffortlessBuilding implements ModInitializer {
             ServerPlayer player = handler.getPlayer();
             ModifierServerStorage.savePlayer(server, player.getUUID());
             ModifierServerStorage.removePlayer(player.getUUID());
+            nl.requios.effortlessbuilding.utilities.BuildQueue.finish(player.getUUID());
             UndoManager.clearPlayer(player.getUUID());
             PlacedBlockTracker.clearPlayer(player.getUUID());
         });
+
+        // Gradual building: place queued blocks a batch per tick
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
+                nl.requios.effortlessbuilding.utilities.BuildQueue::tick);
 
         // Clear all cached data when the server stops
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
