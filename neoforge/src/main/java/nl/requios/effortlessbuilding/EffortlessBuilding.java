@@ -80,12 +80,22 @@ public class EffortlessBuilding {
                     UndoPacket.TYPE,
                     UndoPacket.STREAM_CODEC,
                     (payload, context) -> context.enqueueWork(() ->
-                            PacketHandler.handleUndo((ServerPlayer) context.player())));
+                            PacketHandler.handleUndo((ServerPlayer) context.player(), payload.steps())));
             registrar.playToServer(
                     RedoPacket.TYPE,
                     RedoPacket.STREAM_CODEC,
                     (payload, context) -> context.enqueueWork(() ->
-                            PacketHandler.handleRedo((ServerPlayer) context.player())));
+                            PacketHandler.handleRedo((ServerPlayer) context.player(), payload.steps())));
+            registrar.playToServer(
+                    nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.TYPE,
+                    nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.STREAM_CODEC,
+                    (payload, context) -> context.enqueueWork(() ->
+                            PacketHandler.handleUndoHistory((ServerPlayer) context.player())));
+            registrar.playToClient(
+                    nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.TYPE,
+                    nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.STREAM_CODEC,
+                    (payload, context) -> context.enqueueWork(() ->
+                            PacketHandler.handleUndoHistoryList(payload)));
             registrar.playToServer(
                     UpdateModifiersC2SPacket.TYPE,
                     UpdateModifiersC2SPacket.STREAM_CODEC,

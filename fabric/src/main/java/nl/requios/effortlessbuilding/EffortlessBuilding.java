@@ -53,6 +53,10 @@ public class EffortlessBuilding implements ModInitializer {
         PayloadTypeRegistry.playC2S().register(BreakBuildModePacket.TYPE, BreakBuildModePacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(UndoPacket.TYPE, UndoPacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(RedoPacket.TYPE, RedoPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.TYPE,
+                nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.TYPE,
+                nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(UpdateModifiersC2SPacket.TYPE, UpdateModifiersC2SPacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(UpdateServerConfigC2SPacket.TYPE, UpdateServerConfigC2SPacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(QueryAE2CountC2SPacket.TYPE, QueryAE2CountC2SPacket.STREAM_CODEC);
@@ -69,9 +73,11 @@ public class EffortlessBuilding implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(BreakBuildModePacket.TYPE, (payload, context) ->
                 context.server().execute(() -> PacketHandler.handleBreakBuildMode(payload, context.player())));
         ServerPlayNetworking.registerGlobalReceiver(UndoPacket.TYPE, (payload, context) ->
-                context.server().execute(() -> PacketHandler.handleUndo(context.player())));
+                context.server().execute(() -> PacketHandler.handleUndo(context.player(), payload.steps())));
         ServerPlayNetworking.registerGlobalReceiver(RedoPacket.TYPE, (payload, context) ->
-                context.server().execute(() -> PacketHandler.handleRedo(context.player())));
+                context.server().execute(() -> PacketHandler.handleRedo(context.player(), payload.steps())));
+        ServerPlayNetworking.registerGlobalReceiver(nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.TYPE, (payload, context) ->
+                context.server().execute(() -> PacketHandler.handleUndoHistory(context.player())));
         ServerPlayNetworking.registerGlobalReceiver(UpdateModifiersC2SPacket.TYPE, (payload, context) ->
                 context.server().execute(() -> PacketHandler.handleUpdateModifiers(payload, context.player())));
         ServerPlayNetworking.registerGlobalReceiver(UpdateServerConfigC2SPacket.TYPE, (payload, context) ->

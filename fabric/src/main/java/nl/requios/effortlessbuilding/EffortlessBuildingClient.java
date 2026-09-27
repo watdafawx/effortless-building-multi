@@ -65,6 +65,8 @@ public class EffortlessBuildingClient implements ClientModInitializer {
         // Register client-side handler for AE2 count sync
         ClientPlayNetworking.registerGlobalReceiver(SyncAE2CountS2CPacket.TYPE, (payload, context) ->
                 context.client().execute(() -> PacketHandler.handleSyncAE2Count(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.TYPE, (payload, context) ->
+                context.client().execute(() -> PacketHandler.handleUndoHistoryList(payload)));
 
 
         HudRenderCallback.EVENT.register((graphics, tickCounter) ->

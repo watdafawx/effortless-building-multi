@@ -73,4 +73,14 @@ public class FabricNetworkHelper implements INetworkHelper {
         ServerPlayNetworking.send(player, packet);
     }
 
+    @Override
+    public void sendPayloadToServer(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        ClientPlayNetworking.send(payload);
+    }
+
+    @Override
+    public void sendPayloadToClient(ServerPlayer player, net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        ServerPlayNetworking.send(player, payload);
+    }
+
 }

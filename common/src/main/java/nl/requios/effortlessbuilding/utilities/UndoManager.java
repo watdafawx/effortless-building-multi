@@ -40,7 +40,39 @@ public class UndoManager {
      *                     updated as undo refunds them and redo pays again
      */
     public record UndoEntry(ResourceKey<Level> dimension, Map<BlockPos, BlockChange> changes,
-                            boolean free, Map<Item, Integer> networkDebit) {}
+                            boolean free, Map<Item, Integer> networkDebit, long time) {}
+
+    /**
+     * One line of the history screen: the operation's main block, how many blocks it changed,
+     * what it did and how long ago.
+     */
+    public record Summary(Item item, int blocks, Kind kind, long ageSeconds, boolean free) {
+        public enum Kind { PLACED, BROKEN, CHANGED }
+    }
+
+    /** The undo stack (newest first) or the redo stack (next redo first), summarized. */
+    public static List<Summary> history(ServerPlayer player, boolean redo) {
+        Deque<UndoEntry> stack = (redo ? redoStacks : undoStacks).get(player.getUUID());
+        if (stack == null) return List.of();
+        long now = System.currentTimeMillis();
+        List<Summary> out = new ArrayList<>(stack.size());
+        for (UndoEntry entry : stack) {
+            int placed = 0, broken = 0;
+            Map<Item, Integer> counts = new HashMap<>();
+            for (BlockChange change : entry.changes().values()) {
+                Kind kind = Kind.of(change);
+                if (kind == Kind.BREAK) broken++; else if (kind == Kind.PLACE) placed++;
+                BlockState shown = change.newState().isAir() ? change.oldState() : change.newState();
+                Item item = itemOf(shown);
+                if (item != Items.AIR) counts.merge(item, 1, Integer::sum);
+            }
+            Item main = counts.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(Items.AIR);
+            int total = entry.changes().size();
+            Summary.Kind kind = placed == total ? Summary.Kind.PLACED : broken == total ? Summary.Kind.BROKEN : Summary.Kind.CHANGED;
+            out.add(new Summary(main, total, kind, Math.max(0, (now - entry.time()) / 1000), entry.free()));
+        }
+        return out;
+    }
 
     /** How a change is reverted or re-applied, and which items that costs or returns. */
     private enum Kind {
@@ -72,7 +104,7 @@ public class UndoManager {
      */
     public static void recordOperation(ServerPlayer player, ResourceKey<Level> dimension,
                                        Map<BlockPos, BlockChange> changes, Map<Item, Integer> networkDebit) {
-        record(player, new UndoEntry(dimension, changes, player.isCreative(), new HashMap<>(networkDebit)));
+        record(player, new UndoEntry(dimension, changes, player.isCreative(), new HashMap<>(networkDebit), System.currentTimeMillis()));
     }
 
     /**
@@ -81,7 +113,7 @@ public class UndoManager {
      */
     public static void recordFreeOperation(ServerPlayer player, ResourceKey<Level> dimension,
                                            Map<BlockPos, BlockChange> changes) {
-        record(player, new UndoEntry(dimension, changes, true, new HashMap<>()));
+        record(player, new UndoEntry(dimension, changes, true, new HashMap<>(), System.currentTimeMillis()));
     }
 
     private static void record(ServerPlayer player, UndoEntry entry) {

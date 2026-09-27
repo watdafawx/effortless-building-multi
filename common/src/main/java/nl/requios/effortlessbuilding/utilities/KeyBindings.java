@@ -79,7 +79,10 @@ public class KeyBindings {
             "key.effortlessbuilding.anchor_down", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_PAGE_DOWN, CATEGORY);
 
     /** All keys the loaders register besides the original four. */
-    public static final KeyMapping[] SHAPE_KEYS = {openShapeGenerator, anchorPreview, anchorOverview,
+    public static KeyMapping openUndoHistory = new KeyMapping(
+            "key.effortlessbuilding.undo_history", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.getValue(), CATEGORY);
+
+    public static final KeyMapping[] SHAPE_KEYS = {openShapeGenerator, anchorPreview, anchorOverview, openUndoHistory,
             anchorForward, anchorBack, anchorLeft, anchorRight, anchorUp, anchorDown};
 
     /** Called every client tick by both loaders. */
@@ -93,6 +96,9 @@ public class KeyBindings {
         }
         if (anchorOverview.consumeClick()) {
             mc.setScreen(new AnchorViewScreen());
+        }
+        if (openUndoHistory.consumeClick()) {
+            mc.setScreen(new nl.requios.effortlessbuilding.screen.UndoHistoryScreen());
         }
         // Nudging only means something while a preview is anchored; otherwise let the presses go
         boolean anchored = BuildPipelineClient.previewLocked;

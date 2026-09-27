@@ -98,6 +98,21 @@ public class PacketHandler {
         Services.NETWORK.sendToClient(player, packet);
     }
 
+    public static void sendToServer(UndoHistoryC2SPacket packet) {
+        Services.NETWORK.sendPayloadToServer(packet);
+    }
+
+    /** Called on the server when the history screen asks for the undo/redo lists. */
+    public static void handleUndoHistory(ServerPlayer player) {
+        Services.NETWORK.sendPayloadToClient(player,
+                new UndoHistoryS2CPacket(UndoManager.history(player, false), UndoManager.history(player, true)));
+    }
+
+    /** Called on the client when the undo/redo lists arrive. */
+    public static void handleUndoHistoryList(UndoHistoryS2CPacket packet) {
+        nl.requios.effortlessbuilding.screen.UndoHistoryScreen.receive(packet);
+    }
+
     /**
      * Called on the server when a {@link QueryAE2CountC2SPacket} is received.
      * Queries the AE2 network and sends the count back to the client.
@@ -509,8 +524,18 @@ public class PacketHandler {
      * Called on the server when an {@link UndoPacket} is received.
      */
     public static void handleUndo(ServerPlayer player) {
+        handleUndo(player, 1);
+    }
+
+    /** Undoes the last {@code steps} operations (the history screen can go back several at once). */
+    public static void handleUndo(ServerPlayer player, int steps) {
         BuildQueue.finish(player.getUUID()); // a gradual build finishes before it can be undone
-        int count = UndoManager.undo(player);
+        int count = -1;
+        for (int i = 0; i < Math.clamp(steps, 1, 64); i++) {
+            int restored = UndoManager.undo(player);
+            if (restored < 0) break;
+            count = Math.max(count, 0) + restored;
+        }
         pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
             player.displayClientMessage(
@@ -525,8 +550,18 @@ public class PacketHandler {
      * Called on the server when a {@link RedoPacket} is received.
      */
     public static void handleRedo(ServerPlayer player) {
+        handleRedo(player, 1);
+    }
+
+    /** Redoes the next {@code steps} undone operations. */
+    public static void handleRedo(ServerPlayer player, int steps) {
         BuildQueue.finish(player.getUUID());
-        int count = UndoManager.redo(player);
+        int count = -1;
+        for (int i = 0; i < Math.clamp(steps, 1, 64); i++) {
+            int restored = UndoManager.redo(player);
+            if (restored < 0) break;
+            count = Math.max(count, 0) + restored;
+        }
         pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
             player.displayClientMessage(

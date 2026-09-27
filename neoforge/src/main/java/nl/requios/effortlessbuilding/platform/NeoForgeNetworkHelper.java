@@ -72,4 +72,14 @@ public class NeoForgeNetworkHelper implements INetworkHelper {
         PacketDistributor.sendToPlayer(player, packet);
     }
 
+    @Override
+    public void sendPayloadToServer(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        PacketDistributor.sendToServer(payload);
+    }
+
+    @Override
+    public void sendPayloadToClient(ServerPlayer player, net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        PacketDistributor.sendToPlayer(player, payload);
+    }
+
 }

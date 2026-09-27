@@ -159,6 +159,7 @@ public class RadialMenu extends Screen {
 		buttons.add(serverConfigButton);
 
 		buttons.add(new MenuButton(ActionEnum.OPEN_ANCHOR_VIEW, -buttonDistance - 104, 13, Direction.DOWN));
+		buttons.add(new MenuButton(ActionEnum.OPEN_UNDO_HISTORY, -buttonDistance - 130, -13, Direction.UP));
 		buttons.add(new MenuButton(ActionEnum.OPEN_CLIENT_CONFIG, -buttonDistance - 52, 13, Direction.DOWN));
 		buttons.add(new MenuButton(ActionEnum.PREVIEW_LOCK, -buttonDistance - 26, 13, Direction.DOWN));
 		MenuButton replaceBtn = new MenuButton(ActionEnum.CYCLE_REPLACE_MODE, -buttonDistance, 13, Direction.DOWN);
@@ -515,6 +516,12 @@ public class RadialMenu extends Screen {
 			if (action == ActionEnum.OPEN_ANCHOR_VIEW) {
 				performedActionUsingMouse = true;
 				minecraft.setScreen(new AnchorViewScreen());
+				return;
+			}
+
+			if (action == ActionEnum.OPEN_UNDO_HISTORY) {
+				performedActionUsingMouse = true;
+				minecraft.setScreen(new UndoHistoryScreen());
 				return;
 			}
 

@@ -126,6 +126,7 @@ public class ModeOptions {
 				&& action != ActionEnum.OPEN_SHAPE_GENERATOR
 				&& action != ActionEnum.OPEN_PALETTE
 				&& action != ActionEnum.OPEN_ANCHOR_VIEW
+				&& action != ActionEnum.OPEN_UNDO_HISTORY
 				&& action != ActionEnum.PREVIOUS_BUILD_MODE
 				&& action != ActionEnum.DISABLE_BUILD_MODE_TOGGLE
 				&& action != ActionEnum.UNDO
@@ -175,7 +176,8 @@ public class ModeOptions {
 		PREVIOUS_SHAPE_TEMPLATE("previous_shape_template", AllIcons.I_PREVIOUS),
 		NEXT_SHAPE_TEMPLATE("next_shape_template", AllIcons.I_NEXT),
 		OPEN_PALETTE("open_palette", AllIcons.I_PALETTE),
-		OPEN_ANCHOR_VIEW("open_anchor_view", AllIcons.I_SHOW_AREAS);
+		OPEN_ANCHOR_VIEW("open_anchor_view", AllIcons.I_SHOW_AREAS),
+		OPEN_UNDO_HISTORY("open_undo_history", AllIcons.I_UNDO);
 
 		public String name;
 		public AllIcons icon;

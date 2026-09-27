@@ -434,5 +434,21 @@
   "effortlessbuilding.shape.param.bearing.off": "Off",
   "effortlessbuilding.shape.param.bearing.start": "At the start (below / north / west)",
   "effortlessbuilding.shape.param.bearing.end": "At the end (above / south / east)",
-  "effortlessbuilding.shape.param.bearing.description": "Places a Create mechanical bearing against one end of the center axle, facing the shape and left out of the glue, so the shape can turn. Fills the axle if the middle is open."
+  "effortlessbuilding.shape.param.bearing.description": "Places a Create mechanical bearing against one end of the center axle, facing the shape and left out of the glue, so the shape can turn. Fills the axle if the middle is open.",
+  "effortlessbuilding.action.open_undo_history": "Undo History",
+  "effortlessbuilding.action.open_undo_history.description": "See your recent builds and undo or redo several at once.",
+  "key.effortlessbuilding.undo_history": "Undo History",
+  "effortlessbuilding.screen.undo_history": "Undo History",
+  "effortlessbuilding.screen.undo_history.hint": "Click a build to undo it and everything after it. Grey ones are undone: click to redo.",
+  "effortlessbuilding.screen.undo_history.loading": "Loading...",
+  "effortlessbuilding.screen.undo_history.empty": "Nothing to undo or redo yet",
+  "effortlessbuilding.screen.undo_history.placed": "Placed %s \u00d7 %s",
+  "effortlessbuilding.screen.undo_history.broken": "Broke %s \u00d7 %s",
+  "effortlessbuilding.screen.undo_history.changed": "Changed %s blocks (%s)",
+  "effortlessbuilding.screen.undo_history.free": "creative",
+  "effortlessbuilding.screen.undo_history.seconds": "%ss ago",
+  "effortlessbuilding.screen.undo_history.minutes": "%s min ago",
+  "effortlessbuilding.screen.undo_history.hours": "%s h ago",
+  "effortlessbuilding.screen.undo_history.undo_to": "Undo %s build(s) up to here",
+  "effortlessbuilding.screen.undo_history.redo_to": "Redo %s build(s) up to here"
 }
