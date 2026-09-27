@@ -105,6 +105,34 @@ class PaletteTest {
     }
 
     @Test
+    void noiseMakesPatchesUsingEveryBlock() {
+        Set<Integer> seen = new HashSet<>();
+        int sameAsNeighbor = 0, total = 0;
+        for (int x = 0; x < 40; x++)
+            for (int z = 0; z < 40; z++) {
+                int here = PalettePattern.NOISE.index(3, 2, x, 0, z, 0, 0, 0);
+                seen.add(here);
+                if (x > 0) {
+                    total++;
+                    if (here == PalettePattern.NOISE.index(3, 2, x - 1, 0, z, 0, 0, 0)) sameAsNeighbor++;
+                }
+            }
+        assertEquals(Set.of(0, 1, 2), seen);
+        assertTrue(sameAsNeighbor > total * 0.7, "patches, not static: " + sameAsNeighbor + "/" + total);
+    }
+
+    @Test
+    void noisyGradientGoesBottomToTop() {
+        // Mostly the first block low down and the last block high up, with some mixing in between
+        int lowFirst = 0, highLast = 0;
+        for (int x = 0; x < 50; x++) {
+            if (PalettePattern.NOISY_GRADIENT.index(4, 1, x, 0, 0, 0, 19, 0) == 0) lowFirst++;
+            if (PalettePattern.NOISY_GRADIENT.index(4, 1, x, 19, 0, 0, 19, 0) == 3) highLast++;
+        }
+        assertTrue(lowFirst > 40 && highLast > 40, lowFirst + " / " + highLast);
+    }
+
+    @Test
     void patterns() {
         assertEquals(0, PalettePattern.CHECKER.index(2, 1, 0, 0, 0, 0, 0, 0));
         assertEquals(1, PalettePattern.CHECKER.index(2, 1, 1, 0, 0, 0, 0, 0));

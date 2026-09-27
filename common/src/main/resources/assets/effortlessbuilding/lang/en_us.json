@@ -363,5 +363,7 @@
   "effortlessbuilding.shape.param.blend_terrain": "Blend ground",
   "effortlessbuilding.shape.param.blend_terrain.off": "Off",
   "effortlessbuilding.shape.param.blend_terrain.on": "Slope it naturally",
-  "effortlessbuilding.shape.param.blend_margin": "Slope width"
+  "effortlessbuilding.shape.param.blend_margin": "Slope width",
+  "effortlessbuilding.palette.pattern.noise": "Noise patches",
+  "effortlessbuilding.palette.pattern.noisy_gradient": "Natural gradient up"
 }

@@ -14,7 +14,11 @@ public enum PalettePattern {
     /** First block at the bottom through the last at the top, once. */
     GRADIENT,
     /** Rings around the build's start point, repeating. */
-    RINGS;
+    RINGS,
+    /** Soft patches, like weathering; band width sets the patch size. */
+    NOISE,
+    /** Bottom to top like GRADIENT, with ragged natural borders between the blocks (good for terrain). */
+    NOISY_GRADIENT;
 
     public String getNameKey() {
         return "effortlessbuilding.palette.pattern." + name().toLowerCase();
@@ -40,7 +44,35 @@ public enum PalettePattern {
                 yield Math.min(count - 1, (int) ((long) (dy - minDy) * count / Math.max(1, height)));
             }
             case RINGS -> Math.floorMod((int) Math.floor(Math.hypot(dx, dz) / band), count);
+            case NOISE -> Math.min(count - 1, (int) (valueNoise(dx, dy, dz, band * 3.0) * count));
+            case NOISY_GRADIENT -> {
+                double height = (dy - minDy + 0.5) / Math.max(1, maxDy - minDy + 1);
+                double wobble = (valueNoise(dx, dy, dz, band * 2.0) - 0.5) * 0.35;
+                yield Math.max(0, Math.min(count - 1, (int) Math.floor((height + wobble) * count)));
+            }
         };
+    }
+
+    /**
+     * Smooth 3D value noise in [0, 1): random values on a lattice {@code scale} blocks apart,
+     * blended with smoothstep between them. Stable per position.
+     */
+    static double valueNoise(int x, int y, int z, double scale) {
+        double fx = x / scale, fy = y / scale, fz = z / scale;
+        int x0 = (int) Math.floor(fx), y0 = (int) Math.floor(fy), z0 = (int) Math.floor(fz);
+        double tx = smooth(fx - x0), ty = smooth(fy - y0), tz = smooth(fz - z0);
+        double result = 0;
+        for (int i = 0; i < 8; i++) {
+            int cx = x0 + (i & 1), cy = y0 + ((i >> 1) & 1), cz = z0 + ((i >> 2) & 1);
+            double w = ((i & 1) == 1 ? tx : 1 - tx) * (((i >> 1) & 1) == 1 ? ty : 1 - ty) * (((i >> 2) & 1) == 1 ? tz : 1 - tz);
+            long h = mix(cx * 73856093L ^ cy * 19349663L ^ cz * 83492791L);
+            result += w * ((h >>> 11) / (double) (1L << 53));
+        }
+        return Math.min(0.999999, result);
+    }
+
+    private static double smooth(double t) {
+        return t * t * (3 - 2 * t);
     }
 
     /** SplitMix64 finalizer: a well-spread hash of the position. */
