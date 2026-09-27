@@ -87,7 +87,9 @@ public enum ShapeType {
             ParamSpec.length("height", 1, 1))),
     /** Positions of a .schem file; no parameters and a fixed size. */
     SCHEMATIC(0, false, ShapeParams.Orientation.FLAT, List.of(
-            ParamSpec.choice(ShapeMaterials.USE_SAVED_BLOCKS, 1, "held", "saved")));
+            ParamSpec.choice(ShapeMaterials.USE_SAVED_BLOCKS, 1, "held", "saved"),
+            ParamSpec.choice(TerrainBlender.ENABLED, 0, "off", "on"),
+            ParamSpec.count(TerrainBlender.MARGIN, 6, 1, 32)));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;

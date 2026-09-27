@@ -296,9 +296,11 @@ public class ShapeGeneratorScreen extends Screen {
         rows = list;
     }
 
-    /** Super glue is offered only for the main shape, and only when Create is installed. */
+    /** Super glue (only with Create) and ground blending are offered on the main shape only. */
     private boolean hidden(ShapeType.ParamSpec spec) {
-        return spec.key().equals(ShapeType.SUPER_GLUE) && (editing >= 0 || !CreateGlue.isAvailable());
+        if (spec.key().equals(ShapeType.SUPER_GLUE)) return editing >= 0 || !CreateGlue.isAvailable();
+        // Ground blending belongs to the whole build, not to a part
+        return editing >= 0 && (spec.key().equals(TerrainBlender.ENABLED) || spec.key().equals(TerrainBlender.MARGIN));
     }
 
     private void addCycleButton(int x, int y, String label, Runnable cycle) {

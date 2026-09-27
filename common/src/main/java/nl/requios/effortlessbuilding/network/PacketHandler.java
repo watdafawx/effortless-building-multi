@@ -37,7 +37,9 @@ import nl.requios.effortlessbuilding.utilities.BlockSet;
 import nl.requios.effortlessbuilding.utilities.InventoryHelper;
 import nl.requios.effortlessbuilding.compat.ae2.AE2Integration;
 import nl.requios.effortlessbuilding.compat.create.CreateGlue;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.shape.ShapeType;
+import nl.requios.effortlessbuilding.shape.TerrainBlender;
 import nl.requios.effortlessbuilding.utilities.PlacedBlockTracker;
 import nl.requios.effortlessbuilding.utilities.UndoManager;
 import nl.requios.effortlessbuilding.item.RandomizerToolItem;
@@ -148,6 +150,13 @@ public class PacketHandler {
         // Tool interactions and fluids are undone without moving block items
         boolean paidWithItems = true;
 
+        // Shape the ground around a schematic first, so the build stands on natural-looking terrain
+        ShapeParams shape = packet.shape();
+        if (shape != null && shape.getInt(TerrainBlender.ENABLED) == 1) {
+            TerrainBlender.blend(player, level, blockSet.validPositions(), packet.firstPos().getY() - 1,
+                    shape.getInt(TerrainBlender.MARGIN), undoChanges);
+        }
+
         int placed = 0;
         // Per-block items: from the Randomizer tool, the palette, or a shape's center block.
         // Blocks without their own item use the held block.
@@ -214,7 +223,7 @@ public class PacketHandler {
                 if (state == null) state = blockItem.getBlock().defaultBlockState();
                 state = entry.applyTransforms(state);
                 level.setBlock(pos, state, 3);
-                undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, state));
+                recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
                 used.merge(item, 1, Integer::sum);
                 placed++;
             }
@@ -290,7 +299,7 @@ public class PacketHandler {
                     }
                     level.setBlock(pos, state, 3);
                     transferBlockItemData(level, player, pos, held);
-                    undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, state));
+                    recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
                     placed++;
                 }
             }
@@ -334,7 +343,7 @@ public class PacketHandler {
                         }
 
                         level.setBlock(pos, fluidState, 3);
-                        undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, fluidState));
+                        recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, fluidState));
                         placed++;
                     }
                 }
@@ -359,7 +368,7 @@ public class PacketHandler {
                 if (result.consumesAction()) {
                     BlockState newState = level.getBlockState(pos);
                     if (!oldState.equals(newState)) {
-                        undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, newState));
+                        recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, newState));
                         placed++;
                     }
                 }
@@ -389,6 +398,11 @@ public class PacketHandler {
     private static void pushAE2Count(ServerPlayer player, Item item) {
         if (item == net.minecraft.world.item.Items.AIR || !AE2Integration.hasLinkedTerminal(player)) return;
         sendToClient(player, new SyncAE2CountS2CPacket(item, AE2Integration.countOnNetwork(player, item)));
+    }
+
+    /** Records a change, keeping an earlier "before" for the same block (terrain blending ran first). */
+    private static void recordChange(Map<BlockPos, UndoManager.BlockChange> changes, BlockPos pos, UndoManager.BlockChange change) {
+        changes.merge(pos.immutable(), change, (first, next) -> new UndoManager.BlockChange(first.oldState(), next.newState()));
     }
 
     /**
@@ -470,7 +484,7 @@ public class PacketHandler {
             } else {
                 level.destroyBlock(pos, false, player);
             }
-            undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, airState));
+            recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, airState));
             broken++;
         }
 

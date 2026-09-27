@@ -359,5 +359,9 @@
   "effortlessbuilding.screen.materials_block": "Block",
   "effortlessbuilding.screen.materials_needed": "Needed",
   "effortlessbuilding.screen.materials_have": "Carried",
-  "effortlessbuilding.screen.materials_missing": "Missing"
+  "effortlessbuilding.screen.materials_missing": "Missing",
+  "effortlessbuilding.shape.param.blend_terrain": "Blend ground",
+  "effortlessbuilding.shape.param.blend_terrain.off": "Off",
+  "effortlessbuilding.shape.param.blend_terrain.on": "Slope it naturally",
+  "effortlessbuilding.shape.param.blend_margin": "Slope width"
 }
