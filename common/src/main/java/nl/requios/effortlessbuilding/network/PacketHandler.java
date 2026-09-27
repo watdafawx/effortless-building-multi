@@ -184,7 +184,7 @@ public class PacketHandler {
 
         // Shape the ground around a schematic first, so the build stands on natural-looking terrain
         ShapeParams shape = packet.shape();
-        if (shape != null && shape.getInt(TerrainBlender.ENABLED) == 1) {
+        if (shape != null && shape.type() == ShapeType.SCHEMATIC && shape.getInt(TerrainBlender.ENABLED) == 1) {
             TerrainBlender.blend(player, level, blockSet.validPositions(), packet.firstPos().getY() - 1,
                     shape.getInt(TerrainBlender.MARGIN), undoChanges);
         }
