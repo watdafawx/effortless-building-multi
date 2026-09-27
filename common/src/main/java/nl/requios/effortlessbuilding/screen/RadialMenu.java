@@ -158,6 +158,7 @@ public class RadialMenu extends Screen {
 		serverConfigButton.enabled = isSingleplayer || isOp;
 		buttons.add(serverConfigButton);
 
+		buttons.add(new MenuButton(ActionEnum.OPEN_ANCHOR_VIEW, -buttonDistance - 104, 13, Direction.DOWN));
 		buttons.add(new MenuButton(ActionEnum.OPEN_CLIENT_CONFIG, -buttonDistance - 52, 13, Direction.DOWN));
 		buttons.add(new MenuButton(ActionEnum.PREVIEW_LOCK, -buttonDistance - 26, 13, Direction.DOWN));
 		MenuButton replaceBtn = new MenuButton(ActionEnum.CYCLE_REPLACE_MODE, -buttonDistance, 13, Direction.DOWN);
@@ -508,6 +509,12 @@ public class RadialMenu extends Screen {
 			if (action == ActionEnum.OPEN_CLIENT_CONFIG) {
 				performedActionUsingMouse = true;
 				minecraft.setScreen(new ClientConfigScreen());
+				return;
+			}
+
+			if (action == ActionEnum.OPEN_ANCHOR_VIEW) {
+				performedActionUsingMouse = true;
+				minecraft.setScreen(new AnchorViewScreen());
 				return;
 			}
 

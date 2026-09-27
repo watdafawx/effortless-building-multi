@@ -60,7 +60,7 @@
   "effortlessbuilding.action.open_client_config.description": "",
   "effortlessbuilding.action.preview_lock": "Lock Preview",
   "effortlessbuilding.action.preview_lock.description": "Anchor the current preview in the world. Walk around to check it, right-click to build it, left-click or lock again to release it.",
-  "effortlessbuilding.message.preview_locked": "\u00a7aPreview locked \u00bb Right-click to build",
+  "effortlessbuilding.message.preview_locked": "\u00a7aPreview anchored \u00bb Right-click to build, arrow keys / Page Up/Down to move it",
   "effortlessbuilding.message.preview_unlocked": "\u00a77Preview unlocked",
   "effortlessbuilding.message.preview_locked_subtitle": "\u00a7e\u00bb PREVIEW LOCKED \u00ab",
 
@@ -402,5 +402,21 @@
   "effortlessbuilding.shape.param.path_align": "Face the path",
   "effortlessbuilding.shape.param.path_align.off": "Off",
   "effortlessbuilding.shape.param.path_align.on": "On",
-  "effortlessbuilding.screen.path_sizing_hint": "Click the start, then the end of the path"
+  "effortlessbuilding.screen.path_sizing_hint": "Click the start, then the end of the path",
+  "key.effortlessbuilding.anchor_overview": "Anchor Overview",
+  "key.effortlessbuilding.anchor_forward": "Move Anchor Forward",
+  "key.effortlessbuilding.anchor_back": "Move Anchor Back",
+  "key.effortlessbuilding.anchor_left": "Move Anchor Left",
+  "key.effortlessbuilding.anchor_right": "Move Anchor Right",
+  "key.effortlessbuilding.anchor_up": "Move Anchor Up",
+  "key.effortlessbuilding.anchor_down": "Move Anchor Down",
+  "effortlessbuilding.action.open_anchor_view": "Anchor Overview",
+  "effortlessbuilding.action.open_anchor_view.description": "See the whole anchored preview with the terrain around it, move it, build it or release it.",
+  "effortlessbuilding.screen.anchor_view": "Anchored Preview",
+  "effortlessbuilding.screen.anchor_move.description": "Move the anchored preview one block (five with Shift).",
+  "effortlessbuilding.screen.anchor_terrain_on": "Terrain: shown",
+  "effortlessbuilding.screen.anchor_terrain_off": "Terrain: hidden",
+  "effortlessbuilding.screen.anchor_terrain_too_big": "Too big to show the terrain as well",
+  "effortlessbuilding.screen.anchor_release": "Release",
+  "effortlessbuilding.screen.anchor_none": "Nothing is anchored. Lock a preview first (the anchor button in the radial menu)."
 }

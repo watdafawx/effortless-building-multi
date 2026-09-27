@@ -125,6 +125,7 @@ public class ModeOptions {
 				&& action != ActionEnum.OPEN_CLIENT_CONFIG
 				&& action != ActionEnum.OPEN_SHAPE_GENERATOR
 				&& action != ActionEnum.OPEN_PALETTE
+				&& action != ActionEnum.OPEN_ANCHOR_VIEW
 				&& action != ActionEnum.PREVIOUS_BUILD_MODE
 				&& action != ActionEnum.DISABLE_BUILD_MODE_TOGGLE
 				&& action != ActionEnum.UNDO
@@ -173,7 +174,8 @@ public class ModeOptions {
 		SHAPE_SIZE_CLICKS("shape_size_clicks", AllIcons.I_SHAPE_SIZE_CLICKS),
 		PREVIOUS_SHAPE_TEMPLATE("previous_shape_template", AllIcons.I_PREVIOUS),
 		NEXT_SHAPE_TEMPLATE("next_shape_template", AllIcons.I_NEXT),
-		OPEN_PALETTE("open_palette", AllIcons.I_PALETTE);
+		OPEN_PALETTE("open_palette", AllIcons.I_PALETTE),
+		OPEN_ANCHOR_VIEW("open_anchor_view", AllIcons.I_SHOW_AREAS);
 
 		public String name;
 		public AllIcons icon;

@@ -155,6 +155,60 @@ public class BuildPipelineClient {
         anchor = null;
     }
 
+    /** The anchored preview's blocks, or null when nothing is anchored. */
+    public static @Nullable BlockSet getAnchorBlocks() {
+        return anchor != null ? anchor.blocks() : null;
+    }
+
+    /**
+     * Moves the anchored preview by whole blocks. The clicks are shifted and the preview is worked out
+     * again the way the server will (modifiers included), so what is shown is still what gets built.
+     */
+    public static void nudgeAnchor(int dx, int dy, int dz) {
+        Anchor a = anchor;
+        Player player = Minecraft.getInstance().player;
+        if (a == null || player == null || (dx == 0 && dy == 0 && dz == 0)) return;
+        BlockPos first = a.firstPos().offset(dx, dy, dz), second = a.secondPos().offset(dx, dy, dz);
+        BlockPos third = a.thirdPos() != null ? a.thirdPos().offset(dx, dy, dz) : null;
+
+        // Work it out with the options captured at lock time, then put the current ones back
+        ModeOptions.ActionEnum fill = ModeOptions.getFill(), cubeFill = ModeOptions.getCubeFill();
+        ModeOptions.ActionEnum raisedEdge = ModeOptions.getRaisedEdge(), circleStart = ModeOptions.getCircleStart();
+        BlockSet blocks = new BlockSet();
+        try {
+            ModeOptions.applyForCalculation(a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart());
+            for (BlockPos pos : a.mode().instance.getServerBlocks(player, first, second, third, a.shape())) {
+                blocks.add(new BlockEntry(pos));
+            }
+            blocks.firstPos = first;
+            blocks.lastPos = third != null ? third : second;
+            a.mode().instance.assignItems(blocks, player, first, second, a.shape());
+            CLIENT.processBlocks(blocks, player, BuildPipeline.BuildState.PLACING);
+        } finally {
+            ModeOptions.applyForCalculation(fill, cubeFill, raisedEdge, circleStart);
+        }
+        if (blocks.isEmpty()) return;
+        anchor = new Anchor(blocks, a.dimension(), a.mode(), first, second, third, a.hitFace(),
+                a.hitLocation().add(dx, dy, dz), a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(),
+                a.shape(), a.palette());
+    }
+
+    /** Moves the anchored preview relative to where the player looks: forward/right in blocks, up in blocks. */
+    public static void nudgeAnchorRelative(int forward, int right, int up) {
+        Player player = Minecraft.getInstance().player;
+        if (player == null || anchor == null) return;
+        Direction facing = player.getDirection();
+        Direction rightSide = facing.getClockWise();
+        nudgeAnchor(facing.getStepX() * forward + rightSide.getStepX() * right, up,
+                facing.getStepZ() * forward + rightSide.getStepZ() * right);
+    }
+
+    /** Builds the anchored preview (same as right-clicking while anchored). */
+    public static void buildAnchor() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && mc.level != null && anchor != null) sendLockedPlacement(mc, mc.player);
+    }
+
     // -------------------------------------------------------------------------
     // Multi-click sequence state
     // -------------------------------------------------------------------------

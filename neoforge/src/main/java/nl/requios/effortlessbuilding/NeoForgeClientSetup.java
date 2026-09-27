@@ -45,8 +45,7 @@ public class NeoForgeClientSetup {
             event.register(KeyBindings.openModifiersScreen);
             event.register(KeyBindings.undo);
             event.register(KeyBindings.redo);
-            event.register(KeyBindings.openShapeGenerator);
-            event.register(KeyBindings.anchorPreview);
+            for (var key : KeyBindings.SHAPE_KEYS) event.register(key);
         }
 
         @SubscribeEvent

@@ -52,8 +52,7 @@ public class EffortlessBuildingClient implements ClientModInitializer {
         KeyBindingHelper.registerKeyBinding(KeyBindings.openModifiersScreen);
         KeyBindingHelper.registerKeyBinding(KeyBindings.undo);
         KeyBindingHelper.registerKeyBinding(KeyBindings.redo);
-        KeyBindingHelper.registerKeyBinding(KeyBindings.openShapeGenerator);
-        KeyBindingHelper.registerKeyBinding(KeyBindings.anchorPreview);
+        for (var key : KeyBindings.SHAPE_KEYS) KeyBindingHelper.registerKeyBinding(key);
 
         // Register client-side handler for S2C modifier sync packet
         ClientPlayNetworking.registerGlobalReceiver(SyncModifiersS2CPacket.TYPE, (payload, context) ->
