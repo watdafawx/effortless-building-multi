@@ -1,6 +1,8 @@
 package nl.requios.effortlessbuilding.buildmode.buildmodes;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import nl.requios.effortlessbuilding.compat.create.CreateGlue;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
@@ -37,7 +39,7 @@ public class ShapeMode extends BaseBuildMode {
     /** Last generated cells, reused while nothing changes (the preview asks every frame). */
     private ShapeParams cachedParams;
     private int cachedAxis;
-    private Built cachedBuilt = new Built(List.of(), Set.of(), Set.of());
+    private Built cachedBuilt = new Built(List.of(), Set.of(), Set.of(), null, null);
 
     @Override
     public void initialize() {
@@ -125,6 +127,11 @@ public class ShapeMode extends BaseBuildMode {
             Map<Cell, BlockState> saved = ShapeMaterials.of(placement.params());
             List<Cell> all = new ArrayList<>(built.cells());
             for (Cell c : built.axle()) if (!built.cellSet().contains(c)) all.add(c); // the axle fills even open middles
+            if (built.bearing() != null) {
+                BlockState bearing = CreateGlue.bearing(built.bearingFacing());
+                Cell b = built.bearing();
+                if (bearing != null) out.put(placement.anchor().offset(b.x(), b.y(), b.z()), bearing);
+            }
             for (Cell c : all) {
                 BlockPos pos = placement.anchor().offset(c.x(), c.y(), c.z());
                 BlockState own = null;
@@ -192,15 +199,40 @@ public class ShapeMode extends BaseBuildMode {
         return ((long) p.getX() << 32) | (p.getZ() & 0xFFFFFFFFL);
     }
 
-    /** The shape's cells (as a list and a set) and its center axle (empty without a center block). */
-    private record Built(List<Cell> cells, Set<Cell> cellSet, Set<Cell> axle) {}
+    /**
+     * The shape's cells (as a list and a set), its center axle (empty without a center block or bearing)
+     * and where a Create bearing goes, facing the shape (null without one).
+     */
+    private record Built(List<Cell> cells, Set<Cell> cellSet, Set<Cell> axle,
+                         @Nullable Cell bearing, @Nullable Direction bearingFacing) {}
 
     private synchronized Built cells(ShapeParams params, int maxAxis) {
         if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis) {
             List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
-            Set<Cell> axle = params.centerBlock().isEmpty() ? Set.of()
+            int bearingEnd = CreateGlue.isAvailable() && params.getInt(ShapeType.SUPER_GLUE) == 1
+                    ? params.getInt(ShapeType.BEARING) : 0;
+            // A bearing needs something to hold in the middle, so it brings the axle with it
+            Set<Cell> axle = params.centerBlock().isEmpty() && bearingEnd == 0 ? Set.of()
                     : new LinkedHashSet<>(ShapeGenerator.centerAxis(params.orientation(), cells));
-            cachedBuilt = new Built(cells, new HashSet<>(cells), axle);
+            Cell bearing = null;
+            Direction facing = null;
+            if (bearingEnd != 0 && !axle.isEmpty()) {
+                Direction.Axis axis = switch (params.orientation()) {
+                    case FLAT -> Direction.Axis.Y;
+                    case UPRIGHT_NS -> Direction.Axis.Z;
+                    case UPRIGHT_EW -> Direction.Axis.X;
+                };
+                boolean atStart = bearingEnd == 1;
+                // The axle's end block (the first of a 2x2 axle), then one step outside the shape
+                Cell end = null;
+                for (Cell c : axle) {
+                    int t = axis.choose(c.x(), c.y(), c.z()), best = end == null ? 0 : axis.choose(end.x(), end.y(), end.z());
+                    if (end == null || (atStart ? t < best : t > best)) end = c;
+                }
+                facing = Direction.fromAxisAndDirection(axis, atStart ? Direction.AxisDirection.POSITIVE : Direction.AxisDirection.NEGATIVE);
+                bearing = new Cell(end.x() - facing.getStepX(), end.y() - facing.getStepY(), end.z() - facing.getStepZ());
+            }
+            cachedBuilt = new Built(cells, new HashSet<>(cells), axle, bearing, facing);
             cachedParams = params;
             cachedAxis = maxAxis;
         }

@@ -108,6 +108,7 @@ public enum ShapeType {
         all.add(ParamSpec.angle(ROTATE_Z));
         // Only used on the main shape, and only offered when Create is installed
         all.add(ParamSpec.choice(SUPER_GLUE, 0, "off", "on"));
+        all.add(ParamSpec.choice(BEARING, 0, "off", "start", "end"));
         // Main shape only: follow the terrain, and path settings (shown when sizing is Path)
         all.add(ParamSpec.choice(FOLLOW_GROUND, 0, "off", "on"));
         all.add(ParamSpec.count(PATH_SPACING, 8, 1, 64));
@@ -122,12 +123,18 @@ public enum ShapeType {
 
     /** Settings that belong to the whole build, never to a part. */
     public static boolean isBuildSetting(String key) {
-        return key.equals(SUPER_GLUE) || key.equals(FOLLOW_GROUND) || key.equals(PATH_SPACING) || key.equals(PATH_ALIGN);
+        return key.equals(SUPER_GLUE) || key.equals(BEARING) || key.equals(FOLLOW_GROUND)
+                || key.equals(PATH_SPACING) || key.equals(PATH_ALIGN);
     }
 
     public static final String ROTATE_X = "rotate_x", ROTATE_Y = "rotate_y", ROTATE_Z = "rotate_z";
     /** Glue the built shape together with Create's super glue (1) or not (0). */
     public static final String SUPER_GLUE = "super_glue";
+    /**
+     * Put a Create mechanical bearing against one end of the center axle, facing the shape, so the glued
+     * shape can spin: 0 off, 1 at the start of the axis (below / north / west), 2 at the end.
+     */
+    public static final String BEARING = "bearing";
 
     public String getNameKey() {
         return "effortlessbuilding.shape." + name().toLowerCase();

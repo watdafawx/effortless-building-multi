@@ -33,6 +33,7 @@ public final class CreateGlue {
 
     private static final String GLUE_CLASS = "com.simibubi.create.content.contraptions.glue.SuperGlueEntity";
     private static final ResourceLocation GLUE_ITEM = ResourceLocation.fromNamespaceAndPath("create", "super_glue");
+    private static final ResourceLocation BEARING = ResourceLocation.fromNamespaceAndPath("create", "mechanical_bearing");
 
     private static boolean initialized = false;
     private static Class<?> glueClass;
@@ -85,6 +86,24 @@ public final class CreateGlue {
             }
         }
         return count;
+    }
+
+    /** Create's mechanical bearing facing the given way, or null without Create. */
+    public static @org.jetbrains.annotations.Nullable net.minecraft.world.level.block.state.BlockState bearing(net.minecraft.core.Direction facing) {
+        var block = BuiltInRegistries.BLOCK.getOptional(BEARING).orElse(null);
+        if (block == null) return null;
+        var state = block.defaultBlockState();
+        for (var property : state.getProperties()) {
+            if (property.getName().equals("facing") && property instanceof net.minecraft.world.level.block.state.properties.DirectionProperty dir
+                    && dir.getPossibleValues().contains(facing)) {
+                return state.setValue(dir, facing);
+            }
+        }
+        return state;
+    }
+
+    public static boolean isBearing(@org.jetbrains.annotations.Nullable net.minecraft.world.level.block.state.BlockState state) {
+        return state != null && BuiltInRegistries.BLOCK.getKey(state.getBlock()).equals(BEARING);
     }
 
     /** Removes glue that lies entirely within the given blocks (used when a glued build is undone). */

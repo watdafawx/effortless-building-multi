@@ -429,5 +429,10 @@
   "effortlessbuilding.screen.copy_palette_code.description": "Copy this palette as a text code you can paste in chat or Discord.",
   "effortlessbuilding.screen.paste_code.description": "Load a code someone shared (copy it first).",
   "effortlessbuilding.message.code_copied": "Code copied to the clipboard",
-  "effortlessbuilding.message.code_invalid": "The clipboard has no code for this"
+  "effortlessbuilding.message.code_invalid": "The clipboard has no code for this",
+  "effortlessbuilding.shape.param.bearing": "Bearing",
+  "effortlessbuilding.shape.param.bearing.off": "Off",
+  "effortlessbuilding.shape.param.bearing.start": "At the start (below / north / west)",
+  "effortlessbuilding.shape.param.bearing.end": "At the end (above / south / east)",
+  "effortlessbuilding.shape.param.bearing.description": "Places a Create mechanical bearing against one end of the center axle, facing the shape and left out of the glue, so the shape can turn. Fills the axle if the middle is open."
 }

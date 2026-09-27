@@ -392,6 +392,8 @@ public class PacketHandler {
             if (paidWithItems && packet.shape() != null && packet.shape().getInt(ShapeType.SUPER_GLUE) == 1) {
                 // Queued last, so it runs once every block of a gradual build is in place
                 Set<BlockPos> toGlue = new HashSet<>(undoChanges.keySet());
+                // The bearing stays outside the glue, or it would turn with the shape
+                toGlue.removeIf(pos -> CreateGlue.isBearing(undoChanges.get(pos).newState()));
                 BuildQueue.submit(player, () -> CreateGlue.glue(player, level, toGlue));
             }
             if (paidWithItems) {

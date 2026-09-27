@@ -342,6 +342,7 @@ public class ShapeGeneratorScreen extends Screen {
     private boolean hidden(ShapeType.ParamSpec spec) {
         if (editing >= 0 && ShapeType.isBuildSetting(spec.key())) return true;
         if (spec.key().equals(ShapeType.SUPER_GLUE)) return !CreateGlue.isAvailable();
+        if (spec.key().equals(ShapeType.BEARING)) return !CreateGlue.isAvailable() || params.getInt(ShapeType.SUPER_GLUE) != 1;
         if (spec.key().equals(ShapeType.PATH_SPACING) || spec.key().equals(ShapeType.PATH_ALIGN)) {
             return params.sizing() != ShapeParams.Sizing.PATH;
         }
