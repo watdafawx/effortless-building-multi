@@ -86,7 +86,8 @@ public enum ShapeType {
             ParamSpec.length("arm_width", 1, 1),
             ParamSpec.length("height", 1, 1))),
     /** Positions of a .schem file; no parameters and a fixed size. */
-    SCHEMATIC(0, false, ShapeParams.Orientation.FLAT, List.of());
+    SCHEMATIC(0, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.choice(ShapeMaterials.USE_SAVED_BLOCKS, 1, "held", "saved")));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;

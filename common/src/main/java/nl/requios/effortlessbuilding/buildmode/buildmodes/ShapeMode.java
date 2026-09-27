@@ -8,6 +8,7 @@ import nl.requios.effortlessbuilding.shape.SchematicLibrary;
 import nl.requios.effortlessbuilding.shape.ShapeClientState;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
+import nl.requios.effortlessbuilding.shape.ShapeMaterials;
 import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
@@ -84,10 +85,27 @@ public class ShapeMode extends BaseBuildMode {
         assignItems(blocks, player, anchor, edge, params);
     }
 
-    /** Gives the center axle its own block, when the shape has one. */
+    /**
+     * Gives positions their own block: a schematic's saved blocks (exact states, so stairs keep their
+     * facing), then the center axle. Saved blocks that have no item (water, portals) are left out.
+     */
     @Override
     public void assignItems(BlockSet blocks, Player player, BlockPos firstPos, BlockPos secondPos, @Nullable ShapeParams shape) {
-        if (shape == null || shape.centerBlock().isEmpty()) return;
+        if (shape == null) return;
+        ShapeMaterials.of(shape).forEach((c, state) -> {
+            BlockPos pos = firstPos.offset(c.x(), c.y(), c.z());
+            BlockEntry entry = blocks.get(pos);
+            if (entry == null) return;
+            if (!(state.getBlock().asItem() instanceof BlockItem item)) {
+                blocks.remove(pos);
+                return;
+            }
+            entry.item = item;
+            entry.blockState = state;
+            entry.exactState = true;
+        });
+
+        if (shape.centerBlock().isEmpty()) return;
         ResourceLocation id = ResourceLocation.tryParse(shape.centerBlock());
         if (id == null || !(BuiltInRegistries.ITEM.get(id) instanceof BlockItem blockItem)) return;
         for (Cell c : build(player, firstPos, secondPos, shape).axle()) {
@@ -95,6 +113,7 @@ public class ShapeMode extends BaseBuildMode {
             if (entry == null) continue;
             entry.item = blockItem;
             entry.blockState = blockItem.getBlock().defaultBlockState();
+            entry.exactState = false;
         }
     }
 

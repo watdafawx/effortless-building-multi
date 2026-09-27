@@ -348,5 +348,16 @@
   "effortlessbuilding.shape.param.super_glue": "Super glue",
   "effortlessbuilding.shape.param.super_glue.off": "Off",
   "effortlessbuilding.shape.param.super_glue.on": "Glue it (Create)",
-  "effortlessbuilding.message.out_of_super_glue": "Out of Super Glue: part of the shape was not glued"
+  "effortlessbuilding.message.out_of_super_glue": "Out of Super Glue: part of the shape was not glued",
+  "effortlessbuilding.shape.param.schematic_blocks": "Build with",
+  "effortlessbuilding.shape.param.schematic_blocks.saved": "Its saved blocks",
+  "effortlessbuilding.shape.param.schematic_blocks.held": "Held block / palette",
+  "effortlessbuilding.screen.materials": "Materials",
+  "effortlessbuilding.screen.materials.description": "What this build needs, what you carry, what your AE2 network holds, and what is missing.",
+  "effortlessbuilding.screen.materials_total": "%s blocks, %s kinds",
+  "effortlessbuilding.screen.materials_creative": "Creative: nothing is used up",
+  "effortlessbuilding.screen.materials_block": "Block",
+  "effortlessbuilding.screen.materials_needed": "Needed",
+  "effortlessbuilding.screen.materials_have": "Carried",
+  "effortlessbuilding.screen.materials_missing": "Missing"
 }

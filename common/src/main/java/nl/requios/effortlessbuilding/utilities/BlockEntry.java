@@ -14,6 +14,8 @@ public class BlockEntry {
     public Rotation rotation = Rotation.NONE;
     public BlockState blockState;
     public Item item;
+    /** Place {@link #blockState} exactly as it is (e.g. a schematic's saved block with its facing). */
+    public boolean exactState;
     private BlockStatus status = BlockStatus.VALID;
 
     public BlockEntry(BlockPos blockPos) {
@@ -30,6 +32,7 @@ public class BlockEntry {
     public void copyRotationSettingsFrom(BlockEntry blockEntry) {
         item = blockEntry.item;
         blockState = blockEntry.blockState;
+        exactState = blockEntry.exactState;
         mirrorX = blockEntry.mirrorX;
         mirrorY = blockEntry.mirrorY;
         mirrorZ = blockEntry.mirrorZ;

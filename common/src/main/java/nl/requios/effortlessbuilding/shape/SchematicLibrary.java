@@ -1,6 +1,9 @@
 package nl.requios.effortlessbuilding.shape;
 
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
@@ -36,7 +39,20 @@ public final class SchematicLibrary {
     private static final Set<String> AIR = Set.of("minecraft:air", "minecraft:cave_air", "minecraft:void_air",
             "minecraft:structure_void");
 
-    private record Loaded(long modified, List<Cell> cells) {}
+    /** A read file: each non-air block's offset and its block state as written in the file. */
+    private static final class Loaded {
+        final long modified;
+        final Map<Cell, String> blocks;
+        final List<Cell> cells;
+        Map<Cell, BlockState> states; // parsed on first use
+
+        Loaded(long modified, Map<Cell, String> blocks) {
+            this.modified = modified;
+            this.blocks = blocks;
+            this.cells = List.copyOf(blocks.keySet());
+        }
+    }
+
     private static final Map<Path, Loaded> cache = new HashMap<>();
 
     private SchematicLibrary() {}
@@ -73,22 +89,55 @@ public final class SchematicLibrary {
 
     /** Like {@link #cells(String)}, dropping blocks further than {@code maxAxis} from the anchor along any axis. */
     public static synchronized List<Cell> cells(String name, int maxAxis) {
+        Loaded loaded = load(name);
+        if (loaded == null) return List.of();
+        int half = (maxAxis - 1) / 2;
+        return loaded.cells.stream()
+                .filter(c -> Math.abs(c.x()) <= half && c.y() < maxAxis && Math.abs(c.z()) <= half)
+                .toList();
+    }
+
+    /**
+     * The blocks the schematic was saved with, by offset (same offsets as {@link #cells(String)}).
+     * Blocks from mods that are not installed are left out. Empty when the file is missing.
+     */
+    public static synchronized Map<Cell, BlockState> states(String name) {
+        Loaded loaded = load(name);
+        if (loaded == null) return Map.of();
+        if (loaded.states == null) {
+            Map<String, BlockState> parsed = new HashMap<>();
+            Map<Cell, BlockState> states = new HashMap<>();
+            for (var e : loaded.blocks.entrySet()) {
+                BlockState state = parsed.computeIfAbsent(e.getValue(), SchematicLibrary::parse);
+                if (state != null) states.put(e.getKey(), state);
+            }
+            loaded.states = Map.copyOf(states);
+        }
+        return loaded.states;
+    }
+
+    private static BlockState parse(String state) {
+        try {
+            return BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK.asLookup(), state, false).blockState();
+        } catch (Exception e) {
+            return null; // block from a mod that is not installed, or a typo in the file
+        }
+    }
+
+    private static Loaded load(String name) {
         Path file = find(name);
-        if (file == null) return List.of();
+        if (file == null) return null;
         try {
             long modified = Files.getLastModifiedTime(file).toMillis();
             Loaded loaded = cache.get(file);
-            if (loaded == null || loaded.modified() != modified) {
+            if (loaded == null || loaded.modified != modified) {
                 loaded = new Loaded(modified, read(file));
                 cache.put(file, loaded);
             }
-            int half = (maxAxis - 1) / 2;
-            return loaded.cells().stream()
-                    .filter(c -> Math.abs(c.x()) <= half && c.y() < maxAxis && Math.abs(c.z()) <= half)
-                    .toList();
+            return loaded;
         } catch (IOException | RuntimeException e) {
             Constants.LOG.warn("[EffortlessBuilding] Cannot read schematic {}", file, e);
-            return List.of();
+            return null;
         }
     }
 
@@ -103,7 +152,7 @@ public final class SchematicLibrary {
         return null;
     }
 
-    private static List<Cell> read(Path file) throws IOException {
+    private static Map<Cell, String> read(Path file) throws IOException {
         CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.create(64L * 1024 * 1024));
         if (file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(NBT)) return readStructure(root);
         // Version 3 nests everything under "Schematic" and moves blocks into "Blocks"
@@ -115,13 +164,14 @@ public final class SchematicLibrary {
         CompoundTag palette = blocks.getCompound("Palette");
         byte[] data = blocks.contains("Data") ? blocks.getByteArray("Data") : blocks.getByteArray("BlockData");
 
-        Set<Integer> air = new HashSet<>();
+        // Palette: block state string -> index
+        Map<Integer, String> states = new HashMap<>();
         for (String key : palette.getAllKeys()) {
             String id = key.contains("[") ? key.substring(0, key.indexOf('[')) : key;
-            if (AIR.contains(id)) air.add(palette.getInt(key));
+            if (!AIR.contains(id)) states.put(palette.getInt(key), key);
         }
 
-        List<Cell> cells = new ArrayList<>();
+        Map<Cell, String> cells = new LinkedHashMap<>();
         int index = 0, pos = 0, total = width * height * length;
         int offsetX = width / 2, offsetZ = length / 2;
         while (pos < data.length && index < total) {
@@ -133,10 +183,11 @@ public final class SchematicLibrary {
                 shift += 7;
             } while ((b & 0x80) != 0 && pos < data.length);
 
-            if (!air.contains(value)) {
+            String state = states.get(value);
+            if (state != null) {
                 int y = index / (width * length);
                 int rest = index % (width * length);
-                cells.add(new Cell(rest % width - offsetX, y, rest / width - offsetZ));
+                cells.put(new Cell(rest % width - offsetX, y, rest / width - offsetZ), state);
             }
             index++;
         }
@@ -144,25 +195,38 @@ public final class SchematicLibrary {
     }
 
     /** Vanilla structure file: a size, a block-state palette and a list of {pos, state} blocks. */
-    private static List<Cell> readStructure(CompoundTag root) {
+    private static Map<Cell, String> readStructure(CompoundTag root) {
         ListTag size = root.getList("size", Tag.TAG_INT);
         int offsetX = size.getInt(0) / 2, offsetZ = size.getInt(2) / 2;
         // Structures with random variants (like shipwrecks) keep several palettes; use the first
         ListTag palette = root.contains("palette", Tag.TAG_LIST) ? root.getList("palette", Tag.TAG_COMPOUND)
                 : root.getList("palettes", Tag.TAG_LIST).getList(0);
-        Set<Integer> air = new HashSet<>();
+        // Palette entries are {Name, Properties{...}}; turn them into "name[key=value,...]" strings
+        List<String> states = new ArrayList<>();
         for (int i = 0; i < palette.size(); i++) {
-            if (AIR.contains(palette.getCompound(i).getString("Name"))) air.add(i);
+            CompoundTag entry = palette.getCompound(i);
+            String name = entry.getString("Name");
+            if (AIR.contains(name)) { states.add(null); continue; }
+            CompoundTag props = entry.getCompound("Properties");
+            if (props.isEmpty()) { states.add(name); continue; }
+            StringJoiner joined = new StringJoiner(",", name + "[", "]");
+            for (String key : props.getAllKeys()) joined.add(key + "=" + props.getString(key));
+            states.add(joined.toString());
         }
-        List<Cell> cells = new ArrayList<>();
+        List<Map.Entry<Cell, String>> found = new ArrayList<>();
         ListTag blocks = root.getList("blocks", Tag.TAG_COMPOUND);
         for (int i = 0; i < blocks.size(); i++) {
             CompoundTag block = blocks.getCompound(i);
-            if (air.contains(block.getInt("state"))) continue;
+            int index = block.getInt("state");
+            String state = index >= 0 && index < states.size() ? states.get(index) : null;
+            if (state == null) continue;
             ListTag pos = block.getList("pos", Tag.TAG_INT);
-            cells.add(new Cell(pos.getInt(0) - offsetX, pos.getInt(1), pos.getInt(2) - offsetZ));
+            found.add(Map.entry(new Cell(pos.getInt(0) - offsetX, pos.getInt(1), pos.getInt(2) - offsetZ), state));
         }
-        cells.sort(Comparator.comparingInt(Cell::y).thenComparingInt(Cell::z).thenComparingInt(Cell::x));
+        found.sort(Comparator.comparing((Map.Entry<Cell, String> e) -> e.getKey().y())
+                .thenComparing(e -> e.getKey().z()).thenComparing(e -> e.getKey().x()));
+        Map<Cell, String> cells = new LinkedHashMap<>();
+        for (var e : found) cells.put(e.getKey(), e.getValue());
         return cells;
     }
 }

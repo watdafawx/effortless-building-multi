@@ -135,7 +135,9 @@ public class BlockPreviewRenderer {
                         // Apply per-block mirror/rotation transforms from the modifier pipeline.
                         BlockState state = baseState;
                         BlockEntry entry = blockSet.get(pos);
-                        if (entry != null && entry.item instanceof BlockItem randomBlock) {
+                        if (entry != null && entry.exactState && entry.blockState != null) {
+                            state = entry.blockState;
+                        } else if (entry != null && entry.item instanceof BlockItem randomBlock) {
                             state = randomStates.computeIfAbsent(entry.item,
                                     item -> getPlacementState(randomBlock, mc, new ItemStack(item)));
                         }

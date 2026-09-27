@@ -208,7 +208,9 @@ public class PacketHandler {
                 BlockHitResult serverHit = new BlockHitResult(localHit, packet.hitFace(), pos, false);
                 BlockPlaceContext ctx = new OpenBlockPlaceContext(
                         level, player, InteractionHand.MAIN_HAND, placementStack, serverHit);
-                BlockState state = blockItem.getBlock().getStateForPlacement(ctx);
+                BlockState state = entry.exactState && entry.blockState != null
+                        ? entry.blockState // e.g. a schematic's saved block, facing included
+                        : blockItem.getBlock().getStateForPlacement(ctx);
                 if (state == null) state = blockItem.getBlock().defaultBlockState();
                 state = entry.applyTransforms(state);
                 level.setBlock(pos, state, 3);

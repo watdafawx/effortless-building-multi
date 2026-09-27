@@ -23,6 +23,7 @@ import nl.requios.effortlessbuilding.palette.BlockPalette;
 import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.shape.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -232,9 +233,16 @@ public class ShapeGeneratorScreen extends Screen {
             }));
             for (ShapeType.ParamSpec spec : type.params) {
                 if (hidden(spec)) continue;
-                list.add(new Row(I18n.get(spec.getNameKey()), y -> widgets.addDoubleField(x, y,
-                        ScreenWidgets.formatDouble(current().get(spec.key())),
-                        v -> setCurrent(current().with(spec.key(), v)), spec.step())));
+                list.add(new Row(I18n.get(spec.getNameKey()), y -> {
+                    if (!spec.options().isEmpty()) {
+                        int chosen = current().getInt(spec.key());
+                        addCycleButton(x, y, I18n.get(spec.getOptionKey(chosen)),
+                                () -> setCurrent(current().with(spec.key(), (chosen + 1) % spec.options().size())));
+                    } else {
+                        widgets.addDoubleField(x, y, ScreenWidgets.formatDouble(current().get(spec.key())),
+                                v -> setCurrent(current().with(spec.key(), v)), spec.step());
+                    }
+                }));
             }
         } else {
             list.add(new Row(I18n.get("effortlessbuilding.shape.param.size"), y ->
@@ -306,6 +314,27 @@ public class ShapeGeneratorScreen extends Screen {
                 .bounds(x, by, 44, 16).build());
         addRenderableWidget(Button.builder(Component.literal("◀"), b -> stepLayer(-1)).bounds(x + 48, by, 16, 16).build());
         addRenderableWidget(Button.builder(Component.literal("▶"), b -> stepLayer(1)).bounds(x + previewW - 16, by, 16, 16).build());
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.materials"), b -> {
+                    if (minecraft != null) minecraft.setScreen(new MaterialsScreen(this, requiredItems()));
+                })
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.materials.description")))
+                .bounds(x + previewW - 76, by + 22, 76, 16).build());
+    }
+
+    /** Blocks the build needs, per item: saved schematic blocks, the middle block, palette, else the held block. */
+    private Map<Item, Integer> requiredItems() {
+        List<Cell> cells = cells();
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        for (Cell c : cells) { minY = Math.min(minY, c.y()); maxY = Math.max(maxY, c.y()); }
+        Item held = minecraft != null && minecraft.player != null
+                && minecraft.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.BlockItem b ? b : null;
+        Map<Item, Integer> out = new HashMap<>();
+        for (Cell c : cells) {
+            Item item = cellItem(c, minY, maxY);
+            if (item == null) item = held;
+            if (item != null) out.merge(item, 1, Integer::sum);
+        }
+        return out;
     }
 
     private String editingLabel() {
@@ -672,16 +701,27 @@ public class ShapeGeneratorScreen extends Screen {
 
     /** The block color a cell gets: from the palette when it is on, else the plain preview color. */
     private int cellColor(Cell c, int minY, int maxY) {
+        Item item = cellItem(c, minY, maxY);
+        return item != null ? BlockColorCache.colorOf(item) : BLOCK_COLOR;
+    }
+
+    /** The block a cell gets on its own (middle block, saved schematic block, palette), or null for the held block. */
+    private @org.jetbrains.annotations.Nullable Item cellItem(Cell c, int minY, int maxY) {
         if (previewAxle.contains(c)) {
             ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
-            return id == null ? 0xFFFFFF : BlockColorCache.colorOf(BuiltInRegistries.ITEM.get(id));
+            return id == null ? null : BuiltInRegistries.ITEM.get(id);
+        }
+        BlockState saved = previewMaterials.get(c);
+        if (saved != null) {
+            Item item = saved.getBlock().asItem();
+            return item == net.minecraft.world.item.Items.AIR ? null : item;
         }
         List<Item> blocks = paletteBlocks();
-        if (blocks.isEmpty()) return BLOCK_COLOR;
+        if (blocks.isEmpty()) return null;
         BlockPalette palette = PaletteClientState.getPalette();
         int index = palette.pattern().index(blocks.size(), palette.band(), c.x(), c.y(), c.z(), minY, maxY,
                 BlockPos.asLong(c.x(), c.y(), c.z()));
-        return BlockColorCache.colorOf(blocks.get(index));
+        return blocks.get(index);
     }
 
     private List<Item> paletteBlocks() {
@@ -764,6 +804,7 @@ public class ShapeGeneratorScreen extends Screen {
             List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
             previewAxle = params.centerBlock().isEmpty() ? Set.of()
                     : new HashSet<>(ShapeGenerator.centerAxis(params.orientation(), cells));
+            previewMaterials = ShapeMaterials.of(params);
             Set<Cell> all = new LinkedHashSet<>(cells);
             all.addAll(previewAxle);
             previewCells = List.copyOf(all);
@@ -773,6 +814,7 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private Set<Cell> previewAxle = Set.of();
+    private Map<Cell, BlockState> previewMaterials = Map.of();
 
     private String centerBlockLabel() {
         ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
