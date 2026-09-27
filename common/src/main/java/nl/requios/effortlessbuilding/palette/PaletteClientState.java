@@ -114,7 +114,7 @@ public final class PaletteClientState {
         }
     }
 
-    private static JsonObject toJson(BlockPalette p) {
+    public static JsonObject toJson(BlockPalette p) {
         JsonObject o = new JsonObject();
         o.addProperty("source", p.source().name());
         o.addProperty("hotbar_slots", p.hotbarSlots());
@@ -126,7 +126,7 @@ public final class PaletteClientState {
         return o;
     }
 
-    private static BlockPalette fromJson(JsonObject o) {
+    public static BlockPalette fromJson(JsonObject o) {
         List<Item> custom = new ArrayList<>();
         for (JsonElement e : o.getAsJsonArray("custom")) {
             ResourceLocation id = ResourceLocation.tryParse(e.getAsString());

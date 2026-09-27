@@ -23,6 +23,7 @@ import nl.requios.effortlessbuilding.palette.BlockPalette;
 import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.shape.*;
 import net.minecraft.core.BlockPos;
+import nl.requios.effortlessbuilding.utilities.ShareCode;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -161,6 +162,40 @@ public class ShapeGeneratorScreen extends Screen {
                 .bounds(px + PREVIEW_X, by, 70, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
                 .bounds(px + panelW - 76, by, 70, 16).build());
+
+        // Share: copy this design as a text code, or paste one from chat
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.copy_code"), b -> copyCode())
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.copy_code.description")))
+                .bounds(px + panelW - 6 - 70 - 4 - 70, py + 4, 70, 14).build());
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.paste_code"), b -> pasteCode())
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.paste_code.description")))
+                .bounds(px + panelW - 6 - 70, py + 4, 70, 14).build());
+    }
+
+    private void copyCode() {
+        if (minecraft == null) return;
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+        json.addProperty("name", nameBox.getValue());
+        json.add("shape", ShapeTemplateStorage.toJson(params));
+        minecraft.keyboardHandler.setClipboard(ShareCode.encode(ShareCode.SHAPE, json));
+        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_copied"), true);
+    }
+
+    private void pasteCode() {
+        if (minecraft == null) return;
+        com.google.gson.JsonObject json = ShareCode.decode(ShareCode.SHAPE, minecraft.keyboardHandler.getClipboard());
+        ShapeParams pasted = json != null && json.has("shape") ? ShapeTemplateStorage.fromJson(json.getAsJsonObject("shape")) : null;
+        if (pasted == null) {
+            if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_invalid"), true);
+            return;
+        }
+        params = pasted;
+        editing = -1;
+        templateName = null;
+        nameDraft = json.has("name") ? json.get("name").getAsString() : null;
+        paramScroll = 0;
+        layer = -1;
+        rebuildWidgets();
     }
 
     private void buildListWidgets(int px, int py) {

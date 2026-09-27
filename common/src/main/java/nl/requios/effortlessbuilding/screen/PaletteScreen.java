@@ -23,6 +23,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import nl.requios.effortlessbuilding.palette.*;
+import nl.requios.effortlessbuilding.utilities.ShareCode;
 import nl.requios.effortlessbuilding.palette.PaletteSuggester.Mode;
 import nl.requios.effortlessbuilding.palette.PaletteSuggester.Swatch;
 import org.jetbrains.annotations.Nullable;
@@ -112,6 +113,30 @@ public class PaletteScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.palette_save_favorite"), b -> saveFavorite())
                 .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.palette_save_favorite.description")))
                 .bounds(x, patternY() + 46, LEFT_W - 12, 16).build());
+        int half = (LEFT_W - 12 - 4) / 2;
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.copy_code"), b -> {
+                    if (minecraft == null) return;
+                    minecraft.keyboardHandler.setClipboard(ShareCode.encode(ShareCode.PALETTE,
+                            PaletteClientState.toJson(palette.withSource(BlockPalette.Source.CUSTOM).withCustom(currentBlocks()))));
+                    if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_copied"), true);
+                })
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.copy_palette_code.description")))
+                .bounds(x, patternY() + 66, half, 16).build());
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.paste_code"), b -> {
+                    if (minecraft == null) return;
+                    var json = ShareCode.decode(ShareCode.PALETTE, minecraft.keyboardHandler.getClipboard());
+                    if (json == null) {
+                        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_invalid"), true);
+                        return;
+                    }
+                    try {
+                        load(PaletteClientState.fromJson(json));
+                    } catch (RuntimeException e) {
+                        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_invalid"), true);
+                    }
+                })
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.paste_code.description")))
+                .bounds(x + half + 4, patternY() + 66, half, 16).build());
 
         // ---- right: search, copies, rescan ----
         int rx = rightX();
@@ -645,7 +670,7 @@ public class PaletteScreen extends Screen {
 
     /** x, y, width, height of the 3D preview: the rest of the left column. */
     private int[] previewRect() {
-        int x = panelX() + 6, y = patternY() + 80;
+        int x = panelX() + 6, y = patternY() + 100;
         int bottom = panelY() + panelH - (enabled ? 26 : 38);
         return new int[]{x, y, LEFT_W - 12, Math.max(40, bottom - y)};
     }

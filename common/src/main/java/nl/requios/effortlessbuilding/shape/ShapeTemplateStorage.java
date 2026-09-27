@@ -65,7 +65,7 @@ public final class ShapeTemplateStorage {
         }
     }
 
-    private static JsonObject toJson(ShapeParams p) {
+    public static JsonObject toJson(ShapeParams p) {
         JsonObject o = new JsonObject();
         o.addProperty("type", p.type().name());
         o.addProperty("size", p.size());
@@ -94,7 +94,7 @@ public final class ShapeTemplateStorage {
     }
 
     /** Returns null for entries this version cannot read (e.g. a shape type from a newer version). */
-    private static ShapeParams fromJson(JsonObject o) {
+    public static ShapeParams fromJson(JsonObject o) {
         try {
             Map<String, Double> values = new HashMap<>();
             if (o.has("values")) {

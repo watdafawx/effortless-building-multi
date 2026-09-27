@@ -422,5 +422,12 @@
   "effortlessbuilding.config.blocks_per_tick": "Blocks per tick",
   "effortlessbuilding.config.blocks_per_tick.tooltip": "Big builds are placed this many blocks per server tick, over several ticks, so the server does not freeze. 0 places everything at once.",
   "effortlessbuilding.message.building": "Building\u2026 %s%% (%s / %s)",
-  "effortlessbuilding.message.build_done": "Done: %s blocks"
+  "effortlessbuilding.message.build_done": "Done: %s blocks",
+  "effortlessbuilding.screen.copy_code": "Copy code",
+  "effortlessbuilding.screen.paste_code": "Paste code",
+  "effortlessbuilding.screen.copy_code.description": "Copy this design (parts and settings included) as a text code you can paste in chat or Discord.",
+  "effortlessbuilding.screen.copy_palette_code.description": "Copy this palette as a text code you can paste in chat or Discord.",
+  "effortlessbuilding.screen.paste_code.description": "Load a code someone shared (copy it first).",
+  "effortlessbuilding.message.code_copied": "Code copied to the clipboard",
+  "effortlessbuilding.message.code_invalid": "The clipboard has no code for this"
 }
