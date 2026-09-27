@@ -336,5 +336,13 @@
   "effortlessbuilding.screen.pick_center_block": "Pick the middle block",
   "effortlessbuilding.screen.picker_held": "Held block",
   "effortlessbuilding.screen.picker_none": "None",
-  "effortlessbuilding.screen.picker_hint": "Click a block to pick it. Scroll to browse; hold Alt to scroll faster."
+  "effortlessbuilding.screen.picker_hint": "Click a block to pick it. Scroll to browse; hold Alt to scroll faster.",
+  "effortlessbuilding.shape.param.align": "Align parts",
+  "effortlessbuilding.shape.param.align.bottom": "Bottom",
+  "effortlessbuilding.shape.param.align.center": "Center (grow both ways)",
+  "effortlessbuilding.shape.param.align.top": "Top",
+  "effortlessbuilding.shape.param.body_start": "Body start",
+  "effortlessbuilding.shape.param.frame_start": "Frame start",
+  "effortlessbuilding.shape.param.inner_start": "Ring start",
+  "effortlessbuilding.shape.param.hub_start": "Hub start"
 }

@@ -241,9 +241,17 @@ public final class ShapeGenerator {
         int frameSize = p.getInt("frame_size"), frameWidth = p.getInt("frame_width");
         int innerSize = p.getInt("inner_size"), innerWidth = p.getInt("inner_width");
         int hubSize = p.getInt("hub_size");
+        // Each part covers layers [start, end): its height, aligned against the tallest part
+        // (bottom, center or top), then shifted by its own start offset
         int bodyH = p.getInt("body_height"), frameH = p.getInt("frame_height");
-        int innerH = p.getInt("inner_height"), hubH = p.getInt("hub_height");
-        int toothStart = p.getInt("tooth_start"), toothH = p.getInt("tooth_height");
+        int innerH = p.getInt("inner_height"), hubH = p.getInt("hub_height"), toothH = p.getInt("tooth_height");
+        int tallest = Math.max(Math.max(bodyH, frameH), Math.max(Math.max(innerH, hubH), toothH));
+        int align = p.getInt("align");
+        int[] body = layers(bodyH, p.getInt("body_start"), tallest, align);
+        int[] frame = layers(frameH, p.getInt("frame_start"), tallest, align);
+        int[] inner = layers(innerH, p.getInt("inner_start"), tallest, align);
+        int[] hub = layers(hubH, p.getInt("hub_start"), tallest, align);
+        int[] tooth = layers(toothH, p.getInt("tooth_start"), tallest, align);
 
         double[][] dirs = new double[teeth][];
         for (int t = 0; t < teeth; t++) {
@@ -259,18 +267,27 @@ public final class ShapeGenerator {
                 boolean inBody = d < r + 0.5 && (!p.hollow() || d >= r + 0.5 - rimWidth);
                 boolean solid = inBody && !p.hollow();
 
-                int top = 0; // this column is filled from w = bottom up to top (exclusive), plus teeth
-                if (solid && k <= hubSize) top = Math.max(top, hubH);
-                if (solid && k <= innerSize && k > innerSize - innerWidth) top = Math.max(top, innerH);
-                if (solid && k <= frameSize && k > frameSize - frameWidth) top = Math.max(top, frameH);
-                if (inBody) top = Math.max(top, bodyH);
-                for (int w = 0; w < top; w++) out.add(new Cell(u, v, w));
-
-                if (inTooth(u, v, dirs, r, toothLength, toothWidth)) {
-                    for (int w = toothStart; w < toothStart + toothH; w++) out.add(new Cell(u, v, w));
-                }
+                if (solid && k <= hubSize) addLayers(out, u, v, hub);
+                if (solid && k <= innerSize && k > innerSize - innerWidth) addLayers(out, u, v, inner);
+                if (solid && k <= frameSize && k > frameSize - frameWidth) addLayers(out, u, v, frame);
+                if (inBody) addLayers(out, u, v, body);
+                if (inTooth(u, v, dirs, r, toothLength, toothWidth)) addLayers(out, u, v, tooth);
             }
         }
+    }
+
+    /** Layers [start, end) of a part: aligned to the bottom (0), center (1) or top (2) of the tallest part, then offset. */
+    private static int[] layers(int height, int offset, int tallest, int align) {
+        int base = switch (align) {
+            case 1 -> Math.floorDiv(tallest - height, 2);
+            case 2 -> tallest - height;
+            default -> 0;
+        };
+        return new int[]{base + offset, base + offset + height};
+    }
+
+    private static void addLayers(Set<Cell> out, int u, int v, int[] range) {
+        for (int w = range[0]; w < range[1]; w++) out.add(new Cell(u, v, w));
     }
 
     private static boolean inTooth(int u, int v, double[][] dirs, int r, int length, double width) {

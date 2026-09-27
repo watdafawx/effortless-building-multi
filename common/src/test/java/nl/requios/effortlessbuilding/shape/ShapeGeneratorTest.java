@@ -28,6 +28,38 @@ class ShapeGeneratorTest {
     }
 
     @Test
+    void centeredGearKeepsTeethInTheMiddleOfATallBody() {
+        // Hollow gear with an 18-high rim and 1-high teeth: centered, the teeth sit halfway up the rim
+        ShapeParams gear = ShapeParams.defaults(ShapeType.GEAR).withHollow(true)
+                .with("body_height", 18).with("tooth_height", 1).with("align", 1);
+        Set<Integer> toothLayers = new HashSet<>();
+        for (Cell c : gen(gear)) if (Math.hypot(c.x(), c.z()) > gear.size() + 1) toothLayers.add(c.y());
+        assertEquals(Set.of(8), toothLayers);
+        // Top alignment puts them at the top, bottom (the default) at the bottom
+        Set<Integer> top = new HashSet<>();
+        for (Cell c : gen(gear.with("align", 2))) if (Math.hypot(c.x(), c.z()) > gear.size() + 1) top.add(c.y());
+        assertEquals(Set.of(17), top);
+    }
+
+    @Test
+    void partStartShiftsItUpOrDown() {
+        ShapeParams gear = ShapeParams.defaults(ShapeType.GEAR).withHollow(true)
+                .with("body_height", 6).with("tooth_height", 2).with("tooth_start", -2);
+        List<Cell> cells = gen(gear);
+        // Teeth moved 2 below the rim; the shape is re-anchored so its lowest block is y = 0
+        Set<Integer> toothLayers = new HashSet<>();
+        for (Cell c : cells) if (Math.hypot(c.x(), c.z()) > gear.size() + 1) toothLayers.add(c.y());
+        assertEquals(Set.of(0, 1), toothLayers);
+        assertEquals(7, cells.stream().mapToInt(Cell::y).max().orElseThrow(), "rim spans layers 2 to 7");
+    }
+
+    @Test
+    void choiceParamsStayInRange() {
+        assertEquals(2, ShapeParams.defaults(ShapeType.GEAR).with("align", 9).getInt("align"));
+        assertEquals("effortlessbuilding.shape.param.align.center", ShapeType.GEAR.param("align").getOptionKey(1));
+    }
+
+    @Test
     void gearMatchesPlannerAtDoubleSize() {
         ShapeParams gear = ShapeParams.defaults(ShapeType.GEAR).withSize(20)
                 .with("tooth_length", 6).with("tooth_width", 5)

@@ -268,7 +268,11 @@ public class ShapeGeneratorScreen extends Screen {
             }
             for (ShapeType.ParamSpec spec : type.params) {
                 list.add(new Row(I18n.get(spec.getNameKey()), y -> {
-                    if (spec.integer()) {
+                    if (!spec.options().isEmpty()) {
+                        int chosen = current().getInt(spec.key());
+                        addCycleButton(x, y, I18n.get(spec.getOptionKey(chosen)),
+                                () -> setCurrent(current().with(spec.key(), (chosen + 1) % spec.options().size())));
+                    } else if (spec.integer()) {
                         widgets.addIntField(x, y, String.valueOf(current().getInt(spec.key())),
                                 v -> setCurrent(current().with(spec.key(), v)));
                     } else {

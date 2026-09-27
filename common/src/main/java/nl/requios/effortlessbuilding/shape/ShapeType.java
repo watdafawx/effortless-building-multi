@@ -22,12 +22,17 @@ public enum ShapeType {
             ParamSpec.length("inner_size", 4, 0),
             ParamSpec.length("inner_width", 1, 0),
             ParamSpec.length("hub_size", 1, 0),
+            ParamSpec.choice("align", 0, "bottom", "center", "top"),
             ParamSpec.length("body_height", 2, 1),
+            ParamSpec.offset("body_start"),
             ParamSpec.length("frame_height", 3, 0),
+            ParamSpec.offset("frame_start"),
             ParamSpec.length("inner_height", 3, 0),
+            ParamSpec.offset("inner_start"),
             ParamSpec.length("hub_height", 3, 0),
-            ParamSpec.length("tooth_start", 0, 0),
-            ParamSpec.length("tooth_height", 2, 1))),
+            ParamSpec.offset("hub_start"),
+            ParamSpec.length("tooth_height", 2, 1),
+            ParamSpec.offset("tooth_start"))),
     TORUS(10, true, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.length("tube_radius", 3, 1))),
     ARCH(8, false, ShapeParams.Orientation.UPRIGHT_NS, List.of(
@@ -121,22 +126,40 @@ public enum ShapeType {
      * @param scales whether the value is a length that grows with the shape's size
      * @param integer whether the value is a whole number
      */
-    public record ParamSpec(String key, double defaultValue, double min, double max, boolean scales, boolean integer, double step) {
+    /**
+     * @param options for a choice: the option names (the value is the chosen index); empty otherwise
+     */
+    public record ParamSpec(String key, double defaultValue, double min, double max, boolean scales, boolean integer,
+                            double step, List<String> options) {
         static ParamSpec length(String key, double def, double min) {
-            return new ParamSpec(key, def, min, 256, true, true, 1);
+            return new ParamSpec(key, def, min, 256, true, true, 1, List.of());
+        }
+
+        /** A shift in blocks, up or down (negative), that grows with the shape. */
+        static ParamSpec offset(String key) {
+            return new ParamSpec(key, 0, -256, 256, true, true, 1, List.of());
         }
 
         static ParamSpec count(String key, double def, double min, double max) {
-            return new ParamSpec(key, def, min, max, false, true, 1);
+            return new ParamSpec(key, def, min, max, false, true, 1, List.of());
         }
 
         static ParamSpec ratio(String key, double def, double min, double max) {
-            return new ParamSpec(key, def, min, max, false, false, 0.05);
+            return new ParamSpec(key, def, min, max, false, false, 0.05, List.of());
         }
 
         /** Degrees, -180 to 180, stepping 15 in the screen (any value can be typed). */
         static ParamSpec angle(String key) {
-            return new ParamSpec(key, 0, -180, 180, false, false, 15);
+            return new ParamSpec(key, 0, -180, 180, false, false, 15, List.of());
+        }
+
+        /** One of a few named options, shown as a button that cycles through them. */
+        static ParamSpec choice(String key, int def, String... options) {
+            return new ParamSpec(key, def, 0, options.length - 1, false, true, 1, List.of(options));
+        }
+
+        public String getOptionKey(int index) {
+            return getNameKey() + "." + options.get(Math.max(0, Math.min(options.size() - 1, index)));
         }
 
         public double clamp(double value) {
