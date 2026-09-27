@@ -19,16 +19,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The player's palette setting: on/off plus the palette itself. Client-side; the server receives
- * the palette with each build. Saved to {@code config/effortlessbuilding-palette.json}.
+ * The player's palette setting: on/off, the palette itself and saved favorites. Client-side; the server
+ * receives the palette with each build. Saved to {@code config/effortlessbuilding-palette.json}.
  */
 public final class PaletteClientState {
+
+    /** A palette the player saved under a name. */
+    public record Favorite(String name, BlockPalette palette) {}
 
     private static final Path FILE = Path.of("config", Constants.MOD_ID + "-palette.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private static boolean enabled = false;
     private static BlockPalette palette = BlockPalette.defaults();
+    private static final List<Favorite> favorites = new ArrayList<>();
 
     private PaletteClientState() {}
 
@@ -56,42 +60,83 @@ public final class PaletteClientState {
         return enabled && !palette.resolve(player).isEmpty();
     }
 
+    public static List<Favorite> getFavorites() {
+        return List.copyOf(favorites);
+    }
+
+    /** Saves under the name, replacing a favorite with the same name. */
+    public static void saveFavorite(String name, BlockPalette p) {
+        favorites.removeIf(f -> f.name().equalsIgnoreCase(name));
+        favorites.add(new Favorite(name, p));
+        save();
+    }
+
+    public static void deleteFavorite(String name) {
+        favorites.removeIf(f -> f.name().equals(name));
+        save();
+    }
+
+    // ---- file ----------------------------------------------------------------
+
     public static void load() {
         if (!Files.isRegularFile(FILE)) return;
         try {
             JsonObject o = GSON.fromJson(Files.readString(FILE), JsonObject.class);
-            List<Item> custom = new ArrayList<>();
-            for (JsonElement e : o.getAsJsonArray("custom")) {
-                ResourceLocation id = ResourceLocation.tryParse(e.getAsString());
-                if (id != null) BuiltInRegistries.ITEM.getOptional(id).ifPresent(custom::add);
-            }
-            palette = new BlockPalette(
-                    BlockPalette.Source.valueOf(o.get("source").getAsString()),
-                    o.get("hotbar_slots").getAsInt(),
-                    custom,
-                    PalettePattern.valueOf(o.get("pattern").getAsString()),
-                    o.get("band").getAsInt());
+            palette = fromJson(o);
             enabled = o.get("enabled").getAsBoolean();
+            favorites.clear();
+            if (o.has("favorites")) {
+                for (JsonElement e : o.getAsJsonArray("favorites")) {
+                    JsonObject f = e.getAsJsonObject();
+                    favorites.add(new Favorite(f.get("name").getAsString(), fromJson(f)));
+                }
+            }
         } catch (IOException | RuntimeException e) {
             Constants.LOG.warn("[EffortlessBuilding] Cannot read palette from {}", FILE, e);
         }
     }
 
     private static void save() {
-        JsonObject o = new JsonObject();
+        JsonObject o = toJson(palette);
         o.addProperty("enabled", enabled);
-        o.addProperty("source", palette.source().name());
-        o.addProperty("hotbar_slots", palette.hotbarSlots());
-        JsonArray custom = new JsonArray();
-        for (Item item : palette.custom()) custom.add(BuiltInRegistries.ITEM.getKey(item).toString());
-        o.add("custom", custom);
-        o.addProperty("pattern", palette.pattern().name());
-        o.addProperty("band", palette.band());
+        JsonArray list = new JsonArray();
+        for (Favorite f : favorites) {
+            JsonObject fo = toJson(f.palette());
+            fo.addProperty("name", f.name());
+            list.add(fo);
+        }
+        o.add("favorites", list);
         try {
             Files.createDirectories(FILE.getParent());
             Files.writeString(FILE, GSON.toJson(o));
         } catch (IOException e) {
             Constants.LOG.warn("[EffortlessBuilding] Cannot save palette to {}", FILE, e);
         }
+    }
+
+    private static JsonObject toJson(BlockPalette p) {
+        JsonObject o = new JsonObject();
+        o.addProperty("source", p.source().name());
+        o.addProperty("hotbar_slots", p.hotbarSlots());
+        JsonArray custom = new JsonArray();
+        for (Item item : p.custom()) custom.add(BuiltInRegistries.ITEM.getKey(item).toString());
+        o.add("custom", custom);
+        o.addProperty("pattern", p.pattern().name());
+        o.addProperty("band", p.band());
+        return o;
+    }
+
+    private static BlockPalette fromJson(JsonObject o) {
+        List<Item> custom = new ArrayList<>();
+        for (JsonElement e : o.getAsJsonArray("custom")) {
+            ResourceLocation id = ResourceLocation.tryParse(e.getAsString());
+            if (id != null) BuiltInRegistries.ITEM.getOptional(id).ifPresent(custom::add);
+        }
+        return new BlockPalette(
+                BlockPalette.Source.valueOf(o.get("source").getAsString()),
+                o.get("hotbar_slots").getAsInt(),
+                custom,
+                PalettePattern.valueOf(o.get("pattern").getAsString()),
+                o.get("band").getAsInt());
     }
 }

@@ -36,6 +36,10 @@ public final class BlockColorCache {
     private static final Gson GSON = new Gson();
 
     private static volatile Map<Item, Integer> colors = Map.of();
+    /** Texture each color came from; blocks sharing a texture are copies of each other. */
+    private static volatile Map<Item, ResourceLocation> textures = Map.of();
+    private static Map<Item, Integer> distinctFor = null;
+    private static Map<Item, Integer> distinct = Map.of();
     private static volatile boolean scanning = false;
     private static boolean loaded = false;
 
@@ -44,6 +48,37 @@ public final class BlockColorCache {
     /** Item → 0xRRGGBB. Empty until loaded or scanned. */
     public static Map<Item, Integer> colors() {
         return colors;
+    }
+
+    /**
+     * Like {@link #colors()} with copies collapsed: of the blocks sharing a texture (the same block
+     * registered again by other mods), only one is kept, preferring vanilla, then the shortest id.
+     */
+    public static synchronized Map<Item, Integer> distinctColors() {
+        Map<Item, Integer> all = colors;
+        if (all != distinctFor) {
+            Map<ResourceLocation, Item> byTexture = new HashMap<>();
+            Map<Item, ResourceLocation> tex = textures;
+            for (Item item : all.keySet()) {
+                ResourceLocation t = tex.get(item);
+                if (t != null) byTexture.merge(t, item, BlockColorCache::preferred);
+            }
+            Map<Item, Integer> out = new LinkedHashMap<>();
+            for (var e : all.entrySet()) {
+                ResourceLocation t = tex.get(e.getKey());
+                if (t == null || byTexture.get(t) == e.getKey()) out.put(e.getKey(), e.getValue());
+            }
+            distinct = Collections.unmodifiableMap(out);
+            distinctFor = all;
+        }
+        return distinct;
+    }
+
+    private static Item preferred(Item a, Item b) {
+        ResourceLocation ia = BuiltInRegistries.ITEM.getKey(a), ib = BuiltInRegistries.ITEM.getKey(b);
+        boolean va = ia.getNamespace().equals("minecraft"), vb = ib.getNamespace().equals("minecraft");
+        if (va != vb) return va ? a : b;
+        return ia.getPath().length() <= ib.getPath().length() ? a : b;
     }
 
     public static boolean isScanning() {
@@ -67,11 +102,13 @@ public final class BlockColorCache {
         if (scanning) return;
         Minecraft mc = Minecraft.getInstance();
         // Model and tint lookups on the render thread; texture reading in the background
-        record Job(Item item, ResourceLocation texture, int tint) {}
+        record Job(Item item, ResourceLocation texture, ResourceLocation sprite, int tint) {}
         List<Job> jobs = new ArrayList<>();
         for (Block block : BuiltInRegistries.BLOCK) {
             Item item = block.asItem();
             if (!(item instanceof BlockItem)) continue;
+            // Infested blocks look like stone but are not obtainable in survival
+            if (BuiltInRegistries.ITEM.getKey(item).getPath().contains("infested")) continue;
             BlockState state = block.defaultBlockState();
             try {
                 if (state.getRenderShape() != RenderShape.MODEL || state.hasBlockEntity()) continue;
@@ -85,18 +122,22 @@ public final class BlockColorCache {
                 } catch (RuntimeException ignored) {
                     // Some tints need a level; use the plain texture
                 }
-                jobs.add(new Job(item, name.withPath(p -> "textures/" + p + ".png"), tint));
+                jobs.add(new Job(item, name.withPath(p -> "textures/" + p + ".png"), name, tint));
             } catch (RuntimeException e) {
                 // A block with an unusual model: leave it out
             }
         }
         scanning = true;
         String key = packsKey();
+        Map<Item, ResourceLocation> sprites = new HashMap<>();
         CompletableFuture.supplyAsync(() -> {
             Map<Item, Integer> result = new LinkedHashMap<>();
+            Map<ResourceLocation, Optional<Integer>> byTexture = new HashMap<>(); // shared textures are read once
             for (Job job : jobs) {
-                Integer rgb = averageColor(mc, job.texture());
-                if (rgb != null) result.put(job.item(), job.tint() == -1 ? rgb : multiply(rgb, job.tint()));
+                Integer rgb = byTexture.computeIfAbsent(job.texture(), t -> Optional.ofNullable(averageColor(mc, t))).orElse(null);
+                if (rgb == null) continue;
+                result.put(job.item(), job.tint() == -1 ? rgb : multiply(rgb, job.tint()));
+                sprites.put(job.item(), job.sprite());
             }
             return result;
         }, Util.backgroundExecutor()).whenComplete((result, error) -> {
@@ -105,8 +146,9 @@ public final class BlockColorCache {
                 Constants.LOG.warn("[EffortlessBuilding] Block color scan failed", error);
                 return;
             }
+            textures = Collections.unmodifiableMap(sprites);
             colors = Collections.unmodifiableMap(result);
-            saveToFile(result, key);
+            saveToFile(result, sprites, key);
             Constants.LOG.info("[EffortlessBuilding] Scanned colors of {} blocks", result.size());
         });
     }
@@ -146,7 +188,7 @@ public final class BlockColorCache {
     /** Identifies the resource packs and blocks the saved colors belong to. */
     private static String packsKey() {
         Minecraft mc = Minecraft.getInstance();
-        return String.join(",", mc.getResourcePackRepository().getSelectedIds()) + "|" + BuiltInRegistries.BLOCK.size();
+        return "v2|" + String.join(",", mc.getResourcePackRepository().getSelectedIds()) + "|" + BuiltInRegistries.BLOCK.size();
     }
 
     private static boolean loadFromFile() {
@@ -155,12 +197,20 @@ public final class BlockColorCache {
             JsonObject root = GSON.fromJson(Files.readString(FILE), JsonObject.class);
             if (!packsKey().equals(root.get("packs").getAsString())) return false;
             Map<Item, Integer> result = new LinkedHashMap<>();
+            Map<Item, ResourceLocation> sprites = new HashMap<>();
             for (var e : root.getAsJsonObject("colors").entrySet()) {
                 ResourceLocation id = ResourceLocation.tryParse(e.getKey());
                 if (id == null) continue;
-                BuiltInRegistries.ITEM.getOptional(id).ifPresent(item ->
-                        result.put(item, Integer.parseInt(e.getValue().getAsString(), 16)));
+                String[] value = e.getValue().getAsString().split(" ", 2); // "rrggbb texture"
+                BuiltInRegistries.ITEM.getOptional(id).ifPresent(item -> {
+                    result.put(item, Integer.parseInt(value[0], 16));
+                    if (value.length > 1) {
+                        ResourceLocation t = ResourceLocation.tryParse(value[1]);
+                        if (t != null) sprites.put(item, t);
+                    }
+                });
             }
+            textures = Collections.unmodifiableMap(sprites);
             colors = Collections.unmodifiableMap(result);
             return !result.isEmpty();
         } catch (Exception e) {
@@ -168,11 +218,12 @@ public final class BlockColorCache {
         }
     }
 
-    private static void saveToFile(Map<Item, Integer> result, String key) {
+    private static void saveToFile(Map<Item, Integer> result, Map<Item, ResourceLocation> sprites, String key) {
         JsonObject root = new JsonObject();
         root.addProperty("packs", key);
         JsonObject map = new JsonObject();
-        result.forEach((item, rgb) -> map.addProperty(BuiltInRegistries.ITEM.getKey(item).toString(), String.format("%06x", rgb)));
+        result.forEach((item, rgb) -> map.addProperty(BuiltInRegistries.ITEM.getKey(item).toString(),
+                String.format("%06x %s", rgb, sprites.get(item))));
         root.add("colors", map);
         try {
             Files.createDirectories(FILE.getParent());

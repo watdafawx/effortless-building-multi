@@ -4,125 +4,185 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 /**
  * Suggests block palettes from block colors. Colors are compared in CIELAB, where equal distances look
  * about equally different, so "close" means close to the eye. Pure: works on ids and RGB only.
+ * <p>
+ * Each mode turns the starting blocks into a list of target colors and picks, for each target, a block
+ * near it that is not too close to a block already picked, so a suggestion never repeats the same look.
+ * A non-zero {@code seed} picks among the few best matches at random (reroll); seed 0 always takes the best.
  */
 public final class PaletteSuggester {
 
     /** A block and its average texture color (0xRRGGBB). */
     public record Swatch(String id, int rgb) {}
 
+    /** Suggestion strategies. */
+    public enum Mode {
+        /** Dark to light in the first block's color family. */
+        SHADES,
+        /** The closest colors to the first block. */
+        SIMILAR,
+        /** Even steps from the first block to the last. */
+        BLEND,
+        /** Nearby hues on the color wheel. */
+        NEIGHBORS,
+        /** The first block's color and its opposite, with lighter and darker versions. */
+        COMPLEMENT,
+        /** Three hues evenly spaced around the wheel. */
+        TRIAD,
+        /** The first block's hue from near-black to near-white. */
+        CONTRAST,
+        /** A random colorful block and a random one of the modes above. */
+        SURPRISE;
+
+        public String getNameKey() {
+            return "effortlessbuilding.screen.suggest." + name().toLowerCase();
+        }
+    }
+
+    /** Picked blocks must differ from each other by at least this much (CIE76 ΔE; ~2.3 is just noticeable). */
+    static final double MIN_DIFFERENCE = 4.0;
+    /** With a seed, choose among this many best matches. */
+    private static final int REROLL_CHOICES = 4;
+
     private PaletteSuggester() {}
 
-    /** The {@code count} blocks closest in color to the seed, the seed itself first. */
-    public static List<Swatch> similar(Swatch seed, List<Swatch> all, int count) {
-        double[] s = lab(seed.rgb());
-        List<Swatch> sorted = new ArrayList<>(all);
-        sorted.sort(Comparator.comparingDouble(w -> distance(s, lab(w.rgb()))));
-        return withSeedFirst(seed, sorted, count);
+    /**
+     * @param start the palette's current blocks (first and last matter); must not be empty
+     * @param all   every block to choose from
+     * @param seed  0 for the best matches, anything else for a varied pick
+     */
+    public static List<Swatch> suggest(Mode mode, List<Swatch> start, List<Swatch> all, int count, long seed) {
+        Random rng = seed == 0 ? null : new Random(seed);
+        Swatch first = start.getFirst();
+        if (mode == Mode.SURPRISE) {
+            Random r = rng != null ? rng : new Random(1);
+            List<Swatch> colorful = all.stream().filter(w -> lch(lab(w.rgb()))[1] > 18).toList();
+            Swatch pick = colorful.isEmpty() ? first : colorful.get(r.nextInt(colorful.size()));
+            Mode[] modes = {Mode.SHADES, Mode.NEIGHBORS, Mode.COMPLEMENT, Mode.TRIAD};
+            return suggest(modes[r.nextInt(modes.length)], List.of(pick), all, count, r.nextLong() | 1);
+        }
+
+        double[] s = lch(lab(first.rgb()));
+        List<double[]> targets = new ArrayList<>();
+        List<Swatch> pool = all;
+        switch (mode) {
+            case SIMILAR -> {
+                for (int i = 1; i < count; i++) targets.add(s);
+            }
+            case SHADES -> {
+                pool = family(first, all);
+                double lo = 100, hi = 0;
+                for (Swatch w : pool) { double l = lab(w.rgb())[0]; lo = Math.min(lo, l); hi = Math.max(hi, l); }
+                for (int i = 0; i < count; i++) targets.add(new double[]{lo + (hi - lo) * i / Math.max(1, count - 1), s[1], s[2]});
+            }
+            case BLEND -> {
+                double[] a = lab(first.rgb()), b = lab(start.getLast().rgb());
+                for (int i = 1; i < count - 1; i++) {
+                    double t = (double) i / (count - 1);
+                    targets.add(lch(new double[]{a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t}));
+                }
+            }
+            case NEIGHBORS -> {
+                for (int i = 1; i < count; i++) {
+                    double step = 30.0 * ((i + 1) / 2) * (i % 2 == 1 ? 1 : -1);
+                    targets.add(new double[]{s[0], Math.max(s[1], 20), s[2] + step});
+                }
+            }
+            case COMPLEMENT -> {
+                double[][] variants = {{0, 180}, {12, 0}, {12, 180}, {-12, 0}, {-12, 180}, {24, 0}, {24, 180}, {-24, 0}};
+                for (int i = 0; i < count - 1; i++) {
+                    double[] v = variants[i % variants.length];
+                    targets.add(new double[]{clampL(s[0] + v[0]), Math.max(s[1], 20), s[2] + v[1]});
+                }
+            }
+            case TRIAD -> {
+                for (int i = 1; i < count; i++) {
+                    double lightness = s[0] + (i / 3) * (i % 2 == 0 ? 12 : -12);
+                    targets.add(new double[]{clampL(lightness), Math.max(s[1], 20), s[2] + 120 * (i % 3)});
+                }
+            }
+            case CONTRAST -> {
+                for (int i = 0; i < count; i++) targets.add(new double[]{15 + 75.0 * i / Math.max(1, count - 1), s[1] * 0.6, s[2]});
+            }
+            default -> { }
+        }
+
+        List<Swatch> picked = new ArrayList<>();
+        boolean startsWithSeed = mode != Mode.SHADES && mode != Mode.CONTRAST;
+        if (startsWithSeed) picked.add(first);
+        for (double[] target : targets) {
+            if (picked.size() >= count) break;
+            Swatch w = pickNear(labOf(target), pool, picked, rng);
+            if (w == null && pool != all) w = pickNear(labOf(target), all, picked, rng);
+            if (w != null) picked.add(w);
+        }
+        if (mode == Mode.BLEND && count >= 2 && picked.stream().noneMatch(w -> w.id().equals(start.getLast().id()))) {
+            picked.add(start.getLast());
+        }
+        if (mode == Mode.SHADES || mode == Mode.CONTRAST) picked.sort(Comparator.comparingDouble(w -> lab(w.rgb())[0]));
+        return picked;
     }
 
     /**
-     * Light-to-dark shades around the seed's hue: blocks of a similar hue and saturation,
-     * spread evenly over the lightness range they cover, sorted dark to light.
+     * The block nearest the target that is not already picked and not nearly the same color as
+     * one that is. With a random source, one of the few nearest, favoring the closest.
      */
-    public static List<Swatch> shades(Swatch seed, List<Swatch> all, int count) {
+    private static Swatch pickNear(double[] targetLab, List<Swatch> pool, List<Swatch> picked, Random rng) {
+        Set<String> used = new HashSet<>();
+        List<double[]> pickedLabs = new ArrayList<>();
+        for (Swatch w : picked) { used.add(w.id()); pickedLabs.add(lab(w.rgb())); }
+
+        List<Swatch> best = new ArrayList<>();
+        List<Double> bestD = new ArrayList<>();
+        int keep = rng == null ? 1 : REROLL_CHOICES;
+        for (Swatch w : pool) {
+            if (used.contains(w.id())) continue;
+            double[] l = lab(w.rgb());
+            boolean tooClose = false;
+            for (double[] p : pickedLabs) if (distance(l, p) < MIN_DIFFERENCE) { tooClose = true; break; }
+            if (tooClose) continue;
+            double d = distance(targetLab, l);
+            int at = 0;
+            while (at < bestD.size() && bestD.get(at) <= d) at++;
+            if (at < keep) {
+                best.add(at, w);
+                bestD.add(at, d);
+                if (best.size() > keep) { best.removeLast(); bestD.removeLast(); }
+            }
+        }
+        if (best.isEmpty()) return null;
+        if (rng == null) return best.getFirst();
+        // Weighted toward the closest: 1, 1/2, 1/3, ...
+        double total = 0;
+        for (int i = 0; i < best.size(); i++) total += 1.0 / (i + 1);
+        double r = rng.nextDouble() * total;
+        for (int i = 0; i < best.size(); i++) {
+            r -= 1.0 / (i + 1);
+            if (r <= 0) return best.get(i);
+        }
+        return best.getLast();
+    }
+
+    /** Blocks of a similar hue and saturation (or all greys, for a grey block). */
+    private static List<Swatch> family(Swatch seed, List<Swatch> all) {
         double[] s = lch(lab(seed.rgb()));
         boolean grey = s[1] < 12;
-        List<Swatch> family = new ArrayList<>();
+        List<Swatch> out = new ArrayList<>();
         for (Swatch w : all) {
             double[] c = lch(lab(w.rgb()));
             boolean match = grey ? c[1] < 14 : c[1] >= 8 && hueDistance(c[2], s[2]) < 28 && Math.abs(c[1] - s[1]) < 40;
-            if (match) family.add(w);
-        }
-        if (family.size() <= count) {
-            family.sort(Comparator.comparingDouble(w -> lab(w.rgb())[0]));
-            return family;
-        }
-        family.sort(Comparator.comparingDouble(w -> lab(w.rgb())[0]));
-        double lo = lab(family.getFirst().rgb())[0], hi = lab(family.getLast().rgb())[0];
-        List<double[]> targets = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            double l = lo + (hi - lo) * i / Math.max(1, count - 1);
-            targets.add(new double[]{l, s[1], s[2]});
-        }
-        return nearestEach(targets, family, true);
-    }
-
-    /** Evenly spaced steps from {@code from} to {@code to}, each the closest unused block. */
-    public static List<Swatch> blend(Swatch from, Swatch to, List<Swatch> all, int count) {
-        double[] a = lab(from.rgb()), b = lab(to.rgb());
-        List<double[]> targets = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            double t = (double) i / Math.max(1, count - 1);
-            targets.add(lchOf(new double[]{a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t}));
-        }
-        List<Swatch> out = nearestEach(targets, all, false);
-        // Keep the chosen ends exactly
-        if (!out.isEmpty()) {
-            out.set(0, from);
-            out.set(out.size() - 1, to);
-        }
-        return dedupe(out);
-    }
-
-    /** The seed plus neighbors on the color wheel (hues ±30° and beyond), keeping its lightness. */
-    public static List<Swatch> analogous(Swatch seed, List<Swatch> all, int count) {
-        double[] s = lch(lab(seed.rgb()));
-        List<double[]> targets = new ArrayList<>();
-        targets.add(s);
-        for (int i = 1; targets.size() < count; i++) {
-            double step = 30.0 * ((i + 1) / 2) * (i % 2 == 1 ? 1 : -1);
-            targets.add(new double[]{s[0], Math.max(s[1], 20), s[2] + step});
-        }
-        List<Swatch> out = nearestEach(targets, all, false);
-        if (!out.isEmpty()) out.set(0, seed);
-        return dedupe(out);
-    }
-
-    // -------------------------------------------------------------------------
-    // Matching
-    // -------------------------------------------------------------------------
-
-    /** For each LCh target, the nearest block not used yet. */
-    private static List<Swatch> nearestEach(List<double[]> lchTargets, List<Swatch> pool, boolean sortByLightness) {
-        Set<String> used = new HashSet<>();
-        List<Swatch> out = new ArrayList<>();
-        for (double[] target : lchTargets) {
-            double[] t = labOfLch(target);
-            Swatch best = null;
-            double bestD = Double.MAX_VALUE;
-            for (Swatch w : pool) {
-                if (used.contains(w.id())) continue;
-                double d = distance(t, lab(w.rgb()));
-                if (d < bestD) { bestD = d; best = w; }
-            }
-            if (best == null) break;
-            used.add(best.id());
-            out.add(best);
-        }
-        if (sortByLightness) out.sort(Comparator.comparingDouble(w -> lab(w.rgb())[0]));
-        return out;
-    }
-
-    private static List<Swatch> withSeedFirst(Swatch seed, List<Swatch> sorted, int count) {
-        List<Swatch> out = new ArrayList<>();
-        out.add(seed);
-        for (Swatch w : sorted) {
-            if (out.size() >= count) break;
-            if (!w.id().equals(seed.id())) out.add(w);
+            if (match) out.add(w);
         }
         return out;
     }
 
-    private static List<Swatch> dedupe(List<Swatch> list) {
-        Set<String> seen = new HashSet<>();
-        List<Swatch> out = new ArrayList<>();
-        for (Swatch w : list) if (seen.add(w.id())) out.add(w);
-        return out;
+    private static double clampL(double l) {
+        return Math.max(8, Math.min(95, l));
     }
 
     // -------------------------------------------------------------------------
@@ -145,17 +205,14 @@ public final class PaletteSuggester {
         return Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]));
     }
 
-    private static double[] lch(double[] lab) {
+    /** Lightness, chroma and hue (degrees) of a CIELAB color. */
+    public static double[] lch(double[] lab) {
         double c = Math.hypot(lab[1], lab[2]);
         double h = Math.toDegrees(Math.atan2(lab[2], lab[1]));
         return new double[]{lab[0], c, h < 0 ? h + 360 : h};
     }
 
-    private static double[] lchOf(double[] lab) {
-        return lch(lab);
-    }
-
-    private static double[] labOfLch(double[] lch) {
+    private static double[] labOf(double[] lch) {
         double h = Math.toRadians(lch[2]);
         return new double[]{lch[0], lch[1] * Math.cos(h), lch[1] * Math.sin(h)};
     }

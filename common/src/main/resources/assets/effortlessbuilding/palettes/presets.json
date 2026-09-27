@@ -1,0 +1,29 @@
+{
+  "_comment": "Built-in block palettes. Add your own as .json files with this same layout in config/effortlessbuilding/palettes/. Blocks that are not installed are skipped.",
+  "palettes": [
+    {"name": "Castle Stone", "pattern": "RANDOM", "blocks": ["minecraft:stone_bricks", "minecraft:cobblestone", "minecraft:andesite", "minecraft:cracked_stone_bricks", "minecraft:tuff"]},
+    {"name": "Mossy Ruins", "pattern": "RANDOM", "blocks": ["minecraft:mossy_stone_bricks", "minecraft:mossy_cobblestone", "minecraft:stone_bricks", "minecraft:moss_block", "minecraft:cobblestone"]},
+    {"name": "Deepslate Dungeon", "pattern": "RANDOM", "blocks": ["minecraft:deepslate_bricks", "minecraft:cracked_deepslate_bricks", "minecraft:deepslate_tiles", "minecraft:cobbled_deepslate", "minecraft:polished_deepslate"]},
+    {"name": "Tuff Halls", "pattern": "RANDOM", "blocks": ["minecraft:tuff_bricks", "minecraft:polished_tuff", "minecraft:tuff", "minecraft:chiseled_tuff_bricks", "minecraft:andesite"]},
+    {"name": "Desert Temple", "pattern": "RANDOM", "blocks": ["minecraft:sandstone", "minecraft:smooth_sandstone", "minecraft:cut_sandstone", "minecraft:chiseled_sandstone", "minecraft:terracotta"]},
+    {"name": "Mesa Bands", "pattern": "LAYERS", "blocks": ["minecraft:red_sandstone", "minecraft:orange_terracotta", "minecraft:terracotta", "minecraft:yellow_terracotta", "minecraft:red_terracotta", "minecraft:white_terracotta"]},
+    {"name": "Nether Fortress", "pattern": "RANDOM", "blocks": ["minecraft:nether_bricks", "minecraft:cracked_nether_bricks", "minecraft:red_nether_bricks", "minecraft:chiseled_nether_bricks"]},
+    {"name": "Bastion Gold", "pattern": "RANDOM", "blocks": ["minecraft:polished_blackstone_bricks", "minecraft:cracked_polished_blackstone_bricks", "minecraft:blackstone", "minecraft:polished_blackstone", "minecraft:gilded_blackstone"]},
+    {"name": "Crimson Forest", "pattern": "RANDOM", "blocks": ["minecraft:crimson_planks", "minecraft:nether_wart_block", "minecraft:stripped_crimson_stem", "minecraft:red_nether_bricks"]},
+    {"name": "Warped Grove", "pattern": "RANDOM", "blocks": ["minecraft:warped_planks", "minecraft:warped_wart_block", "minecraft:stripped_warped_stem", "minecraft:dark_prismarine"]},
+    {"name": "End City", "pattern": "RANDOM", "blocks": ["minecraft:end_stone_bricks", "minecraft:purpur_block", "minecraft:purpur_pillar", "minecraft:end_stone"]},
+    {"name": "Ocean Monument", "pattern": "RANDOM", "blocks": ["minecraft:prismarine", "minecraft:prismarine_bricks", "minecraft:dark_prismarine", "minecraft:sea_lantern"]},
+    {"name": "Copper Patina", "pattern": "GRADIENT", "blocks": ["minecraft:cut_copper", "minecraft:exposed_cut_copper", "minecraft:weathered_cut_copper", "minecraft:oxidized_cut_copper"]},
+    {"name": "Spruce Cabin", "pattern": "RANDOM", "blocks": ["minecraft:spruce_planks", "minecraft:stripped_spruce_log", "minecraft:dark_oak_planks", "minecraft:spruce_log"]},
+    {"name": "Cherry Blossom", "pattern": "RANDOM", "blocks": ["minecraft:cherry_planks", "minecraft:pink_terracotta", "minecraft:stripped_cherry_log", "minecraft:white_terracotta"]},
+    {"name": "Mangrove Mud", "pattern": "RANDOM", "blocks": ["minecraft:mud_bricks", "minecraft:packed_mud", "minecraft:mangrove_planks", "minecraft:bricks"]},
+    {"name": "Quartz Palace", "pattern": "RANDOM", "blocks": ["minecraft:quartz_block", "minecraft:smooth_quartz", "minecraft:quartz_bricks", "minecraft:calcite"]},
+    {"name": "Frozen Peaks", "pattern": "GRADIENT", "blocks": ["minecraft:blue_ice", "minecraft:packed_ice", "minecraft:snow_block", "minecraft:calcite"]},
+    {"name": "Sunset", "pattern": "GRADIENT", "blocks": ["minecraft:purple_terracotta", "minecraft:magenta_terracotta", "minecraft:red_terracotta", "minecraft:orange_terracotta", "minecraft:yellow_terracotta"]},
+    {"name": "Deep Ocean", "pattern": "GRADIENT", "blocks": ["minecraft:blue_concrete", "minecraft:cyan_concrete", "minecraft:light_blue_concrete", "minecraft:white_concrete"]},
+    {"name": "Autumn Leaves", "pattern": "RANDOM", "blocks": ["minecraft:red_wool", "minecraft:orange_wool", "minecraft:yellow_wool", "minecraft:brown_wool"]},
+    {"name": "Checkered Floor", "pattern": "CHECKER", "blocks": ["minecraft:polished_diorite", "minecraft:polished_blackstone"]},
+    {"name": "Greyscale Gradient", "pattern": "GRADIENT", "blocks": ["minecraft:blackstone", "minecraft:deepslate", "minecraft:stone", "minecraft:smooth_stone", "minecraft:calcite"]},
+    {"name": "Brick Kiln", "pattern": "RANDOM", "blocks": ["minecraft:bricks", "minecraft:granite", "minecraft:terracotta", "minecraft:polished_granite"]}
+  ]
+}
