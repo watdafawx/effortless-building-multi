@@ -231,6 +231,13 @@ public class ShapeGeneratorScreen extends Screen {
                         .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.schematic.description")))
                         .bounds(buttonX, y, buttonW, 16).build());
             }));
+            list.add(new Row(I18n.get("effortlessbuilding.screen.pixel_art_row"), y ->
+                    addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.pixel_art_open"), b -> {
+                                if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this,
+                                        name -> setCurrent(current().withSchematic(name))));
+                            })
+                            .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.pixel_art.description")))
+                            .bounds(buttonX, y, buttonW, 16).build())));
             for (ShapeType.ParamSpec spec : type.params) {
                 if (hidden(spec)) continue;
                 list.add(new Row(I18n.get(spec.getNameKey()), y -> {
@@ -321,6 +328,41 @@ public class ShapeGeneratorScreen extends Screen {
                 })
                 .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.materials.description")))
                 .bounds(x + previewW - 76, by + 22, 76, 16).build());
+        addRenderableWidget(Button.builder(Component.literal(".nbt"), b -> export(".nbt"))
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.export_nbt.description")))
+                .bounds(x + previewW - 76 - 4 - 36, by + 22, 36, 16).build());
+        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.export_schem"), b -> export(".schem"))
+                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.export_schem.description")))
+                .bounds(x + previewW - 76 - 4 - 36 - 4 - 80, by + 22, 80, 16).build());
+    }
+
+    /** Saves exactly what would be built (saved blocks, middle block, palette, else the held block) as a schematic. */
+    private void export(String extension) {
+        if (minecraft == null || minecraft.player == null) return;
+        List<Cell> cells = cells();
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        for (Cell c : cells) { minY = Math.min(minY, c.y()); maxY = Math.max(maxY, c.y()); }
+        Item held = minecraft.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.BlockItem b ? b : null;
+        Map<Cell, BlockState> blocks = new HashMap<>();
+        for (Cell c : cells) {
+            BlockState saved = previewMaterials.get(c);
+            if (saved != null && !previewAxle.contains(c)) { blocks.put(c, saved); continue; }
+            Item item = cellItem(c, minY, maxY);
+            if (item == null) item = held;
+            if (item instanceof net.minecraft.world.item.BlockItem blockItem) blocks.put(c, blockItem.getBlock().defaultBlockState());
+        }
+        if (blocks.isEmpty()) {
+            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.export_hold_block"), true);
+            return;
+        }
+        String name = SchematicWriter.safeName(nameBox.getValue().isBlank() ? defaultName() : nameBox.getValue());
+        java.nio.file.Path file = SchematicLibrary.FOLDERS.getFirst().resolve(name + extension);
+        try {
+            SchematicWriter.write(file, blocks);
+            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.exported", file.toString()), false);
+        } catch (java.io.IOException e) {
+            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.export_failed", e.getMessage()), false);
+        }
     }
 
     /** Blocks the build needs, per item: saved schematic blocks, the middle block, palette, else the held block. */
