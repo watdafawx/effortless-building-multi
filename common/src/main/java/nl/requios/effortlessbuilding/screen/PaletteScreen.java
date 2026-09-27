@@ -53,18 +53,14 @@ public class PaletteScreen extends Screen {
 
     // ---- right side state ----
     private Tab tab = Tab.ALL;
-    private String search = "";
-    private boolean hideCopies = true;
+    private final BlockGrid grid = new BlockGrid();
+    /** Scroll position of the favorites and presets lists. */
     private int scroll = 0;
     private int suggestCount = 5;
     private Mode lastMode = null;
     private long rerollSeed = 0;
     private List<Item> suggestion = List.of();
     private String suggestionNote = "";
-
-    // ---- block grid cache (18k+ blocks in big packs: filter only when something changes) ----
-    private List<Item> gridCache = List.of();
-    private Object gridKey = null;
 
     // ---- 3D preview camera ----
     private float yaw = -35, pitch = 25, zoom = 1;
@@ -121,11 +117,11 @@ public class PaletteScreen extends Screen {
         int rx = rightX();
         searchBox = new EditBox(font, rx, py + 20, 150, 16, Component.translatable("effortlessbuilding.screen.palette_search"));
         searchBox.setHint(Component.translatable("effortlessbuilding.screen.palette_search"));
-        searchBox.setValue(search);
-        searchBox.setResponder(s -> { search = s; scroll = 0; tab = Tab.ALL; });
+        searchBox.setValue(grid.search());
+        searchBox.setResponder(s -> { grid.setSearch(s); tab = Tab.ALL; });
         addRenderableWidget(searchBox);
-        widgets.addCheckbox(rx + 156, py + 24, I18n.get("effortlessbuilding.screen.palette_hide_copies"), hideCopies,
-                () -> { hideCopies = !hideCopies; scroll = 0; rebuildWidgets(); });
+        widgets.addCheckbox(rx + 156, py + 24, I18n.get("effortlessbuilding.screen.palette_hide_copies"), grid.hideCopies(),
+                () -> { grid.toggleHideCopies(); rebuildWidgets(); });
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.palette_rescan"), b -> BlockColorCache.scan())
                 .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.palette_rescan.description")))
                 .bounds(rescanX(), py + 20, 56, 16).build());
@@ -338,7 +334,7 @@ public class PaletteScreen extends Screen {
 
         switch (tab) {
             case ALL -> {
-                Item item = gridItemAt(mouseX, mouseY);
+                Item item = grid.itemAt(mouseX, mouseY, rightX(), contentTop(), gridW(), gridH());
                 if (item != null) {
                     addCustom(item);
                     return true;
@@ -385,8 +381,13 @@ public class PaletteScreen extends Screen {
             return true;
         }
         if (mouseX > rightX()) {
-            scroll = Math.max(0, Math.min(maxScroll(), scroll + (scrollY > 0 ? -1 : 1)));
-            rebuildWidgets();
+            if (tab == Tab.ALL) {
+                grid.scroll(scrollY, gridW(), gridH());
+            } else {
+                int step = BlockGrid.scrollStep(listRows());
+                scroll = Math.max(0, Math.min(maxScroll(), scroll + (scrollY > 0 ? -step : step)));
+                rebuildWidgets();
+            }
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -529,7 +530,7 @@ public class PaletteScreen extends Screen {
         Item hovered = null;
         String status = BlockColorCache.isScanning() ? I18n.get("effortlessbuilding.screen.palette_scanning")
                 : I18n.get("effortlessbuilding.screen.palette_block_count",
-                (hideCopies ? BlockColorCache.distinctColors() : BlockColorCache.colors()).size());
+                grid.items().size());
         g.drawString(font, status, rescanX() + 62, py + 24, 0xAAAAAA);
 
         // Count, then the current suggestion
@@ -552,21 +553,10 @@ public class PaletteScreen extends Screen {
         int top = contentTop();
         switch (tab) {
             case ALL -> {
-                List<Item> grid = filteredBlocks();
-                int cols = gridCols(), rows = gridRows();
-                for (int i = 0; i < cols * rows; i++) {
-                    int index = i + scroll * cols;
-                    if (index >= grid.size()) break;
-                    Item item = grid.get(index);
-                    int sx = rx + (i % cols) * SLOT, sy = top + (i / cols) * SLOT;
-                    g.fill(sx, sy, sx + SLOT - 2, sy + SLOT - 2, 0xFF000000 | BlockColorCache.colorOf(item));
-                    g.renderItem(new ItemStack(item), sx + 1, sy + 1);
-                    if (hit(mouseX, mouseY, sx, sy)) hovered = item;
-                }
-                if (grid.isEmpty()) {
-                    g.drawString(font, I18n.get(BlockColorCache.isScanning() ? "effortlessbuilding.screen.palette_scanning"
-                            : "effortlessbuilding.screen.palette_no_match"), rx, top + 4, 0x888888);
-                }
+                Item h = grid.render(g, font, rx, top, gridW(), gridH(), mouseX, mouseY,
+                        I18n.get(BlockColorCache.isScanning() ? "effortlessbuilding.screen.palette_scanning"
+                                : "effortlessbuilding.screen.palette_no_match"));
+                if (h != null) hovered = h;
             }
             case FAVORITES -> {
                 List<PaletteClientState.Favorite> favorites = PaletteClientState.getFavorites();
@@ -611,43 +601,8 @@ public class PaletteScreen extends Screen {
     }
 
     // =========================================================================
-    // Block grid and lists
+    // Lists
     // =========================================================================
-
-    /** Blocks by color (greys by lightness first, then around the wheel), searched; recomputed only on change. */
-    private List<Item> filteredBlocks() {
-        Map<Item, Integer> colors = hideCopies ? BlockColorCache.distinctColors() : BlockColorCache.colors();
-        Object key = List.of(System.identityHashCode(colors), colors.size(), search, hideCopies);
-        if (!key.equals(gridKey)) {
-            String q = search.toLowerCase(Locale.ROOT).trim();
-            List<Item> list = new ArrayList<>();
-            for (Item item : colors.keySet()) {
-                if (q.isEmpty() || BuiltInRegistries.ITEM.getKey(item).toString().contains(q)
-                        || item.getDescription().getString().toLowerCase(Locale.ROOT).contains(q)) list.add(item);
-            }
-            list.sort(Comparator.comparingDouble(item -> hueKey(colors.get(item))));
-            gridCache = list;
-            gridKey = key;
-        }
-        return gridCache;
-    }
-
-    private static double hueKey(int rgb) {
-        double[] lch = PaletteSuggester.lch(PaletteSuggester.lab(rgb));
-        if (lch[1] < 10) return lch[0] / 100.0; // greys: 0..1 by lightness
-        // Hue bands of 15°, each running dark to light
-        return 1 + Math.floor(lch[2] / 15) + lch[0] / 101.0;
-    }
-
-    private @Nullable Item gridItemAt(double mouseX, double mouseY) {
-        int gx = rightX(), gy = contentTop();
-        if (mouseX < gx || mouseY < gy) return null;
-        int col = (int) (mouseX - gx) / SLOT, row = (int) (mouseY - gy) / SLOT;
-        if (col >= gridCols() || row >= gridRows()) return null;
-        int index = (row + scroll) * gridCols() + col;
-        List<Item> grid = filteredBlocks();
-        return index < grid.size() ? grid.get(index) : null;
-    }
 
     /** List index under the mouse on the favorites/presets tabs, or -1 (not over the delete button). */
     private int listRowAt(double mouseX, double mouseY) {
@@ -659,7 +614,7 @@ public class PaletteScreen extends Screen {
 
     private int maxScroll() {
         return switch (tab) {
-            case ALL -> Math.max(0, (filteredBlocks().size() + gridCols() - 1) / gridCols() - gridRows());
+            case ALL -> 0; // the grid scrolls itself
             case FAVORITES -> Math.max(0, PaletteClientState.getFavorites().size() - listRows());
             case PRESETS -> Math.max(0, PalettePresets.get().size() - listRows());
         };
@@ -675,8 +630,8 @@ public class PaletteScreen extends Screen {
     private int rescanX() { return rightX() + 162 + font.width("☐ " + I18n.get("effortlessbuilding.screen.palette_hide_copies")); }
     private int suggestionX() { return rightX() + 146; }
     private int contentTop() { return panelY() + 110; }
-    private int gridCols() { return Math.max(1, (panelW - LEFT_W - 20) / SLOT); }
-    private int gridRows() { return Math.max(1, (panelY() + panelH - 26 - contentTop()) / SLOT); }
+    private int gridW() { return panelW - LEFT_W - 20; }
+    private int gridH() { return panelY() + panelH - 26 - contentTop(); }
     private int listRows() { return Math.max(1, (panelY() + panelH - 26 - contentTop()) / LIST_ROW_H); }
 
     private int sourceY() { return panelY() + 40; }

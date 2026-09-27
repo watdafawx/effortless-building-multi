@@ -26,7 +26,10 @@ public class BlockEntry {
         this.item = item;
     }
 
+    /** Copies mirror/rotation, plus any block assigned to this position (e.g. a shape's center block). */
     public void copyRotationSettingsFrom(BlockEntry blockEntry) {
+        item = blockEntry.item;
+        blockState = blockEntry.blockState;
         mirrorX = blockEntry.mirrorX;
         mirrorY = blockEntry.mirrorY;
         mirrorZ = blockEntry.mirrorZ;

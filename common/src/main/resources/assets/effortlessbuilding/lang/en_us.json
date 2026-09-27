@@ -172,7 +172,7 @@
   "effortlessbuilding.screen.use_shape": "Build it",
   "effortlessbuilding.screen.use_shape.description": "Switch to Shape mode with this shape.",
   "effortlessbuilding.screen.no_schematics": "No .schem files",
-  "effortlessbuilding.screen.schematic.description": "Put .schem files in config/effortlessbuilding/schematics, schematics, or config/worldedit/schematics. Your held block is placed wherever the schematic has a block. In multiplayer the server needs the file too.",
+  "effortlessbuilding.screen.schematic.description": "Put .schem files (WorldEdit) or .nbt files (structure blocks) in config/effortlessbuilding/schematics, schematics, or config/worldedit/schematics. Your held block is placed wherever the file has a block. In multiplayer the server needs the file too.",
   "effortlessbuilding.screen.click_sizing_hint": "Size comes from your clicks",
   "effortlessbuilding.screen.view.top": "Top",
   "effortlessbuilding.screen.view.front": "Front",
@@ -330,5 +330,11 @@
   "effortlessbuilding.screen.palette_no_favorites": "No favorites yet. Use \"Save as favorite\" on the left.",
   "effortlessbuilding.shape.param.rotate_x": "Tilt X (\u00b0)",
   "effortlessbuilding.shape.param.rotate_y": "Turn Y (\u00b0)",
-  "effortlessbuilding.shape.param.rotate_z": "Tilt Z (\u00b0)"
+  "effortlessbuilding.shape.param.rotate_z": "Tilt Z (\u00b0)",
+  "effortlessbuilding.shape.param.center_block": "Middle block",
+  "effortlessbuilding.shape.param.center_block.description": "Adds a center axle through the shape in a block you pick, even where the shape is open. It is 1 block wide, or 2 by 2 when the shape has an even width and no single middle.",
+  "effortlessbuilding.screen.pick_center_block": "Pick the middle block",
+  "effortlessbuilding.screen.picker_held": "Held block",
+  "effortlessbuilding.screen.picker_none": "None",
+  "effortlessbuilding.screen.picker_hint": "Click a block to pick it. Scroll to browse; hold Alt to scroll faster."
 }

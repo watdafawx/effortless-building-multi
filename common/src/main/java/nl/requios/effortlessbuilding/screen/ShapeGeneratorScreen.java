@@ -22,6 +22,8 @@ import nl.requios.effortlessbuilding.palette.BlockPalette;
 import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.shape.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
 import org.joml.Matrix4f;
@@ -244,6 +246,21 @@ public class ShapeGeneratorScreen extends Screen {
                         I18n.get(params.sizing().getNameKey()),
                         () -> params = params.withSizing(next(ShapeParams.Sizing.values(), params.sizing())))));
             }
+        }
+        if (editing < 0) {
+            // A center axle in its own block; 2 by 2 when the shape has no single middle block
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.center_block"), y ->
+                    addRenderableWidget(Button.builder(Component.literal(centerBlockLabel()), b -> {
+                                if (minecraft == null) return;
+                                minecraft.setScreen(new BlockPickerScreen(this,
+                                        Component.translatable("effortlessbuilding.screen.pick_center_block"),
+                                        item -> params = params.withCenterBlock(item == null ? ""
+                                                : BuiltInRegistries.ITEM.getKey(item).toString())));
+                            })
+                            .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.shape.param.center_block.description")))
+                            .bounds(buttonX, y, buttonW, 16).build())));
+        }
+        if (type != ShapeType.SCHEMATIC) {
             if (type.hollowable) {
                 list.add(new Row(I18n.get("effortlessbuilding.shape.param.hollow"), y ->
                         widgets.addCheckbox(buttonX, y + 4, "", current().hollow(),
@@ -428,12 +445,13 @@ public class ShapeGeneratorScreen extends Screen {
         int dir = scrollY > 0 ? -1 : 1;
         if (mouseX < px + LIST_W + 4) {
             int max = Math.max(0, ShapeType.values().length + 1 + ShapeClientState.getTemplates().size() - listRows());
-            listScroll = Math.max(0, Math.min(max, listScroll + dir));
+            listScroll = Math.max(0, Math.min(max, listScroll + dir * BlockGrid.scrollStep(listRows())));
             rebuildWidgets();
             return true;
         }
         if (mouseX < px + PREVIEW_X) {
-            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - paramRows), paramScroll + dir));
+            int step = dir * BlockGrid.scrollStep(paramRows);
+            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - paramRows), paramScroll + step));
             rebuildWidgets();
             return true;
         }
@@ -642,6 +660,10 @@ public class ShapeGeneratorScreen extends Screen {
 
     /** The block color a cell gets: from the palette when it is on, else the plain preview color. */
     private int cellColor(Cell c, int minY, int maxY) {
+        if (previewAxle.contains(c)) {
+            ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
+            return id == null ? 0xFFFFFF : BlockColorCache.colorOf(BuiltInRegistries.ITEM.get(id));
+        }
         List<Item> blocks = paletteBlocks();
         if (blocks.isEmpty()) return BLOCK_COLOR;
         BlockPalette palette = PaletteClientState.getPalette();
@@ -727,10 +749,23 @@ public class ShapeGeneratorScreen extends Screen {
         if (!params.equals(previewParams)) {
             int maxAxis = minecraft != null && minecraft.player != null
                     ? ServerConfig.INSTANCE.getMaxBlocksPerAxis(minecraft.player) : 1000;
-            previewCells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
+            List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
+            previewAxle = params.centerBlock().isEmpty() ? Set.of()
+                    : new HashSet<>(ShapeGenerator.centerAxis(params.orientation(), cells));
+            Set<Cell> all = new LinkedHashSet<>(cells);
+            all.addAll(previewAxle);
+            previewCells = List.copyOf(all);
             previewParams = params;
         }
         return previewCells;
+    }
+
+    private Set<Cell> previewAxle = Set.of();
+
+    private String centerBlockLabel() {
+        ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
+        if (params.centerBlock().isEmpty() || id == null) return I18n.get("effortlessbuilding.screen.picker_none");
+        return BuiltInRegistries.ITEM.get(id).getDescription().getString();
     }
 
     // =========================================================================

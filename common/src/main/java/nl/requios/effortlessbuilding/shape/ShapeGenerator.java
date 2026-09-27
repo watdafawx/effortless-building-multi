@@ -58,6 +58,40 @@ public final class ShapeGenerator {
         return clip(rotate(result, p), maxAxis);
     }
 
+    /**
+     * A center axle through the finished shape, along its depth axis (up for flat shapes, through the face
+     * for upright ones) and as long as the shape is deep. One block thick, or 2 by 2 when the shape has an
+     * even width, so it stays centered. Filled even where the shape is open, like a hollow gear's middle.
+     */
+    public static List<Cell> centerAxis(ShapeParams.Orientation orientation, Collection<Cell> cells) {
+        if (cells.isEmpty()) return List.of();
+        int axis = switch (orientation) { case FLAT -> 1; case UPRIGHT_NS -> 2; case UPRIGHT_EW -> 0; };
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
+        int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+        for (Cell c : cells) {
+            int[] v = {c.x(), c.y(), c.z()};
+            for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a]); }
+        }
+        int a = (axis + 1) % 3, b = (axis + 2) % 3;
+        List<Cell> out = new ArrayList<>();
+        for (int va : middle(lo[a], hi[a]))
+            for (int vb : middle(lo[b], hi[b]))
+                for (int t = lo[axis]; t <= hi[axis]; t++) {
+                    int[] v = new int[3];
+                    v[axis] = t;
+                    v[a] = va;
+                    v[b] = vb;
+                    out.add(new Cell(v[0], v[1], v[2]));
+                }
+        return out;
+    }
+
+    /** The middle block of a span, or the two middle blocks when the span is even. */
+    private static int[] middle(int lo, int hi) {
+        int sum = lo + hi;
+        return sum % 2 == 0 ? new int[]{sum / 2} : new int[]{Math.floorDiv(sum, 2), Math.floorDiv(sum, 2) + 1};
+    }
+
     private static Collection<Cell> rotate(Collection<Cell> cells, ShapeParams p) {
         return rotate(cells, p.get(ShapeType.ROTATE_X), p.get(ShapeType.ROTATE_Y), p.get(ShapeType.ROTATE_Z));
     }

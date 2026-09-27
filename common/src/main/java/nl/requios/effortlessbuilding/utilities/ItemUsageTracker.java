@@ -70,10 +70,15 @@ public class ItemUsageTracker {
 
     /** Computes per-item availability for block sets populated by the randomizer pipeline stage. */
     public void compute(Player player, BlockSet blocks, boolean isCreative) {
+        compute(player, blocks, null, isCreative);
+    }
+
+    /** Per-block items, with {@code fallback} (e.g. the held block) for positions without their own. */
+    public void compute(Player player, BlockSet blocks, @org.jetbrains.annotations.Nullable Item fallback, boolean isCreative) {
         initialize();
         Map<Item, List<BlockPos>> requirements = new LinkedHashMap<>();
         for (var mapEntry : blocks.validEntries()) {
-            Item item = mapEntry.getValue().item;
+            Item item = mapEntry.getValue().item != null ? mapEntry.getValue().item : fallback;
             if (item != null) {
                 requirements.computeIfAbsent(item, ignored -> new ArrayList<>()).add(mapEntry.getKey());
             }

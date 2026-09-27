@@ -13,7 +13,13 @@ import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.BlockItem;
+
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Objects;
 
@@ -33,7 +39,7 @@ public class ShapeMode extends BaseBuildMode {
     /** Last generated cells, reused while nothing changes (the preview asks every frame). */
     private ShapeParams cachedParams;
     private int cachedAxis;
-    private List<Cell> cachedCells = List.of();
+    private Built cachedBuilt = new Built(List.of(), List.of());
 
     @Override
     public void initialize() {
@@ -75,6 +81,21 @@ public class ShapeMode extends BaseBuildMode {
         // firstPos is the anchor so the packet carries it; lastPos the radius point
         blocks.firstPos = anchor;
         blocks.lastPos = edge;
+        assignItems(blocks, player, anchor, edge, params);
+    }
+
+    /** Gives the center axle its own block, when the shape has one. */
+    @Override
+    public void assignItems(BlockSet blocks, Player player, BlockPos firstPos, BlockPos secondPos, @Nullable ShapeParams shape) {
+        if (shape == null || shape.centerBlock().isEmpty()) return;
+        ResourceLocation id = ResourceLocation.tryParse(shape.centerBlock());
+        if (id == null || !(BuiltInRegistries.ITEM.get(id) instanceof BlockItem blockItem)) return;
+        for (Cell c : build(player, firstPos, secondPos, shape).axle()) {
+            BlockEntry entry = blocks.get(firstPos.offset(c.x(), c.y(), c.z()));
+            if (entry == null) continue;
+            entry.item = blockItem;
+            entry.blockState = blockItem.getBlock().defaultBlockState();
+        }
     }
 
     /** Anchor goes out as firstPos, the radius point as secondPos. */
@@ -86,22 +107,33 @@ public class ShapeMode extends BaseBuildMode {
     }
 
     private List<BlockPos> positions(Player player, BlockPos anchor, BlockPos edge, ShapeParams params) {
+        Built built = build(player, anchor, edge, params);
+        Set<Cell> all = new LinkedHashSet<>(built.cells());
+        all.addAll(built.axle()); // the axle fills the middle even where the shape is open
+        List<BlockPos> out = new ArrayList<>(all.size());
+        for (Cell c : all) out.add(anchor.offset(c.x(), c.y(), c.z()));
+        return out;
+    }
+
+    /** The shape's cells and its center axle (empty without a center block), at the clicked size. */
+    private record Built(List<Cell> cells, List<Cell> axle) {}
+
+    private Built build(Player player, BlockPos anchor, BlockPos edge, ShapeParams params) {
         if (params.sizing() == ShapeParams.Sizing.CLICKS) {
             int radius = (int) Math.round(Math.hypot(edge.getX() - anchor.getX(), edge.getZ() - anchor.getZ()));
             params = params.scaledTo(Math.max(1, radius));
         }
-        List<Cell> cells = cells(params, ServerConfig.INSTANCE.getMaxBlocksPerAxis(player));
-        List<BlockPos> out = new ArrayList<>(cells.size());
-        for (Cell c : cells) out.add(anchor.offset(c.x(), c.y(), c.z()));
-        return out;
+        return cells(params, ServerConfig.INSTANCE.getMaxBlocksPerAxis(player));
     }
 
-    private synchronized List<Cell> cells(ShapeParams params, int maxAxis) {
+    private synchronized Built cells(ShapeParams params, int maxAxis) {
         if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis) {
-            cachedCells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
+            List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
+            List<Cell> axle = params.centerBlock().isEmpty() ? List.of() : ShapeGenerator.centerAxis(params.orientation(), cells);
+            cachedBuilt = new Built(cells, axle);
             cachedParams = params;
             cachedAxis = maxAxis;
         }
-        return cachedCells;
+        return cachedBuilt;
     }
 }

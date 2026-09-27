@@ -118,8 +118,10 @@ public class BlockPreviewRenderer {
                     baseState = fluid.defaultFluidState().createLegacyBlock();
                 }
             }
-            // Randomizer tool or palette: each block shows its own item
-            boolean randomized = held.getItem() instanceof RandomizerToolItem
+            // Randomizer tool, palette, or positions with their own block (a shape's center block):
+            // those blocks show their own item, the rest the held block
+            boolean randomized = blockSet.values().stream().anyMatch(e -> e.item != null)
+                    || held.getItem() instanceof RandomizerToolItem
                     || PaletteClientState.isActiveFor(mc.player);
             if (baseState != null || randomized) {
                 try {
@@ -133,7 +135,7 @@ public class BlockPreviewRenderer {
                         // Apply per-block mirror/rotation transforms from the modifier pipeline.
                         BlockState state = baseState;
                         BlockEntry entry = blockSet.get(pos);
-                        if (randomized && entry != null && entry.item instanceof BlockItem randomBlock) {
+                        if (entry != null && entry.item instanceof BlockItem randomBlock) {
                             state = randomStates.computeIfAbsent(entry.item,
                                     item -> getPlacementState(randomBlock, mc, new ItemStack(item)));
                         }

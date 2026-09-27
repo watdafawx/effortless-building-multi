@@ -14,9 +14,11 @@ import java.util.TreeMap;
  * @param values    per-type parameters, keyed by {@link ShapeType.ParamSpec#key()}; missing keys use defaults
  * @param schematic file name for {@link ShapeType#SCHEMATIC}, empty otherwise
  * @param parts     more shapes combined into this one, in order (a part never has parts of its own)
+ * @param centerBlock block id for a center axle through the shape (1 by 1, or 2 by 2 when the shape has an
+ *                  even width), empty for none
  */
 public record ShapeParams(ShapeType type, int size, Map<String, Double> values, Orientation orientation,
-                          boolean hollow, Sizing sizing, String schematic, List<Part> parts) {
+                          boolean hollow, Sizing sizing, String schematic, List<Part> parts, String centerBlock) {
 
     public static final int MAX_SIZE = 256;
     public static final int MAX_PARTS = 16;
@@ -94,13 +96,24 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
         hollow = hollow && type.hollowable;
         if (!type.resizable()) sizing = Sizing.SCREEN;
         schematic = schematic == null ? "" : schematic;
+        centerBlock = centerBlock == null ? "" : centerBlock;
         parts = parts == null ? List.of() : List.copyOf(parts.subList(0, Math.min(parts.size(), MAX_PARTS)));
     }
 
     /** A single shape without parts. */
     public ShapeParams(ShapeType type, int size, Map<String, Double> values, Orientation orientation,
                        boolean hollow, Sizing sizing, String schematic) {
-        this(type, size, values, orientation, hollow, sizing, schematic, List.of());
+        this(type, size, values, orientation, hollow, sizing, schematic, List.of(), "");
+    }
+
+    /** A shape with parts and no center block. */
+    public ShapeParams(ShapeType type, int size, Map<String, Double> values, Orientation orientation,
+                       boolean hollow, Sizing sizing, String schematic, List<Part> parts) {
+        this(type, size, values, orientation, hollow, sizing, schematic, parts, "");
+    }
+
+    public ShapeParams withCenterBlock(String blockId) {
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, blockId);
     }
 
     public static ShapeParams defaults(ShapeType type) {
@@ -120,37 +133,37 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
     public ShapeParams with(String key, double value) {
         TreeMap<String, Double> copy = new TreeMap<>(values);
         copy.put(key, value);
-        return new ShapeParams(type, size, copy, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, copy, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withSize(int size) {
-        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withOrientation(Orientation orientation) {
-        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withHollow(boolean hollow) {
-        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withSizing(Sizing sizing) {
-        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withSchematic(String schematic) {
-        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withParts(List<Part> parts) {
-        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 
     /** The same shape as a different type: keeps placement settings and parts, resets the type's parameters. */
     public ShapeParams withType(ShapeType type) {
         ShapeParams d = defaults(type);
-        return new ShapeParams(type, d.size(), Map.of(), d.orientation(), hollow, sizing, schematic, parts);
+        return new ShapeParams(type, d.size(), Map.of(), d.orientation(), hollow, sizing, schematic, parts, centerBlock);
     }
 
     public ShapeParams withPart(int index, Part part) {
@@ -184,6 +197,6 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
             if (spec.scales()) scaled.put(spec.key(), spec.clamp(get(spec.key()) * factor));
         }
         int newSize = (int) Math.max(1, Math.round(size * factor));
-        return new ShapeParams(type, newSize, scaled, orientation, hollow, sizing, schematic, parts);
+        return new ShapeParams(type, newSize, scaled, orientation, hollow, sizing, schematic, parts, centerBlock);
     }
 }

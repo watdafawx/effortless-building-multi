@@ -430,8 +430,9 @@ public class BuildPipelineClient {
                 }
             }
 
-            if (held.getItem() instanceof RandomizerToolItem || PaletteClientState.isActiveFor(player)) {
-                ITEM_USAGE.compute(player, blockSet, player.getAbilities().instabuild);
+            if (held.getItem() instanceof RandomizerToolItem || blockSet.values().stream().anyMatch(e -> e.item != null)) {
+                // Per-block items; blocks without one use the held block
+                ITEM_USAGE.compute(player, blockSet, heldItem, player.getAbilities().instabuild);
             } else if (heldItem != null) {
                 ITEM_USAGE.compute(player, blockSet.validPositions(), heldItem, player.getAbilities().instabuild);
             } else {

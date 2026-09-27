@@ -73,6 +73,7 @@ public final class ShapeTemplateStorage {
         o.addProperty("hollow", p.hollow());
         o.addProperty("sizing", p.sizing().name());
         o.addProperty("schematic", p.schematic());
+        if (!p.centerBlock().isEmpty()) o.addProperty("center_block", p.centerBlock());
         JsonObject values = new JsonObject();
         p.values().forEach(values::addProperty);
         o.add("values", values);
@@ -117,7 +118,8 @@ public final class ShapeTemplateStorage {
                     o.get("hollow").getAsBoolean(),
                     ShapeParams.Sizing.valueOf(o.get("sizing").getAsString()),
                     o.has("schematic") ? o.get("schematic").getAsString() : "",
-                    parts);
+                    parts,
+                    o.has("center_block") ? o.get("center_block").getAsString() : "");
         } catch (RuntimeException e) {
             return null;
         }

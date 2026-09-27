@@ -147,14 +147,16 @@ public class PacketHandler {
         boolean paidWithItems = true;
 
         int placed = 0;
-        // Per-block items: from the Randomizer tool, or from the palette sent with the build
+        // Per-block items: from the Randomizer tool, the palette, or a shape's center block.
+        // Blocks without their own item use the held block.
         boolean perBlockItems = held.getItem() instanceof RandomizerToolItem
-                || packet.palette() != null && blockSet.values().stream().anyMatch(e -> e.item instanceof BlockItem);
+                || blockSet.values().stream().anyMatch(e -> e.item instanceof BlockItem);
         if (perBlockItems) {
+            Item fallback = held.getItem() instanceof BlockItem && BuildPipeline.isBuildTriggerItem(held) ? held.getItem() : null;
             Map<Item, Integer> required = new LinkedHashMap<>();
             for (var mapEntry : blockSet.validEntries()) {
                 if (!BuildSettings.canPlaceAt(level, mapEntry.getKey(), replaceMode, offHand)) continue;
-                Item item = mapEntry.getValue().item;
+                Item item = mapEntry.getValue().item != null ? mapEntry.getValue().item : fallback;
                 if (item instanceof BlockItem) required.merge(item, 1, Integer::sum);
             }
 
@@ -180,8 +182,9 @@ public class PacketHandler {
             for (var mapEntry : blockSet.validEntries()) {
                 BlockPos pos = mapEntry.getKey();
                 BlockEntry entry = mapEntry.getValue();
-                if (!(entry.item instanceof BlockItem blockItem)) continue;
-                if (!creative && used.getOrDefault(entry.item, 0) >= available.getOrDefault(entry.item, 0)) continue;
+                Item item = entry.item != null ? entry.item : fallback;
+                if (!(item instanceof BlockItem blockItem)) continue;
+                if (!creative && used.getOrDefault(item, 0) >= available.getOrDefault(item, 0)) continue;
                 if (!BuildSettings.canPlaceAt(level, pos, replaceMode, offHand)) continue;
 
                 BlockState oldState = level.getBlockState(pos);
@@ -198,7 +201,7 @@ public class PacketHandler {
                     }
                 }
 
-                ItemStack placementStack = new ItemStack(entry.item);
+                ItemStack placementStack = new ItemStack(item);
                 Vec3 localHit = new Vec3(packet.hitLocation().x, pos.getY() + yFrac, packet.hitLocation().z);
                 BlockHitResult serverHit = new BlockHitResult(localHit, packet.hitFace(), pos, false);
                 BlockPlaceContext ctx = new OpenBlockPlaceContext(
@@ -208,7 +211,7 @@ public class PacketHandler {
                 state = entry.applyTransforms(state);
                 level.setBlock(pos, state, 3);
                 undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, state));
-                used.merge(entry.item, 1, Integer::sum);
+                used.merge(item, 1, Integer::sum);
                 placed++;
             }
 

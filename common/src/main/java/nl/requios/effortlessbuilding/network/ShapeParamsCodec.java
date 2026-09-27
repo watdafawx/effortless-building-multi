@@ -25,6 +25,7 @@ public final class ShapeParamsCodec {
         buf.writeBoolean(p != null);
         if (p == null) return;
         writeShape(buf, p);
+        buf.writeUtf(p.centerBlock(), MAX_STRING);
         buf.writeVarInt(p.parts().size());
         for (ShapeParams.Part part : p.parts()) {
             writeShape(buf, part.shape());
@@ -37,7 +38,7 @@ public final class ShapeParamsCodec {
 
     public static @Nullable ShapeParams read(FriendlyByteBuf buf) {
         if (!buf.readBoolean()) return null;
-        ShapeParams shape = readShape(buf);
+        ShapeParams shape = readShape(buf).withCenterBlock(buf.readUtf(MAX_STRING));
         int count = buf.readVarInt();
         if (count < 0 || count > ShapeParams.MAX_PARTS) throw new IllegalArgumentException("Too many shape parts: " + count);
         List<ShapeParams.Part> parts = new ArrayList<>(count);

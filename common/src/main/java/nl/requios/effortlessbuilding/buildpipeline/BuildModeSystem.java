@@ -76,6 +76,7 @@ public class BuildModeSystem implements IBuildSystem {
             blocks.firstPos = rawPositions.getFirst();
             blocks.lastPos = rawPositions.getLast();
         }
+        ctx.mode().instance.assignItems(blocks, player, ctx.firstPos(), ctx.secondPos(), ctx.shape());
     }
 }
 

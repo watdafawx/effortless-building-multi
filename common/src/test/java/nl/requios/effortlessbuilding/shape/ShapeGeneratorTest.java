@@ -298,6 +298,36 @@ class ShapeGeneratorTest {
         assertTrue(both > one && both < 2 * one, "two crossing arches share only their crown: " + both);
     }
 
+    // ---- center axle ----------------------------------------------------------
+
+    @Test
+    void centerAxleRunsThroughAHollowGear() {
+        ShapeParams gear = ShapeParams.defaults(ShapeType.GEAR).withHollow(true);
+        List<Cell> cells = gen(gear);
+        List<Cell> axle = ShapeGenerator.centerAxis(gear.orientation(), cells);
+        int height = cells.stream().mapToInt(Cell::y).max().orElseThrow() + 1;
+        assertEquals(height, axle.size(), "one block per layer, 1 by 1");
+        assertTrue(axle.stream().allMatch(c -> c.x() == 0 && c.z() == 0));
+        assertFalse(new HashSet<>(cells).contains(new Cell(0, 0, 0)), "the gear itself is open there");
+    }
+
+    @Test
+    void centerAxleIsTwoByTwoOnEvenWidths() {
+        // A 4 by 4 by 1 slab has no single middle block
+        List<Cell> slab = new java.util.ArrayList<>();
+        for (int x = 0; x < 4; x++) for (int z = 0; z < 4; z++) slab.add(new Cell(x, 0, z));
+        assertEquals(Set.of(new Cell(1, 0, 1), new Cell(2, 0, 1), new Cell(1, 0, 2), new Cell(2, 0, 2)),
+                new HashSet<>(ShapeGenerator.centerAxis(ShapeParams.Orientation.FLAT, slab)));
+    }
+
+    @Test
+    void uprightAxleGoesThroughTheFace() {
+        ShapeParams wheel = ShapeParams.defaults(ShapeType.WHEEL).with("thickness", 3); // upright N/S by default
+        List<Cell> axle = ShapeGenerator.centerAxis(wheel.orientation(), gen(wheel));
+        assertEquals(3, axle.size());
+        assertEquals(1, axle.stream().map(c -> c.x() + "," + c.y()).distinct().count(), "one column along z");
+    }
+
     @Test
     void polygonHasItsSideCount() {
         // A square prism of circumradius 8 with a flat side facing north is a square

@@ -34,6 +34,11 @@ public interface IBuildMode {
 		return getServerBlocks(player, firstPos, secondPos, thirdPos);
 	}
 
+	// Server-side, after getServerBlocks: lets a mode give some positions their own block
+	// (entry.item / entry.blockState), e.g. a shape's center block. Others keep the held block.
+	default void assignItems(BlockSet blocks, Player player, BlockPos firstPos, BlockPos secondPos, @Nullable ShapeParams shape) {
+	}
+
 	// Returns the intermediate (second) position stored after the second click of a three-click mode.
 	// Returns null for all other modes.
 	default @Nullable BlockPos getIntermediatePos() {

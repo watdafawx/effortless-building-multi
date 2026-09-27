@@ -1,6 +1,7 @@
 package nl.requios.effortlessbuilding.shape;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
@@ -14,7 +15,8 @@ import java.util.*;
 import java.util.stream.Stream;
 
 /**
- * Reads Sponge {@code .schem} files (WorldEdit's format, versions 2 and 3) as shapes.
+ * Reads Sponge {@code .schem} files (WorldEdit's format, versions 2 and 3) and vanilla structure
+ * {@code .nbt} files (saved by structure blocks) as shapes.
  * Only the positions of non-air blocks are used; the player's held block is placed at each.
  * <p>
  * Client and server each read their own folders (relative to the game or server directory), so in
@@ -26,24 +28,33 @@ public final class SchematicLibrary {
     public static final List<Path> FOLDERS = List.of(
             Path.of("config", Constants.MOD_ID, "schematics"),
             Path.of("schematics"),
-            Path.of("config", "worldedit", "schematics"));
+            Path.of("config", "worldedit", "schematics"),
+            // Where structure blocks save on a server with the default world name
+            Path.of("world", "generated", "minecraft", "structures"));
 
-    private static final Set<String> AIR = Set.of("minecraft:air", "minecraft:cave_air", "minecraft:void_air");
+    private static final String SCHEM = ".schem", NBT = ".nbt";
+    private static final Set<String> AIR = Set.of("minecraft:air", "minecraft:cave_air", "minecraft:void_air",
+            "minecraft:structure_void");
 
     private record Loaded(long modified, List<Cell> cells) {}
     private static final Map<Path, Loaded> cache = new HashMap<>();
 
     private SchematicLibrary() {}
 
-    /** Schematic names (file names without extension) available locally, sorted. */
+    /**
+     * Schematic names available locally, sorted: {@code .schem} files without their extension,
+     * {@code .nbt} structure files with it (so both kinds can share a name).
+     */
     public static List<String> list() {
         TreeSet<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         for (Path folder : FOLDERS) {
             if (!Files.isDirectory(folder)) continue;
             try (Stream<Path> files = Files.list(folder)) {
-                files.map(f -> f.getFileName().toString())
-                        .filter(n -> n.toLowerCase(Locale.ROOT).endsWith(".schem"))
-                        .forEach(n -> names.add(n.substring(0, n.length() - ".schem".length())));
+                files.map(f -> f.getFileName().toString()).forEach(n -> {
+                    String lower = n.toLowerCase(Locale.ROOT);
+                    if (lower.endsWith(SCHEM)) names.add(n.substring(0, n.length() - SCHEM.length()));
+                    else if (lower.endsWith(NBT)) names.add(n);
+                });
             } catch (IOException e) {
                 Constants.LOG.warn("[EffortlessBuilding] Cannot list schematics in {}", folder, e);
             }
@@ -84,8 +95,9 @@ public final class SchematicLibrary {
     private static Path find(String name) {
         // Names come from the network: accept plain file names only, never paths
         if (name.isEmpty() || name.contains("/") || name.contains("\\") || name.contains("..")) return null;
+        String fileName = name.toLowerCase(Locale.ROOT).endsWith(NBT) ? name : name + SCHEM;
         for (Path folder : FOLDERS) {
-            Path file = folder.resolve(name + ".schem");
+            Path file = folder.resolve(fileName);
             if (Files.isRegularFile(file)) return file;
         }
         return null;
@@ -93,6 +105,7 @@ public final class SchematicLibrary {
 
     private static List<Cell> read(Path file) throws IOException {
         CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.create(64L * 1024 * 1024));
+        if (file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(NBT)) return readStructure(root);
         // Version 3 nests everything under "Schematic" and moves blocks into "Blocks"
         if (root.contains("Schematic", Tag.TAG_COMPOUND)) root = root.getCompound("Schematic");
         int width = root.getShort("Width") & 0xFFFF;
@@ -127,6 +140,29 @@ public final class SchematicLibrary {
             }
             index++;
         }
+        return cells;
+    }
+
+    /** Vanilla structure file: a size, a block-state palette and a list of {pos, state} blocks. */
+    private static List<Cell> readStructure(CompoundTag root) {
+        ListTag size = root.getList("size", Tag.TAG_INT);
+        int offsetX = size.getInt(0) / 2, offsetZ = size.getInt(2) / 2;
+        // Structures with random variants (like shipwrecks) keep several palettes; use the first
+        ListTag palette = root.contains("palette", Tag.TAG_LIST) ? root.getList("palette", Tag.TAG_COMPOUND)
+                : root.getList("palettes", Tag.TAG_LIST).getList(0);
+        Set<Integer> air = new HashSet<>();
+        for (int i = 0; i < palette.size(); i++) {
+            if (AIR.contains(palette.getCompound(i).getString("Name"))) air.add(i);
+        }
+        List<Cell> cells = new ArrayList<>();
+        ListTag blocks = root.getList("blocks", Tag.TAG_COMPOUND);
+        for (int i = 0; i < blocks.size(); i++) {
+            CompoundTag block = blocks.getCompound(i);
+            if (air.contains(block.getInt("state"))) continue;
+            ListTag pos = block.getList("pos", Tag.TAG_INT);
+            cells.add(new Cell(pos.getInt(0) - offsetX, pos.getInt(1), pos.getInt(2) - offsetZ));
+        }
+        cells.sort(Comparator.comparingInt(Cell::y).thenComparingInt(Cell::z).thenComparingInt(Cell::x));
         return cells;
     }
 }

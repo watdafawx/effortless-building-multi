@@ -54,6 +54,7 @@ public final class PaletteSystem implements IBuildSystem {
             maxY = Math.max(maxY, pos.getY());
         }
         for (BlockEntry entry : blocks.values()) {
+            if (entry.item != null) continue; // already given a block, e.g. a shape's center block
             BlockPos p = entry.blockPos;
             int index = palette.pattern().index(items.size(), palette.band(),
                     p.getX() - origin.getX(), p.getY() - origin.getY(), p.getZ() - origin.getZ(),
