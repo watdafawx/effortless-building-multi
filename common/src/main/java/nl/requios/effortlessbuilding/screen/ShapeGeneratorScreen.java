@@ -305,7 +305,11 @@ public class ShapeGeneratorScreen extends Screen {
 
     /** Super glue (only with Create) and ground blending are offered on the main shape only. */
     private boolean hidden(ShapeType.ParamSpec spec) {
-        if (spec.key().equals(ShapeType.SUPER_GLUE)) return editing >= 0 || !CreateGlue.isAvailable();
+        if (editing >= 0 && ShapeType.isBuildSetting(spec.key())) return true;
+        if (spec.key().equals(ShapeType.SUPER_GLUE)) return !CreateGlue.isAvailable();
+        if (spec.key().equals(ShapeType.PATH_SPACING) || spec.key().equals(ShapeType.PATH_ALIGN)) {
+            return params.sizing() != ShapeParams.Sizing.PATH;
+        }
         // Ground blending belongs to the whole build, not to a part
         return editing >= 0 && (spec.key().equals(TerrainBlender.ENABLED) || spec.key().equals(TerrainBlender.MARGIN));
     }
@@ -626,6 +630,8 @@ public class ShapeGeneratorScreen extends Screen {
         }
         if (params.type() != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS) {
             g.drawString(font, I18n.get("effortlessbuilding.screen.click_sizing_hint"), x, y + paramRows * ROW_H + 12, 0x999999);
+        } else if (params.sizing() == ShapeParams.Sizing.PATH) {
+            g.drawString(font, I18n.get("effortlessbuilding.screen.path_sizing_hint"), x, y + paramRows * ROW_H + 12, 0x999999);
         }
     }
 

@@ -1,28 +1,22 @@
 package nl.requios.effortlessbuilding.buildmode.buildmodes;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import nl.requios.effortlessbuilding.buildmode.BaseBuildMode;
 import nl.requios.effortlessbuilding.config.ServerConfig;
-import nl.requios.effortlessbuilding.shape.SchematicLibrary;
-import nl.requios.effortlessbuilding.shape.ShapeClientState;
-import nl.requios.effortlessbuilding.shape.ShapeGenerator;
+import nl.requios.effortlessbuilding.shape.*;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
-import nl.requios.effortlessbuilding.shape.ShapeMaterials;
-import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import org.jetbrains.annotations.Nullable;
 
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.BlockItem;
-
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * Builds the shape chosen in the Shape Generator screen ({@link ShapeClientState}).
@@ -30,8 +24,11 @@ import java.util.Objects;
  *   <li>Screen sizing: one click places the shape, standing on the clicked block.</li>
  *   <li>Click sizing: the first click sets the center, the second sets the radius
  *       (horizontal distance from the center); the design scales to it.</li>
+ *   <li>Path: the first click sets the start, the second the end; copies repeat along the line,
+ *       optionally turned to face along it.</li>
  * </ul>
- * The server regenerates the shape from the packet's {@link ShapeParams} and click positions.
+ * With "follow ground", every column of the result is moved up or down to sit on the terrain below it.
+ * The server regenerates everything from the packet's {@link ShapeParams} and click positions.
  */
 public class ShapeMode extends BaseBuildMode {
 
@@ -40,7 +37,7 @@ public class ShapeMode extends BaseBuildMode {
     /** Last generated cells, reused while nothing changes (the preview asks every frame). */
     private ShapeParams cachedParams;
     private int cachedAxis;
-    private Built cachedBuilt = new Built(List.of(), List.of());
+    private Built cachedBuilt = new Built(List.of(), Set.of(), Set.of());
 
     @Override
     public void initialize() {
@@ -62,9 +59,7 @@ public class ShapeMode extends BaseBuildMode {
     public void findCoordinates(BlockSet blocks, Player player) {
         if (clicks == 0 || center == null) return;
         ShapeParams params = ShapeClientState.getActive();
-        BlockPos edge = params.sizing() == ShapeParams.Sizing.CLICKS
-                ? Floor.findFloor(player, center, true)
-                : center;
+        BlockPos edge = params.sizing() != ShapeParams.Sizing.SCREEN ? Floor.findFloor(player, center, true) : center;
         if (edge == null) edge = center;
         fill(blocks, player, center, edge, params);
     }
@@ -76,80 +71,136 @@ public class ShapeMode extends BaseBuildMode {
 
     private void fill(BlockSet blocks, Player player, BlockPos anchor, BlockPos edge, ShapeParams params) {
         blocks.clear();
-        for (BlockPos pos : positions(player, anchor, edge, params)) {
+        for (BlockPos pos : layout(player, anchor, edge, params).keySet()) {
             blocks.add(new BlockEntry(pos));
         }
-        // firstPos is the anchor so the packet carries it; lastPos the radius point
+        // firstPos is the anchor so the packet carries it; lastPos the radius point or path end
         blocks.firstPos = anchor;
         blocks.lastPos = edge;
         assignItems(blocks, player, anchor, edge, params);
     }
 
-    /**
-     * Gives positions their own block: a schematic's saved blocks (exact states, so stairs keep their
-     * facing), then the center axle. Saved blocks that have no item (water, portals) are left out.
-     */
-    @Override
-    public void assignItems(BlockSet blocks, Player player, BlockPos firstPos, BlockPos secondPos, @Nullable ShapeParams shape) {
-        if (shape == null) return;
-        ShapeMaterials.of(shape).forEach((c, state) -> {
-            BlockPos pos = firstPos.offset(c.x(), c.y(), c.z());
-            BlockEntry entry = blocks.get(pos);
-            if (entry == null) return;
-            if (!(state.getBlock().asItem() instanceof BlockItem item)) {
-                blocks.remove(pos);
-                return;
-            }
-            entry.item = item;
-            entry.blockState = state;
-            entry.exactState = true;
-        });
-
-        if (shape.centerBlock().isEmpty()) return;
-        ResourceLocation id = ResourceLocation.tryParse(shape.centerBlock());
-        if (id == null || !(BuiltInRegistries.ITEM.get(id) instanceof BlockItem blockItem)) return;
-        for (Cell c : build(player, firstPos, secondPos, shape).axle()) {
-            BlockEntry entry = blocks.get(firstPos.offset(c.x(), c.y(), c.z()));
-            if (entry == null) continue;
-            entry.item = blockItem;
-            entry.blockState = blockItem.getBlock().defaultBlockState();
-            entry.exactState = false;
-        }
-    }
-
-    /** Anchor goes out as firstPos, the radius point as secondPos. */
+    /** Anchor goes out as firstPos, the radius point or path end as secondPos. */
     @Override
     public List<BlockPos> getServerBlocks(Player player, BlockPos firstPos, BlockPos secondPos,
                                          @Nullable BlockPos thirdPos, @Nullable ShapeParams shape) {
         if (shape == null) return List.of();
-        return positions(player, firstPos, secondPos, shape);
+        return new ArrayList<>(layout(player, firstPos, secondPos, shape).keySet());
     }
 
-    private List<BlockPos> positions(Player player, BlockPos anchor, BlockPos edge, ShapeParams params) {
-        Built built = build(player, anchor, edge, params);
-        Set<Cell> all = new LinkedHashSet<>(built.cells());
-        all.addAll(built.axle()); // the axle fills the middle even where the shape is open
-        List<BlockPos> out = new ArrayList<>(all.size());
-        for (Cell c : all) out.add(anchor.offset(c.x(), c.y(), c.z()));
+    /**
+     * Gives positions their own block: a schematic's saved blocks (exact states, so stairs keep their
+     * facing) and the center axle's block. Everything else keeps the held block or palette.
+     */
+    @Override
+    public void assignItems(BlockSet blocks, Player player, BlockPos firstPos, BlockPos secondPos, @Nullable ShapeParams shape) {
+        if (shape == null) return;
+        layout(player, firstPos, secondPos, shape).forEach((pos, own) -> {
+            if (own == null) return;
+            BlockEntry entry = blocks.get(pos);
+            if (entry == null) return;
+            entry.item = own.getBlock().asItem();
+            entry.blockState = own;
+            entry.exactState = true;
+        });
+    }
+
+    // =========================================================================
+    // Layout: where every block goes, and which have their own block state
+    // =========================================================================
+
+    /** One copy of the shape: where it stands and with which settings (a path turns each copy). */
+    private record Placement(BlockPos anchor, ShapeParams params) {}
+
+    /** World position → the block it must be (null: the held block or palette decides). */
+    private Map<BlockPos, BlockState> layout(Player player, BlockPos first, BlockPos second, ShapeParams params) {
+        int maxAxis = ServerConfig.INSTANCE.getMaxBlocksPerAxis(player);
+        BlockState centerState = null;
+        ResourceLocation centerId = params.centerBlock().isEmpty() ? null : ResourceLocation.tryParse(params.centerBlock());
+        if (centerId != null && BuiltInRegistries.ITEM.get(centerId) instanceof BlockItem item) centerState = item.getBlock().defaultBlockState();
+
+        Map<BlockPos, BlockState> out = new LinkedHashMap<>();
+        for (Placement placement : placements(first, second, params)) {
+            Built built = cells(placement.params(), maxAxis);
+            Map<Cell, BlockState> saved = ShapeMaterials.of(placement.params());
+            List<Cell> all = new ArrayList<>(built.cells());
+            for (Cell c : built.axle()) if (!built.cellSet().contains(c)) all.add(c); // the axle fills even open middles
+            for (Cell c : all) {
+                BlockPos pos = placement.anchor().offset(c.x(), c.y(), c.z());
+                BlockState own = null;
+                if (centerState != null && built.axle().contains(c)) {
+                    own = centerState;
+                } else if (saved.containsKey(c)) {
+                    own = saved.get(c);
+                    if (!(own.getBlock().asItem() instanceof BlockItem)) continue; // water, portals: left out
+                }
+                out.put(pos, own);
+            }
+        }
+        if (params.getInt(ShapeType.FOLLOW_GROUND) == 1) out = followGround(player.level(), out);
         return out;
     }
 
-    /** The shape's cells and its center axle (empty without a center block), at the clicked size. */
-    private record Built(List<Cell> cells, List<Cell> axle) {}
-
-    private Built build(Player player, BlockPos anchor, BlockPos edge, ShapeParams params) {
-        if (params.sizing() == ShapeParams.Sizing.CLICKS) {
-            int radius = (int) Math.round(Math.hypot(edge.getX() - anchor.getX(), edge.getZ() - anchor.getZ()));
-            params = params.scaledTo(Math.max(1, radius));
-        }
-        return cells(params, ServerConfig.INSTANCE.getMaxBlocksPerAxis(player));
+    private List<Placement> placements(BlockPos first, BlockPos second, ShapeParams params) {
+        return switch (params.sizing()) {
+            case SCREEN -> List.of(new Placement(first, params));
+            case CLICKS -> {
+                int radius = (int) Math.round(Math.hypot(second.getX() - first.getX(), second.getZ() - first.getZ()));
+                yield List.of(new Placement(first, params.scaledTo(Math.max(1, radius))));
+            }
+            case PATH -> {
+                double dx = second.getX() - first.getX(), dz = second.getZ() - first.getZ();
+                double length = Math.hypot(dx, dz);
+                int spacing = Math.max(1, params.getInt(ShapeType.PATH_SPACING));
+                ShapeParams copy = params;
+                if (params.getInt(ShapeType.PATH_ALIGN) == 1 && length > 0) {
+                    // Turn so the shape's front (+z) points along the path
+                    double turn = Math.toDegrees(Math.atan2(dx, dz));
+                    copy = params.with(ShapeType.ROTATE_Y, Math.round(params.get(ShapeType.ROTATE_Y) + turn));
+                }
+                List<Placement> list = new ArrayList<>();
+                for (double t = 0; t <= length + 1e-6; t += spacing) {
+                    double f = length == 0 ? 0 : t / length;
+                    BlockPos at = new BlockPos((int) Math.round(first.getX() + dx * f), first.getY(),
+                            (int) Math.round(first.getZ() + dz * f));
+                    list.add(new Placement(at, copy));
+                }
+                yield list;
+            }
+        };
     }
+
+    /**
+     * Moves every column up or down so its lowest block sits on the ground right below it
+     * (the first free block above the terrain, ignoring leaves). Columns in unloaded chunks stay put.
+     */
+    private static Map<BlockPos, BlockState> followGround(Level level, Map<BlockPos, BlockState> layout) {
+        Map<Long, Integer> lowest = new HashMap<>();
+        for (BlockPos p : layout.keySet()) lowest.merge(column(p), p.getY(), Math::min);
+        Map<Long, Integer> shift = new HashMap<>();
+        for (var e : lowest.entrySet()) {
+            int x = (int) (e.getKey() >> 32), z = (int) (long) e.getKey();
+            if (!level.hasChunkAt(new BlockPos(x, 0, z))) { shift.put(e.getKey(), 0); continue; }
+            shift.put(e.getKey(), level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - e.getValue());
+        }
+        Map<BlockPos, BlockState> out = new LinkedHashMap<>();
+        layout.forEach((p, own) -> out.put(p.above(shift.get(column(p))), own));
+        return out;
+    }
+
+    private static long column(BlockPos p) {
+        return ((long) p.getX() << 32) | (p.getZ() & 0xFFFFFFFFL);
+    }
+
+    /** The shape's cells (as a list and a set) and its center axle (empty without a center block). */
+    private record Built(List<Cell> cells, Set<Cell> cellSet, Set<Cell> axle) {}
 
     private synchronized Built cells(ShapeParams params, int maxAxis) {
         if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis) {
             List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
-            List<Cell> axle = params.centerBlock().isEmpty() ? List.of() : ShapeGenerator.centerAxis(params.orientation(), cells);
-            cachedBuilt = new Built(cells, axle);
+            Set<Cell> axle = params.centerBlock().isEmpty() ? Set.of()
+                    : new LinkedHashSet<>(ShapeGenerator.centerAxis(params.orientation(), cells));
+            cachedBuilt = new Built(cells, new HashSet<>(cells), axle);
             cachedParams = params;
             cachedAxis = maxAxis;
         }

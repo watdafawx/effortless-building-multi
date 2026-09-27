@@ -393,5 +393,14 @@
   "effortlessbuilding.screen.pixel_art_no_blocks": "No blocks to use: carry some blocks, or wait for the color scan",
   "effortlessbuilding.screen.pixel_art_size": "%s \u00d7 %s blocks, %s kinds",
   "effortlessbuilding.screen.pixel_art_create": "Create schematic",
-  "effortlessbuilding.screen.pixel_art_create.description": "Save it as <image>_art.schem and select it as the shape to build."
+  "effortlessbuilding.screen.pixel_art_create.description": "Save it as <image>_art.schem and select it as the shape to build.",
+  "effortlessbuilding.shape.sizing.path": "Along a path",
+  "effortlessbuilding.shape.param.follow_ground": "Follow ground",
+  "effortlessbuilding.shape.param.follow_ground.off": "Off (level)",
+  "effortlessbuilding.shape.param.follow_ground.on": "On (each column on the terrain)",
+  "effortlessbuilding.shape.param.path_spacing": "Path spacing",
+  "effortlessbuilding.shape.param.path_align": "Face the path",
+  "effortlessbuilding.shape.param.path_align.off": "Off",
+  "effortlessbuilding.shape.param.path_align.on": "On",
+  "effortlessbuilding.screen.path_sizing_hint": "Click the start, then the end of the path"
 }

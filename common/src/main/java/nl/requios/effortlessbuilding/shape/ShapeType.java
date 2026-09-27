@@ -108,7 +108,21 @@ public enum ShapeType {
         all.add(ParamSpec.angle(ROTATE_Z));
         // Only used on the main shape, and only offered when Create is installed
         all.add(ParamSpec.choice(SUPER_GLUE, 0, "off", "on"));
+        // Main shape only: follow the terrain, and path settings (shown when sizing is Path)
+        all.add(ParamSpec.choice(FOLLOW_GROUND, 0, "off", "on"));
+        all.add(ParamSpec.count(PATH_SPACING, 8, 1, 64));
+        all.add(ParamSpec.choice(PATH_ALIGN, 1, "off", "on"));
         this.params = List.copyOf(all);
+    }
+
+    /** Move every column onto the terrain below it (1) or keep the shape level (0). */
+    public static final String FOLLOW_GROUND = "follow_ground";
+    /** Path sizing: blocks between copies, and whether copies turn to face along the path. */
+    public static final String PATH_SPACING = "path_spacing", PATH_ALIGN = "path_align";
+
+    /** Settings that belong to the whole build, never to a part. */
+    public static boolean isBuildSetting(String key) {
+        return key.equals(SUPER_GLUE) || key.equals(FOLLOW_GROUND) || key.equals(PATH_SPACING) || key.equals(PATH_ALIGN);
     }
 
     public static final String ROTATE_X = "rotate_x", ROTATE_Y = "rotate_y", ROTATE_Z = "rotate_z";

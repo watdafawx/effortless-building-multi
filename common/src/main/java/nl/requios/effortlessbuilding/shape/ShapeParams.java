@@ -42,7 +42,9 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
         /** The size set in the screen; one click places. */
         SCREEN,
         /** Click the center, then click again at the radius. */
-        CLICKS;
+        CLICKS,
+        /** Click a start and an end; copies repeat along the line between them. */
+        PATH;
 
         public String getNameKey() {
             return "effortlessbuilding.shape.sizing." + name().toLowerCase();
@@ -94,7 +96,7 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
         }
         values = Collections.unmodifiableMap(clean);
         hollow = hollow && type.hollowable;
-        if (!type.resizable()) sizing = Sizing.SCREEN;
+        if (!type.resizable() && sizing == Sizing.CLICKS) sizing = Sizing.SCREEN;
         schematic = schematic == null ? "" : schematic;
         centerBlock = centerBlock == null ? "" : centerBlock;
         parts = parts == null ? List.of() : List.copyOf(parts.subList(0, Math.min(parts.size(), MAX_PARTS)));
