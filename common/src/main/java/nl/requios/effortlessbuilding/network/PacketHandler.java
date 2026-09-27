@@ -1,6 +1,9 @@
 package nl.requios.effortlessbuilding.network;
 
 import net.minecraft.core.BlockPos;
+import nl.requios.effortlessbuilding.shape.SchematicLibrary;
+import nl.requios.effortlessbuilding.shape.SchematicUploader;
+import nl.requios.effortlessbuilding.shape.SchematicUploads;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -55,11 +58,18 @@ import java.util.Map;
 public class PacketHandler {
 
     public static void sendToServer(PlaceBuildModePacket packet) {
+        if (packet.shape() != null) SchematicUploader.ensure(packet.shape());
         Services.NETWORK.sendToServer(packet);
     }
 
     public static void sendToServer(BreakBuildModePacket packet) {
+        if (packet.shape() != null) SchematicUploader.ensure(packet.shape());
         Services.NETWORK.sendToServer(packet);
+    }
+
+    /** Called on the server for each piece of a schematic a player sends. */
+    public static void handleSchematicUpload(SchematicUploadC2SPacket packet, ServerPlayer player) {
+        SchematicUploads.receive(player.getUUID(), packet.name(), packet.hash(), packet.index(), packet.total(), packet.data());
     }
 
     public static void sendToServer(UndoPacket packet) {
@@ -139,6 +149,10 @@ public class PacketHandler {
      * Called on the server when a {@link PlaceBuildModePacket} is received.
      */
     public static void handlePlaceBuildMode(PlaceBuildModePacket packet, ServerPlayer player) {
+        SchematicLibrary.runAs(player.getUUID(), () -> placeBuildMode(packet, player));
+    }
+
+    private static void placeBuildMode(PlaceBuildModePacket packet, ServerPlayer player) {
         ServerLevel level = player.serverLevel();
 
         // Run the full server pipeline: BuildMode → Modifiers → Constraints
@@ -460,6 +474,10 @@ public class PacketHandler {
      * Called on the server when a {@link BreakBuildModePacket} is received.
      */
     public static void handleBreakBuildMode(BreakBuildModePacket packet, ServerPlayer player) {
+        SchematicLibrary.runAs(player.getUUID(), () -> breakBuildMode(packet, player));
+    }
+
+    private static void breakBuildMode(BreakBuildModePacket packet, ServerPlayer player) {
         boolean creative = player.isCreative();
 
         // Enforce survivalAllowBreaking (early exit before running pipeline)

@@ -54,6 +54,61 @@ public final class SchematicLibrary {
     }
 
     private static final Map<Path, Loaded> cache = new HashMap<>();
+    /** Uploaded schematics, parsed: "player/name" → the upload they came from. */
+    private static final Map<String, Loaded> uploadCache = new HashMap<>();
+
+    /** On the server while handling a player's build: whose uploads to look in. */
+    private static final ThreadLocal<UUID> scope = new ThreadLocal<>();
+
+    /** Runs a player's build so schematic lookups see what that player uploaded. */
+    public static void runAs(UUID player, Runnable build) {
+        UUID before = scope.get();
+        scope.set(player);
+        try {
+            build.run();
+        } finally {
+            scope.set(before);
+        }
+    }
+
+    /** The schematic names a design uses (main shape and parts). */
+    public static List<String> namesIn(ShapeParams p) {
+        List<String> names = new ArrayList<>();
+        if (p.type() == ShapeType.SCHEMATIC && !p.schematic().isEmpty()) names.add(p.schematic());
+        for (ShapeParams.Part part : p.parts()) {
+            ShapeParams s = part.shape();
+            if (s.type() == ShapeType.SCHEMATIC && !s.schematic().isEmpty() && !names.contains(s.schematic())) names.add(s.schematic());
+        }
+        return names;
+    }
+
+    /**
+     * Changes whenever the named schematic's content may have changed (upload fingerprint, or file
+     * time); -1 when there is none.
+     */
+    public static synchronized long version(String name) {
+        UUID player = scope.get();
+        SchematicUploads.Upload upload = player == null ? null : SchematicUploads.get(player, name);
+        if (upload != null) return upload.hash();
+        Path file = find(name);
+        if (file == null) return -1;
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    /** Drops a player's parsed uploads (they logged out). */
+    static synchronized void forget(UUID player) {
+        uploadCache.keySet().removeIf(key -> key.startsWith(player + "/"));
+    }
+
+    /** The schematic's blocks as written in the file (for sending to a server), or null. */
+    public static synchronized Map<Cell, String> blocks(String name) {
+        Loaded loaded = load(name);
+        return loaded == null ? null : loaded.blocks;
+    }
 
     private SchematicLibrary() {}
 
@@ -125,6 +180,18 @@ public final class SchematicLibrary {
     }
 
     private static Loaded load(String name) {
+        // A player's upload is what their client previewed, so it wins over a server file of the same name
+        UUID player = scope.get();
+        SchematicUploads.Upload upload = player == null ? null : SchematicUploads.get(player, name);
+        if (upload != null) {
+            String key = player + "/" + name;
+            Loaded loaded = uploadCache.get(key);
+            if (loaded == null || loaded.modified != upload.hash()) {
+                loaded = new Loaded(upload.hash(), upload.blocks());
+                uploadCache.put(key, loaded);
+            }
+            return loaded;
+        }
         Path file = find(name);
         if (file == null) return null;
         try {

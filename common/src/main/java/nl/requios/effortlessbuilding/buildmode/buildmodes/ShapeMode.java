@@ -42,6 +42,7 @@ public class ShapeMode extends BaseBuildMode {
     /** Last generated cells, reused while nothing changes (the preview asks every frame). */
     private ShapeParams cachedParams;
     private int cachedAxis;
+    private List<Long> cachedVersions;
     private Built cachedBuilt = new Built(List.of(), Set.of(), Set.of(), null, null);
 
     @Override
@@ -266,7 +267,9 @@ public class ShapeMode extends BaseBuildMode {
                          @Nullable Cell bearing, @Nullable Direction bearingFacing) {}
 
     private synchronized Built cells(ShapeParams params, int maxAxis) {
-        if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis) {
+        // Schematic versions: a re-uploaded or edited schematic with the same name must not reuse old cells
+        List<Long> versions = SchematicLibrary.namesIn(params).stream().map(SchematicLibrary::version).toList();
+        if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis || !versions.equals(cachedVersions)) {
             List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
             int bearingEnd = CreateGlue.isAvailable() && params.getInt(ShapeType.SUPER_GLUE) == 1
                     ? params.getInt(ShapeType.BEARING) : 0;
@@ -294,6 +297,7 @@ public class ShapeMode extends BaseBuildMode {
             cachedBuilt = new Built(cells, new HashSet<>(cells), axle, bearing, facing);
             cachedParams = params;
             cachedAxis = maxAxis;
+            cachedVersions = versions;
         }
         return cachedBuilt;
     }

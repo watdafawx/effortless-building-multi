@@ -87,6 +87,11 @@ public class EffortlessBuilding {
                     (payload, context) -> context.enqueueWork(() ->
                             PacketHandler.handleRedo((ServerPlayer) context.player(), payload.steps())));
             registrar.playToServer(
+                    nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.TYPE,
+                    nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.STREAM_CODEC,
+                    (payload, context) -> context.enqueueWork(() ->
+                            PacketHandler.handleSchematicUpload(payload, (ServerPlayer) context.player())));
+            registrar.playToServer(
                     nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.TYPE,
                     nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.STREAM_CODEC,
                     (payload, context) -> context.enqueueWork(() ->
@@ -153,6 +158,7 @@ public class EffortlessBuilding {
                 ModifierServerStorage.removePlayer(serverPlayer.getUUID());
             }
             nl.requios.effortlessbuilding.utilities.BuildQueue.finish(event.getEntity().getUUID());
+            nl.requios.effortlessbuilding.shape.SchematicUploads.clear(event.getEntity().getUUID());
             UndoManager.clearPlayer(event.getEntity().getUUID());
             PlacedBlockTracker.clearPlayer(event.getEntity().getUUID());
         });

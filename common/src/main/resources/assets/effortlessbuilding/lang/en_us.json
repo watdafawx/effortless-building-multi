@@ -455,5 +455,6 @@
   "effortlessbuilding.shape.param.smooth.off": "Off",
   "effortlessbuilding.shape.param.smooth.stairs": "Stairs (slabs at corners)",
   "effortlessbuilding.shape.param.smooth.slabs": "Slabs",
-  "effortlessbuilding.shape.param.smooth.description": "Top blocks one step above their neighbor become stairs or slabs of the same block (held block or saved block), so slopes look smooth. Blocks with no stairs or slab version stay full. In survival you need the stairs and slabs."
+  "effortlessbuilding.shape.param.smooth.description": "Top blocks one step above their neighbor become stairs or slabs of the same block (held block or saved block), so slopes look smooth. Blocks with no stairs or slab version stay full. In survival you need the stairs and slabs.",
+  "effortlessbuilding.message.schematic_too_big": "Schematic %s is too big to send to this server; put it in the server's schematics folder instead"
 }

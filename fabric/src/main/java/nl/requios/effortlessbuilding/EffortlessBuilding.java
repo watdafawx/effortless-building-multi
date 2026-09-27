@@ -53,6 +53,10 @@ public class EffortlessBuilding implements ModInitializer {
         PayloadTypeRegistry.playC2S().register(BreakBuildModePacket.TYPE, BreakBuildModePacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(UndoPacket.TYPE, UndoPacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(RedoPacket.TYPE, RedoPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.TYPE,
+                nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.STREAM_CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.TYPE, (payload, context) ->
+                context.server().execute(() -> PacketHandler.handleSchematicUpload(payload, context.player())));
         PayloadTypeRegistry.playC2S().register(nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.TYPE,
                 nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.TYPE,
@@ -104,6 +108,7 @@ public class EffortlessBuilding implements ModInitializer {
             ModifierServerStorage.savePlayer(server, player.getUUID());
             ModifierServerStorage.removePlayer(player.getUUID());
             nl.requios.effortlessbuilding.utilities.BuildQueue.finish(player.getUUID());
+            nl.requios.effortlessbuilding.shape.SchematicUploads.clear(player.getUUID());
             UndoManager.clearPlayer(player.getUUID());
             PlacedBlockTracker.clearPlayer(player.getUUID());
         });
