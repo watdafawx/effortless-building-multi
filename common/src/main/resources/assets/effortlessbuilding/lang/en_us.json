@@ -450,5 +450,10 @@
   "effortlessbuilding.screen.undo_history.minutes": "%s min ago",
   "effortlessbuilding.screen.undo_history.hours": "%s h ago",
   "effortlessbuilding.screen.undo_history.undo_to": "Undo %s build(s) up to here",
-  "effortlessbuilding.screen.undo_history.redo_to": "Redo %s build(s) up to here"
+  "effortlessbuilding.screen.undo_history.redo_to": "Redo %s build(s) up to here",
+  "effortlessbuilding.shape.param.smooth": "Smooth top",
+  "effortlessbuilding.shape.param.smooth.off": "Off",
+  "effortlessbuilding.shape.param.smooth.stairs": "Stairs (slabs at corners)",
+  "effortlessbuilding.shape.param.smooth.slabs": "Slabs",
+  "effortlessbuilding.shape.param.smooth.description": "Top blocks one step above their neighbor become stairs or slabs of the same block (held block or saved block), so slopes look smooth. Blocks with no stairs or slab version stay full. In survival you need the stairs and slabs."
 }

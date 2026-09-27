@@ -8,6 +8,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import nl.requios.effortlessbuilding.buildmode.BaseBuildMode;
@@ -145,7 +148,63 @@ public class ShapeMode extends BaseBuildMode {
             }
         }
         if (params.getInt(ShapeType.FOLLOW_GROUND) == 1) out = followGround(player.level(), out);
+        if (params.getInt(ShapeType.SMOOTH) != 0) smooth(player, out, params.getInt(ShapeType.SMOOTH) == 1);
         return out;
+    }
+
+    /**
+     * Turns top blocks that sit one step above a neighbor into stairs (low side toward the drop) or
+     * bottom slabs, using the stair/slab version of the block that would be placed there. Blocks
+     * without such a version stay full.
+     */
+    private static void smooth(Player player, Map<BlockPos, BlockState> layout, boolean stairs) {
+        BlockState held = player.getMainHandItem().getItem() instanceof BlockItem item ? item.getBlock().defaultBlockState() : null;
+        Map<BlockPos, BlockState> changes = new HashMap<>();
+        for (var e : layout.entrySet()) {
+            BlockPos pos = e.getKey();
+            if (layout.containsKey(pos.above())) continue; // only the top surface
+            List<Direction> drops = new ArrayList<>();
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                BlockPos side = pos.relative(d);
+                if (!layout.containsKey(side) && layout.containsKey(side.below())) drops.add(d);
+            }
+            if (drops.isEmpty()) continue;
+            BlockState base = e.getValue() != null ? e.getValue() : held;
+            if (base == null) continue;
+            BlockState smoothed = null;
+            if (stairs && drops.size() == 1) {
+                Block stair = variant(base.getBlock(), "_stairs");
+                if (stair instanceof StairBlock) {
+                    smoothed = stair.defaultBlockState().setValue(StairBlock.FACING, drops.get(0).getOpposite());
+                }
+            }
+            if (smoothed == null) {
+                Block slab = variant(base.getBlock(), "_slab");
+                if (slab instanceof SlabBlock) smoothed = slab.defaultBlockState();
+            }
+            if (smoothed != null) changes.put(pos, smoothed);
+        }
+        layout.putAll(changes);
+    }
+
+    /**
+     * The stairs or slab made from a block, found by name: stone → stone_stairs, stone_bricks →
+     * stone_brick_stairs, oak_planks → oak_stairs, quartz_block → quartz_stairs. Null when there is none.
+     */
+    private static @Nullable Block variant(Block block, String suffix) {
+        if (block instanceof StairBlock || block instanceof SlabBlock) return null;
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+        String name = id.getPath();
+        List<String> bases = new ArrayList<>(List.of(name));
+        for (String end : List.of("_planks", "_block", "s")) {
+            if (name.endsWith(end)) bases.add(name.substring(0, name.length() - end.length()));
+        }
+        for (String b : bases) {
+            ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), b + suffix);
+            var found = BuiltInRegistries.BLOCK.getOptional(candidate);
+            if (found.isPresent()) return found.get();
+        }
+        return null;
     }
 
     private List<Placement> placements(BlockPos first, BlockPos second, ShapeParams params) {
