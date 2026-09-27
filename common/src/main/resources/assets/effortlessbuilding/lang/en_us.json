@@ -327,5 +327,8 @@
   "effortlessbuilding.screen.palette_reload_presets": "Reload",
   "effortlessbuilding.screen.palette_reload_presets.description": "Read the preset files again. Add your own .json palettes to config/effortlessbuilding/palettes.",
   "effortlessbuilding.screen.palette_delete_favorite": "Delete favorite",
-  "effortlessbuilding.screen.palette_no_favorites": "No favorites yet. Use \"Save as favorite\" on the left."
+  "effortlessbuilding.screen.palette_no_favorites": "No favorites yet. Use \"Save as favorite\" on the left.",
+  "effortlessbuilding.shape.param.rotate_x": "Tilt X (\u00b0)",
+  "effortlessbuilding.shape.param.rotate_y": "Turn Y (\u00b0)",
+  "effortlessbuilding.shape.param.rotate_z": "Tilt Z (\u00b0)"
 }

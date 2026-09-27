@@ -93,8 +93,15 @@ public enum ShapeType {
         this.defaultSize = defaultSize;
         this.hollowable = hollowable;
         this.defaultOrientation = defaultOrientation;
-        this.params = params;
+        // Every shape can be turned freely around each axis (applied after its orientation)
+        List<ParamSpec> all = new java.util.ArrayList<>(params);
+        all.add(ParamSpec.angle(ROTATE_X));
+        all.add(ParamSpec.angle(ROTATE_Y));
+        all.add(ParamSpec.angle(ROTATE_Z));
+        this.params = List.copyOf(all);
     }
+
+    public static final String ROTATE_X = "rotate_x", ROTATE_Y = "rotate_y", ROTATE_Z = "rotate_z";
 
     public String getNameKey() {
         return "effortlessbuilding.shape." + name().toLowerCase();
@@ -114,17 +121,22 @@ public enum ShapeType {
      * @param scales whether the value is a length that grows with the shape's size
      * @param integer whether the value is a whole number
      */
-    public record ParamSpec(String key, double defaultValue, double min, double max, boolean scales, boolean integer) {
+    public record ParamSpec(String key, double defaultValue, double min, double max, boolean scales, boolean integer, double step) {
         static ParamSpec length(String key, double def, double min) {
-            return new ParamSpec(key, def, min, 256, true, true);
+            return new ParamSpec(key, def, min, 256, true, true, 1);
         }
 
         static ParamSpec count(String key, double def, double min, double max) {
-            return new ParamSpec(key, def, min, max, false, true);
+            return new ParamSpec(key, def, min, max, false, true, 1);
         }
 
         static ParamSpec ratio(String key, double def, double min, double max) {
-            return new ParamSpec(key, def, min, max, false, false);
+            return new ParamSpec(key, def, min, max, false, false, 0.05);
+        }
+
+        /** Degrees, -180 to 180, stepping 15 in the screen (any value can be typed). */
+        static ParamSpec angle(String key) {
+            return new ParamSpec(key, 0, -180, 180, false, false, 15);
         }
 
         public double clamp(double value) {

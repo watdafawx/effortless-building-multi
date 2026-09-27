@@ -38,7 +38,8 @@ public final class ShapeGenerator {
         Set<Cell> result = new HashSet<>(single(p, schematics));
         for (ShapeParams.Part part : p.parts()) {
             Set<Cell> other = new HashSet<>();
-            for (Cell c : single(part.shape(), schematics)) {
+            // Each part turns on its own before it is placed at its offset
+            for (Cell c : rotate(single(part.shape(), schematics), part.shape())) {
                 other.add(new Cell(c.x() + part.x(), c.y() + part.y(), c.z() + part.z()));
             }
             switch (part.operation()) {
@@ -53,7 +54,117 @@ public final class ShapeGenerator {
                 }
             }
         }
-        return clip(result, maxAxis);
+        // The main shape's rotation turns the whole combination
+        return clip(rotate(result, p), maxAxis);
+    }
+
+    private static Collection<Cell> rotate(Collection<Cell> cells, ShapeParams p) {
+        return rotate(cells, p.get(ShapeType.ROTATE_X), p.get(ShapeType.ROTATE_Y), p.get(ShapeType.ROTATE_Z));
+    }
+
+    /**
+     * Turns cells around their bounding-box center by the given degrees (X, then Y, then Z), keeping
+     * the lowest layer where it was so the shape still stands on its anchor.
+     * <p>
+     * Every block of the result is looked up in the original shape (inverse mapping), so rotated shapes
+     * stay solid instead of getting holes. Quarter turns are exact; other angles also count a block when
+     * enough of its corners fall inside the original, which keeps thin walls closed.
+     */
+    static Collection<Cell> rotate(Collection<Cell> cells, double rx, double ry, double rz) {
+        if (cells.isEmpty() || (rx % 360 == 0 && ry % 360 == 0 && rz % 360 == 0)) return cells;
+        double[][] m = rotationMatrix(rx, ry, rz);
+        boolean exact = rx % 90 == 0 && ry % 90 == 0 && rz % 90 == 0;
+
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
+        int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+        for (Cell c : cells) {
+            int[] v = {c.x(), c.y(), c.z()};
+            for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a]); }
+        }
+        // A whole-block pivot keeps quarter turns exact (no half-block rounding)
+        double[] center = {Math.floorDiv(lo[0] + hi[0], 2), Math.floorDiv(lo[1] + hi[1], 2), Math.floorDiv(lo[2] + hi[2], 2)};
+        Set<Cell> source = cells instanceof Set<Cell> set ? set : new HashSet<>(cells);
+
+        // Only blocks near where some original block lands can be part of the result
+        int reach = exact ? 0 : 1;
+        Set<Cell> candidates = new HashSet<>();
+        for (Cell c : cells) {
+            double[] q = transform(m, c.x() - center[0], c.y() - center[1], c.z() - center[2], false);
+            int x = (int) Math.round(q[0] + center[0]), y = (int) Math.round(q[1] + center[1]), z = (int) Math.round(q[2] + center[2]);
+            for (int dx = -reach; dx <= reach; dx++)
+                for (int dy = -reach; dy <= reach; dy++)
+                    for (int dz = -reach; dz <= reach; dz++) candidates.add(new Cell(x + dx, y + dy, z + dz));
+        }
+
+        List<Cell> out = new ArrayList<>();
+        for (Cell t : candidates) {
+            if (insideOriginal(source, m, center, t.x(), t.y(), t.z())) {
+                out.add(t);
+            } else if (!exact) {
+                int hits = 0;
+                for (int corner = 0; corner < 8; corner++) {
+                    double ox = (corner & 1) == 0 ? -0.3 : 0.3, oy = (corner & 2) == 0 ? -0.3 : 0.3, oz = (corner & 4) == 0 ? -0.3 : 0.3;
+                    if (insideOriginal(source, m, center, t.x() + ox, t.y() + oy, t.z() + oz)) hits++;
+                }
+                if (hits >= 3) out.add(t);
+            }
+        }
+        if (out.isEmpty()) return out;
+
+        int minY = Integer.MAX_VALUE;
+        for (Cell c : out) minY = Math.min(minY, c.y());
+        int shift = lo[1] - minY;
+        List<Cell> shifted = new ArrayList<>(out.size());
+        for (Cell c : out) shifted.add(new Cell(c.x(), c.y() + shift, c.z()));
+        return shifted;
+    }
+
+    /** Whether the point, turned back into the original frame, falls in one of the original blocks. */
+    private static boolean insideOriginal(Set<Cell> source, double[][] m, double[] center, double x, double y, double z) {
+        double[] s = transform(m, x - center[0], y - center[1], z - center[2], true);
+        return source.contains(new Cell((int) Math.round(s[0] + center[0]), (int) Math.round(s[1] + center[1]),
+                (int) Math.round(s[2] + center[2])));
+    }
+
+    /** R = Rz * Ry * Rx for angles in degrees. */
+    private static double[][] rotationMatrix(double rx, double ry, double rz) {
+        double[][] x = {{1, 0, 0}, {0, cos(rx), -sin(rx)}, {0, sin(rx), cos(rx)}};
+        double[][] y = {{cos(ry), 0, sin(ry)}, {0, 1, 0}, {-sin(ry), 0, cos(ry)}};
+        double[][] z = {{cos(rz), -sin(rz), 0}, {sin(rz), cos(rz), 0}, {0, 0, 1}};
+        return multiply(z, multiply(y, x));
+    }
+
+    /** m * v, or the inverse (the transpose, since m is a rotation). */
+    private static double[] transform(double[][] m, double x, double y, double z, boolean inverse) {
+        double[] v = {x, y, z}, out = new double[3];
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++) out[i] += (inverse ? m[j][i] : m[i][j]) * v[j];
+        return out;
+    }
+
+    private static double[][] multiply(double[][] a, double[][] b) {
+        double[][] out = new double[3][3];
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                for (int k = 0; k < 3; k++) out[i][j] += a[i][k] * b[k][j];
+        return out;
+    }
+
+    // Exact values at quarter turns keep 90 degree rotations free of rounding error
+    private static double cos(double degrees) {
+        double d = ((degrees % 360) + 360) % 360;
+        if (d == 0) return 1;
+        if (d == 90 || d == 270) return 0;
+        if (d == 180) return -1;
+        return Math.cos(Math.toRadians(degrees));
+    }
+
+    private static double sin(double degrees) {
+        double d = ((degrees % 360) + 360) % 360;
+        if (d == 0 || d == 180) return 0;
+        if (d == 90) return 1;
+        if (d == 270) return -1;
+        return Math.sin(Math.toRadians(degrees));
     }
 
     /** One shape (its parts ignored), oriented and anchored, not clipped. */

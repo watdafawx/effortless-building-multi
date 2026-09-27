@@ -227,6 +227,11 @@ public class ShapeGeneratorScreen extends Screen {
                         .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.schematic.description")))
                         .bounds(buttonX, y, buttonW, 16).build());
             }));
+            for (ShapeType.ParamSpec spec : type.params) {
+                list.add(new Row(I18n.get(spec.getNameKey()), y -> widgets.addDoubleField(x, y,
+                        ScreenWidgets.formatDouble(current().get(spec.key())),
+                        v -> setCurrent(current().with(spec.key(), v)), spec.step())));
+            }
         } else {
             list.add(new Row(I18n.get("effortlessbuilding.shape.param.size"), y ->
                     widgets.addIntField(x, y, String.valueOf(current().size()), v -> setCurrent(current().withSize(v)))));
@@ -251,7 +256,7 @@ public class ShapeGeneratorScreen extends Screen {
                                 v -> setCurrent(current().with(spec.key(), v)));
                     } else {
                         widgets.addDoubleField(x, y, ScreenWidgets.formatDouble(current().get(spec.key())),
-                                v -> setCurrent(current().with(spec.key(), v)), 0.05);
+                                v -> setCurrent(current().with(spec.key(), v)), spec.step());
                     }
                 }));
             }

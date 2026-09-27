@@ -228,6 +228,76 @@ class ShapeGeneratorTest {
         assertTrue(outer.parts().getFirst().shape().parts().isEmpty());
     }
 
+    // ---- rotation -------------------------------------------------------------
+
+    @ParameterizedTest
+    @EnumSource(value = ShapeType.class, names = "SCHEMATIC", mode = EnumSource.Mode.EXCLUDE)
+    void quarterTurnsKeepEveryBlock(ShapeType type) {
+        ShapeParams p = ShapeParams.defaults(type);
+        int count = gen(p).size();
+        for (String axis : List.of(ShapeType.ROTATE_X, ShapeType.ROTATE_Y, ShapeType.ROTATE_Z)) {
+            List<Cell> turned = gen(p.with(axis, 90));
+            assertEquals(count, turned.size(), type + " " + axis);
+            assertEquals(0, turned.stream().mapToInt(Cell::y).min().orElseThrow(), type + " " + axis + " still stands on the anchor");
+        }
+    }
+
+    @Test
+    void quarterTurnAroundYSwapsWidthAndDepth() {
+        // A 1-deep, 7-wide upright arch turned 90 degrees faces the other way
+        ShapeParams arch = ShapeParams.defaults(ShapeType.ARCH).with("depth", 1);
+        List<Cell> before = gen(arch), after = gen(arch.with(ShapeType.ROTATE_Y, 90));
+        int spanXBefore = before.stream().mapToInt(Cell::x).max().orElseThrow() - before.stream().mapToInt(Cell::x).min().orElseThrow();
+        int spanZAfter = after.stream().mapToInt(Cell::z).max().orElseThrow() - after.stream().mapToInt(Cell::z).min().orElseThrow();
+        assertEquals(spanXBefore, spanZAfter);
+    }
+
+    @Test
+    void freeAngleKeepsASolidShapeSolid() {
+        // A square slab turned 45 degrees: about the same area, and no holes inside it
+        ShapeParams slab = box(6, 1);
+        int flat = gen(slab).size();
+        Set<Cell> cells = new HashSet<>(gen(slab.with(ShapeType.ROTATE_Y, 45)));
+        assertTrue(cells.size() > flat * 0.8 && cells.size() < flat * 1.4, "area " + cells.size() + " vs " + flat);
+        int cx = (int) Math.round(cells.stream().mapToInt(Cell::x).average().orElseThrow());
+        int cz = (int) Math.round(cells.stream().mapToInt(Cell::z).average().orElseThrow());
+        for (int x = -3; x <= 3; x++)
+            for (int z = -3; z <= 3; z++)
+                if (Math.abs(x) + Math.abs(z) <= 3) assertTrue(cells.contains(new Cell(cx + x, 0, cz + z)), "hole at " + x + "," + z);
+    }
+
+    @Test
+    void tiltedRingHasNoGaps() {
+        // A thin flat ring tilted 30 degrees: every block still touches a neighbor (26-connected, no breaks)
+        ShapeParams ring = ShapeParams.defaults(ShapeType.TORUS).withSize(8).with("tube_radius", 1)
+                .with(ShapeType.ROTATE_X, 30);
+        Set<Cell> cells = new HashSet<>(gen(ring));
+        Cell start = cells.iterator().next();
+        Set<Cell> seen = new HashSet<>(List.of(start));
+        java.util.ArrayDeque<Cell> queue = new java.util.ArrayDeque<>(List.of(start));
+        while (!queue.isEmpty()) {
+            Cell c = queue.poll();
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+                Cell n = new Cell(c.x() + dx, c.y() + dy, c.z() + dz);
+                if (cells.contains(n) && seen.add(n)) queue.add(n);
+            }
+        }
+        assertEquals(cells.size(), seen.size(), "one connected ring");
+        int flat = gen(ring.with(ShapeType.ROTATE_X, 0)).size();
+        assertTrue(cells.size() > flat * 0.8 && cells.size() < flat * 1.6, cells.size() + " vs " + flat);
+    }
+
+    @Test
+    void partsTurnOnTheirOwn() {
+        // Two arches, the second turned 90 degrees, cross like a groin vault
+        ShapeParams plus = ShapeParams.defaults(ShapeType.ARCH).with("depth", 1).withParts(List.of(
+                new ShapeParams.Part(ShapeParams.defaults(ShapeType.ARCH).with("depth", 1).with(ShapeType.ROTATE_Y, 90),
+                        ShapeParams.Operation.UNITE, 0, 0, 0)));
+        int one = gen(ShapeParams.defaults(ShapeType.ARCH).with("depth", 1)).size();
+        int both = gen(plus).size();
+        assertTrue(both > one && both < 2 * one, "two crossing arches share only their crown: " + both);
+    }
+
     @Test
     void polygonHasItsSideCount() {
         // A square prism of circumradius 8 with a flat side facing north is a square
