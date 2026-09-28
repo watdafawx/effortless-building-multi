@@ -141,7 +141,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         top.child(Components.label(title.copy().withStyle(s -> s.withBold(true))).color(Color.WHITE));
         header = Components.label(Component.empty()).color(Color.ofRgb(ACCENT));
         top.child(header);
-        top.child(Components.spacer());
+        top.child(hspace());
         top.child(w(button("effortlessbuilding.screen.copy_code", "effortlessbuilding.screen.copy_code.description", this::copyCode)));
         top.child(w(button("effortlessbuilding.screen.paste_code", "effortlessbuilding.screen.paste_code.description", this::pasteCode)));
         root.child(top);
@@ -178,8 +178,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout infoRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
         infoRow.gap(4).verticalAlignment(VerticalAlignment.CENTER);
         sizeLabel = Components.label(Component.empty()).color(Color.ofRgb(TEXT));
-        infoRow.child(sizeLabel);
-        infoRow.child(Components.spacer());
+        previewPanel.child(sizeLabel);
+        infoRow.child(hspace());
         infoRow.child(w(button("effortlessbuilding.screen.export_schem", "effortlessbuilding.screen.export_schem.description", () -> export(".schem"))));
         infoRow.child(w(Components.button(Component.literal(".nbt"), b -> export(".nbt")))
                 .tooltip(Component.translatable("effortlessbuilding.screen.export_nbt.description")));
@@ -202,7 +202,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         bottom.child(w(button("effortlessbuilding.screen.save_template", null, this::saveTemplate)));
         bottom.child(w(button("effortlessbuilding.screen.palette_button", "effortlessbuilding.screen.palette_button.description",
                 () -> { if (minecraft != null) minecraft.setScreen(new PaletteScreen(this)); })));
-        bottom.child(Components.spacer());
+        bottom.child(hspace());
         bottom.child(w(button("effortlessbuilding.screen.use_shape", "effortlessbuilding.screen.use_shape.description", this::useShape))
                 .horizontalSizing(Sizing.fixed(90)));
         bottom.child(w(Components.button(Component.translatable("gui.done"), b -> onClose())).horizontalSizing(Sizing.fixed(70)));
@@ -271,7 +271,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         label.maxWidth(SIDEBAR_W - (delete != null ? 32 : 18));
         row.child(label);
         if (delete != null) {
-            row.child(Components.spacer());
+            row.child(hspace());
             row.child(w(Components.button(Component.literal("×"), b -> delete.run())).sizing(Sizing.fixed(11), Sizing.fixed(11))
                     .tooltip(Component.translatable("effortlessbuilding.screen.delete_template")));
         }
@@ -455,7 +455,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     /** A button showing the current choice; clicking opens a menu with every option. */
     private <T> io.wispforest.owo.ui.core.Component choice(String shown, T[] options, java.util.function.Function<T, String> name,
                                                            java.util.function.Consumer<T> pick) {
-        ButtonComponent button = Components.button(Component.literal(shown + "  ▾"), b -> {
+        ButtonComponent button = Components.button(Component.literal(shown + "  ▼"), b -> {
             DropdownComponent.openContextMenu(this, root, FlowLayout::child, b.getX(), b.getY() + b.getHeight(), menu -> {
                 menu.surface(Surface.flat(0xF0181818).and(Surface.outline(0xFF555555)));
                 for (T option : options) {
@@ -529,6 +529,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private static LabelComponent sectionLabel(String text) {
         return (LabelComponent) Components.label(Component.literal(text).withStyle(s -> s.withBold(true))).color(Color.ofRgb(SECTION))
                 .margins(Insets.bottom(2));
+    }
+
+    /** Pushes what follows to the right edge (owo's own spacer also grows vertically, stretching the row). */
+    private static io.wispforest.owo.ui.core.Component hspace() {
+        return Components.spacer().verticalSizing(Sizing.fixed(0));
     }
 
     /** owo turns vanilla widgets into UI components at runtime; this gives them that type for the compiler. */

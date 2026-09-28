@@ -33,6 +33,14 @@ neoForge {
         server {
             server()
         }
+        // Opens one of the mod's screens, saves a screenshot to run/screenshots and quits:
+        // ./gradlew :neoforge:runUiTest -Puitest=shape -Puisize=1280x720   (shape, palette, undo)
+        uiTest {
+            client()
+            systemProperty('effortlessbuilding.uitest', project.findProperty('uitest') ?: 'shape')
+            def size = (project.findProperty('uisize') ?: '2000x1107').split('x')
+            programArguments.addAll('--width', size[0], '--height', size[1])
+        }
     }
     mods {
         "${mod_id}" {
