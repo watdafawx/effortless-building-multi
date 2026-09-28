@@ -32,7 +32,7 @@ import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
 import org.joml.Matrix4f;
 
 import java.util.*;
-import java.util.function.IntConsumer;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Shape Generator: pick a parametric shape (or a template, or a schematic), combine more shapes into it
@@ -47,19 +47,29 @@ public class ShapeGeneratorScreen extends Screen {
     // ---- layout (the panel grows with the window; the preview takes the extra space) ----
     private static final int LIST_W = 112;
     private static final int PARAM_X = LIST_W + 12;
-    private static final int PARAM_W = 184;
-    private static final int PREVIEW_X = PARAM_X + PARAM_W + 6;
+    /** Narrowest preview before the settings fall back to one column. */
+    private static final int MIN_PREVIEW_W = 300;
     private static final int TOP = 22;
     private static final int ROW_H = 20;
     private static final int LIST_ROW_H = 13;
     private static final int BLOCK_COLOR = 0xE8A33D;
     private int panelW = 460, panelH = 262, previewW = 150, previewH = 150, paramRows = 10;
+    /**
+     * Settings layout, measured from the text each time the screen is built: label width, control
+     * width (fits the longest option), column width, number of columns (1 or 2), and all columns together.
+     */
+    private int labelW = 62, fieldW = 122, colW = 190, cols = 1, paramW = 184, previewX = PARAM_X + 190;
 
     /** How the preview shows the shape: rotatable 3D, or a slice through one plane. */
     private enum View { THREE_D, TOP, FRONT, SIDE }
 
     /** One settings row: its label and how to build its widgets at a given y. */
-    private record Row(String label, IntConsumer build) {}
+    private record Row(String label, RowBuilder build) {}
+
+    /** Adds a row's widgets with the label at (x, y). */
+    private interface RowBuilder {
+        void build(int x, int y);
+    }
 
     // ---- state ----
     private ShapeParams params;
@@ -127,7 +137,6 @@ public class ShapeGeneratorScreen extends Screen {
     protected void init() {
         panelW = Math.max(Math.min(width - 16, 960), Math.min(470, width));
         panelH = Math.max(Math.min(height - 16, 560), Math.min(262, height));
-        previewW = panelW - PREVIEW_X - 6;
         previewH = panelH - TOP - 80;
         paramRows = Math.max(4, (panelH - TOP - 52) / ROW_H);
         BlockColorCache.ensureReady();
@@ -137,12 +146,14 @@ public class ShapeGeneratorScreen extends Screen {
         int px = panelX(), py = panelY();
 
         buildListWidgets(px, py);
-        buildRows(px + PARAM_X);
-        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - paramRows));
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + paramRows); i++) {
-            rows.get(i).build().accept(py + TOP + (i - paramScroll) * ROW_H);
+        buildRows();
+        layoutColumns();
+        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - visibleRows()));
+        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + visibleRows()); i++) {
+            int k = i - paramScroll;
+            rows.get(i).build().build(px + PARAM_X + (k / paramRows) * colW, py + TOP + (k % paramRows) * ROW_H);
         }
-        buildPreviewWidgets(px + PREVIEW_X, py + TOP);
+        buildPreviewWidgets(px + previewX, py + TOP);
 
         // Bottom bar: template name, save, use, close
         int by = py + panelH - 20;
@@ -159,7 +170,7 @@ public class ShapeGeneratorScreen extends Screen {
                 .bounds(px + PARAM_X + 142, by, 42, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.use_shape"), b -> useShape())
                 .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.use_shape.description")))
-                .bounds(px + PREVIEW_X, by, 70, 16).build());
+                .bounds(px + previewX, by, 70, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
                 .bounds(px + panelW - 76, by, 70, 16).build());
 
@@ -218,45 +229,44 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     /** All settings rows for what is being edited; only {@link #paramRows} are shown at once. */
-    private void buildRows(int x) {
+    private void buildRows() {
         List<Row> list = new ArrayList<>();
-        int buttonX = x + ScreenWidgets.LABEL_W, buttonW = PARAM_W - ScreenWidgets.LABEL_W;
 
         // Which part to edit, plus add/remove
-        list.add(new Row(I18n.get("effortlessbuilding.screen.editing"), y -> {
+        list.add(new Row(I18n.get("effortlessbuilding.screen.editing"), (x, y) -> {
             addRenderableWidget(Button.builder(Component.literal(editingLabel()), b -> {
                         editing = editing + 1 >= params.parts().size() ? -1 : editing + 1;
                         paramScroll = 0;
                         rebuildWidgets();
                     })
                     .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.editing.description")))
-                    .bounds(buttonX, y, buttonW - 34, 16).build());
+                    .bounds(x + labelW, y, fieldW - 34, 16).build());
             Button add = addRenderableWidget(Button.builder(Component.literal("+"), b -> addPart())
                     .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.add_part")))
-                    .bounds(buttonX + buttonW - 32, y, 16, 16).build());
+                    .bounds(x + labelW + fieldW - 32, y, 16, 16).build());
             add.active = params.parts().size() < ShapeParams.MAX_PARTS;
             Button remove = addRenderableWidget(Button.builder(Component.literal("×"), b -> removePart())
                     .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.remove_part")))
-                    .bounds(buttonX + buttonW - 16, y, 16, 16).build());
+                    .bounds(x + labelW + fieldW - 16, y, 16, 16).build());
             remove.active = editing >= 0;
         }));
 
         if (editing >= 0) {
-            list.add(new Row(I18n.get("effortlessbuilding.screen.operation"), y -> addCycleButton(x, y,
+            list.add(new Row(I18n.get("effortlessbuilding.screen.operation"), (x, y) -> addCycleButton(x, y,
                     I18n.get(currentPart().operation().getNameKey()),
                     () -> setCurrentPart(currentPart().withOperation(next(ShapeParams.Operation.values(), currentPart().operation()))))));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_x"), y -> widgets.addIntField(x, y, String.valueOf(currentPart().x()),
+            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_x"), (x, y) -> widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(currentPart().x()),
                     v -> setCurrentPart(currentPart().withOffset(v, currentPart().y(), currentPart().z())))));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_y"), y -> widgets.addIntField(x, y, String.valueOf(currentPart().y()),
+            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_y"), (x, y) -> widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(currentPart().y()),
                     v -> setCurrentPart(currentPart().withOffset(currentPart().x(), v, currentPart().z())))));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_z"), y -> widgets.addIntField(x, y, String.valueOf(currentPart().z()),
+            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_z"), (x, y) -> widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(currentPart().z()),
                     v -> setCurrentPart(currentPart().withOffset(currentPart().x(), currentPart().y(), v)))));
         }
 
         ShapeParams shape = current();
         ShapeType type = shape.type();
         if (type == ShapeType.SCHEMATIC) {
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.file"), y -> {
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.file"), (x, y) -> {
                 List<String> names = SchematicLibrary.list();
                 String name = current().schematic().isEmpty() && !names.isEmpty() ? names.getFirst() : current().schematic();
                 if (!name.equals(current().schematic())) setCurrent(current().withSchematic(name));
@@ -264,44 +274,44 @@ public class ShapeGeneratorScreen extends Screen {
                                         ? I18n.get("effortlessbuilding.screen.no_schematics") : name),
                                 b -> { cycleSchematic(names); rebuildWidgets(); })
                         .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.schematic.description")))
-                        .bounds(buttonX, y, buttonW, 16).build());
+                        .bounds(x + labelW, y, fieldW, 16).build());
             }));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.pixel_art_row"), y ->
+            list.add(new Row(I18n.get("effortlessbuilding.screen.pixel_art_row"), (x, y) ->
                     addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.pixel_art_open"), b -> {
                                 if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this,
                                         name -> setCurrent(current().withSchematic(name))));
                             })
                             .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.pixel_art.description")))
-                            .bounds(buttonX, y, buttonW, 16).build())));
+                            .bounds(x + labelW, y, fieldW, 16).build())));
             for (ShapeType.ParamSpec spec : type.params) {
                 if (hidden(spec)) continue;
-                list.add(new Row(I18n.get(spec.getNameKey()), y -> {
+                list.add(new Row(I18n.get(spec.getNameKey()), (x, y) -> {
                     if (!spec.options().isEmpty()) {
                         int chosen = current().getInt(spec.key());
-                        addCycleButton(x, y, I18n.get(spec.getOptionKey(chosen)),
+                        addCycleButton(x, y, spec.getNameKey() + ".description", I18n.get(spec.getOptionKey(chosen)),
                                 () -> setCurrent(current().with(spec.key(), (chosen + 1) % spec.options().size())));
                     } else {
-                        widgets.addDoubleField(x, y, ScreenWidgets.formatDouble(current().get(spec.key())),
+                        widgets.addDoubleField(x + labelW - ScreenWidgets.LABEL_W, y, ScreenWidgets.formatDouble(current().get(spec.key())),
                                 v -> setCurrent(current().with(spec.key(), v)), spec.step());
                     }
                 }));
             }
         } else {
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.size"), y ->
-                    widgets.addIntField(x, y, String.valueOf(current().size()), v -> setCurrent(current().withSize(v)))));
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.orientation"), y -> addCycleButton(x, y,
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.size"), (x, y) ->
+                    widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(current().size()), v -> setCurrent(current().withSize(v)))));
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.orientation"), (x, y) -> addCycleButton(x, y,
                     I18n.get(current().orientation().getNameKey()),
                     () -> setCurrent(current().withOrientation(next(ShapeParams.Orientation.values(), current().orientation()))))));
             if (editing < 0) {
                 // Sizing belongs to the whole shape: parts scale along with it
-                list.add(new Row(I18n.get("effortlessbuilding.shape.param.sizing"), y -> addCycleButton(x, y,
+                list.add(new Row(I18n.get("effortlessbuilding.shape.param.sizing"), (x, y) -> addCycleButton(x, y,
                         I18n.get(params.sizing().getNameKey()),
                         () -> params = params.withSizing(next(ShapeParams.Sizing.values(), params.sizing())))));
             }
         }
         if (editing < 0) {
             // A center axle in its own block; 2 by 2 when the shape has no single middle block
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.center_block"), y ->
+            list.add(new Row(I18n.get("effortlessbuilding.shape.param.center_block"), (x, y) ->
                     addRenderableWidget(Button.builder(Component.literal(centerBlockLabel()), b -> {
                                 if (minecraft == null) return;
                                 minecraft.setScreen(new BlockPickerScreen(this,
@@ -310,26 +320,26 @@ public class ShapeGeneratorScreen extends Screen {
                                                 : BuiltInRegistries.ITEM.getKey(item).toString())));
                             })
                             .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.shape.param.center_block.description")))
-                            .bounds(buttonX, y, buttonW, 16).build())));
+                            .bounds(x + labelW, y, fieldW, 16).build())));
         }
         if (type != ShapeType.SCHEMATIC) {
             if (type.hollowable) {
-                list.add(new Row(I18n.get("effortlessbuilding.shape.param.hollow"), y ->
-                        widgets.addCheckbox(buttonX, y + 4, "", current().hollow(),
+                list.add(new Row(I18n.get("effortlessbuilding.shape.param.hollow"), (x, y) ->
+                        widgets.addCheckbox(x + labelW, y + 4, "", current().hollow(),
                                 () -> { setCurrent(current().withHollow(!current().hollow())); rebuildWidgets(); })));
             }
             for (ShapeType.ParamSpec spec : type.params) {
                 if (hidden(spec)) continue;
-                list.add(new Row(I18n.get(spec.getNameKey()), y -> {
+                list.add(new Row(I18n.get(spec.getNameKey()), (x, y) -> {
                     if (!spec.options().isEmpty()) {
                         int chosen = current().getInt(spec.key());
-                        addCycleButton(x, y, I18n.get(spec.getOptionKey(chosen)),
+                        addCycleButton(x, y, spec.getNameKey() + ".description", I18n.get(spec.getOptionKey(chosen)),
                                 () -> setCurrent(current().with(spec.key(), (chosen + 1) % spec.options().size())));
                     } else if (spec.integer()) {
-                        widgets.addIntField(x, y, String.valueOf(current().getInt(spec.key())),
+                        widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(current().getInt(spec.key())),
                                 v -> setCurrent(current().with(spec.key(), v)));
                     } else {
-                        widgets.addDoubleField(x, y, ScreenWidgets.formatDouble(current().get(spec.key())),
+                        widgets.addDoubleField(x + labelW - ScreenWidgets.LABEL_W, y, ScreenWidgets.formatDouble(current().get(spec.key())),
                                 v -> setCurrent(current().with(spec.key(), v)), spec.step());
                     }
                 }));
@@ -351,8 +361,43 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private void addCycleButton(int x, int y, String label, Runnable cycle) {
-        addRenderableWidget(Button.builder(Component.literal(label), b -> { cycle.run(); rebuildWidgets(); })
-                .bounds(x + ScreenWidgets.LABEL_W, y, PARAM_W - ScreenWidgets.LABEL_W, 16).build());
+        addCycleButton(x, y, null, label, cycle);
+    }
+
+    /** @param tooltipKey shown on hover when the language has it (the long explanation of the choice) */
+    private void addCycleButton(int x, int y, @Nullable String tooltipKey, String label, Runnable cycle) {
+        Button.Builder builder = Button.builder(Component.literal(label), b -> { cycle.run(); rebuildWidgets(); })
+                .bounds(x + labelW, y, fieldW, 16);
+        if (tooltipKey != null && I18n.exists(tooltipKey)) builder.tooltip(Tooltip.create(Component.translatable(tooltipKey)));
+        addRenderableWidget(builder.build());
+    }
+
+    /**
+     * Sizes the settings from their text: labels as wide as the longest one, controls as wide as the
+     * longest choice, and two columns when the preview keeps enough room.
+     */
+    private void layoutColumns() {
+        labelW = 40;
+        for (Row row : rows) labelW = Math.max(labelW, font.width(row.label()) + 6);
+        fieldW = 96; // room for number fields and their −/+ buttons
+        ShapeType type = current().type();
+        for (ShapeType.ParamSpec spec : type.params) {
+            for (int i = 0; i < spec.options().size(); i++) fieldW = Math.max(fieldW, font.width(I18n.get(spec.getOptionKey(i))) + 12);
+        }
+        for (ShapeParams.Orientation o : ShapeParams.Orientation.values()) fieldW = Math.max(fieldW, font.width(I18n.get(o.getNameKey())) + 12);
+        for (ShapeParams.Sizing z : ShapeParams.Sizing.values()) fieldW = Math.max(fieldW, font.width(I18n.get(z.getNameKey())) + 12);
+        fieldW = Math.min(fieldW, 180);
+        colW = labelW + fieldW + 10;
+        int room = panelW - PARAM_X - 12;
+        cols = room - 2 * colW >= MIN_PREVIEW_W && rows.size() > paramRows ? 2 : 1;
+        paramW = cols * colW - 10;
+        previewX = PARAM_X + paramW + 8;
+        previewW = panelW - previewX - 6;
+    }
+
+    /** Rows shown at once, over all columns. */
+    private int visibleRows() {
+        return paramRows * cols;
     }
 
     private void buildPreviewWidgets(int x, int y) {
@@ -574,9 +619,9 @@ public class ShapeGeneratorScreen extends Screen {
             rebuildWidgets();
             return true;
         }
-        if (mouseX < px + PREVIEW_X) {
+        if (mouseX < px + previewX) {
             int step = dir * BlockGrid.scrollStep(paramRows);
-            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - paramRows), paramScroll + step));
+            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - visibleRows()), paramScroll + step));
             rebuildWidgets();
             return true;
         }
@@ -589,7 +634,7 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private boolean inPreview(double mouseX, double mouseY) {
-        int x = panelX() + PREVIEW_X, y = panelY() + TOP;
+        int x = panelX() + previewX, y = panelY() + TOP;
         return mouseX >= x && mouseX < x + previewW && mouseY >= y && mouseY < y + previewH;
     }
 
@@ -608,17 +653,17 @@ public class ShapeGeneratorScreen extends Screen {
         int px = panelX(), py = panelY();
 
         g.fill(px + LIST_W + 6, py + 2, px + LIST_W + 7, py + panelH - 24, 0xFF555555);
-        g.fill(px + PREVIEW_X - 4, py + 2, px + PREVIEW_X - 3, py + panelH - 24, 0xFF555555);
+        g.fill(px + previewX - 4, py + 2, px + previewX - 3, py + panelH - 24, 0xFF555555);
 
         g.drawString(font, title, px + 5, py + 8, 0xFFFFFF);
         String header = templateName != null ? templateName : I18n.get(params.type().getNameKey());
         if (!params.parts().isEmpty()) header += " + " + params.parts().size();
-        g.drawString(font, font.plainSubstrByWidth(header, PARAM_W), px + PARAM_X, py + 8, 0xFFFFFF);
+        g.drawString(font, font.plainSubstrByWidth(header, paramW), px + PARAM_X, py + 8, 0xFFFFFF);
 
         renderList(g, px + 4, py + TOP, mouseX, mouseY);
         renderRowLabels(g, px + PARAM_X, py + TOP);
         widgets.renderCheckboxes(g, mouseX, mouseY);
-        renderPreview(g, px + PREVIEW_X, py + TOP);
+        renderPreview(g, px + previewX, py + TOP);
     }
 
     private void renderList(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
@@ -655,12 +700,14 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     private void renderRowLabels(GuiGraphics g, int x, int y) {
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + paramRows); i++) {
-            g.drawString(font, font.plainSubstrByWidth(rows.get(i).label(), ScreenWidgets.LABEL_W - 2),
-                    x, y + (i - paramScroll) * ROW_H + 4, 0xCCCCCC);
+        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + visibleRows()); i++) {
+            int k = i - paramScroll;
+            g.drawString(font, font.plainSubstrByWidth(rows.get(i).label(), labelW - 2),
+                    x + (k / paramRows) * colW, y + (k % paramRows) * ROW_H + 4, 0xCCCCCC);
         }
-        if (rows.size() > paramRows) {
-            String more = (paramScroll + 1) + "–" + Math.min(rows.size(), paramScroll + paramRows) + " / " + rows.size()
+        if (cols == 2) g.fill(x + colW - 6, y, x + colW - 5, y + paramRows * ROW_H - 4, 0xFF444444);
+        if (rows.size() > visibleRows()) {
+            String more = (paramScroll + 1) + "–" + Math.min(rows.size(), paramScroll + visibleRows()) + " / " + rows.size()
                     + "  " + I18n.get("effortlessbuilding.screen.scroll_for_more");
             g.drawString(font, more, x, y + paramRows * ROW_H + 2, 0x777777);
         }
