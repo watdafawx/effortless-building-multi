@@ -503,9 +503,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         flow.child(w(Components.button(Component.literal("−"), b -> down.run())).sizing(Sizing.fixed(14), Sizing.fixed(16)));
         flow.child(w(box));
         flow.child(w(Components.button(Component.literal("+"), b -> up.run())).sizing(Sizing.fixed(14), Sizing.fixed(16)));
-        // The wheel changes the number only while the field is selected; otherwise it scrolls the settings
+        // The wheel over the field changes the number (Alt: 5 steps); over labels it scrolls the settings
         w(box).mouseScroll().subscribe((x, y, amount) -> {
-            if (!box.isFocused()) return false;
             stepBox(box, (amount > 0 ? step : -step) * (Screen.hasAltDown() ? 5 : 1), integer);
             return true;
         });
