@@ -52,7 +52,9 @@ import java.util.function.Supplier;
 public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
     private static final int SIDEBAR_W = 124;
-    private static final int ROW_H = 18;
+    private static final int ROW_H = 17;
+    /** Height of buttons and fields in the settings (vanilla's 20 leaves little room). */
+    private static final int CONTROL_H = 16;
     private static final int COL_GAP = 10;
     /** Narrowest preview before the settings fall back to one column. */
     private static final int MIN_PREVIEW_W = 200;
@@ -135,10 +137,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         BlockColorCache.ensureReady();
         root.surface(Surface.flat(0xB0101010));
         root.padding(Insets.of(8));
-        root.gap(6);
+        // No gap on the root: menus are mounted there, and a gap would shift the screen when one opens
 
         // ---- header ----
         FlowLayout top = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        top.margins(Insets.bottom(6));
         top.gap(6).verticalAlignment(VerticalAlignment.CENTER);
         top.child(Components.label(title.copy().withStyle(s -> s.withBold(true))).color(Color.WHITE));
         header = Components.label(Component.empty()).color(Color.ofRgb(ACCENT));
@@ -154,14 +157,14 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
         sidebarList = Containers.verticalFlow(Sizing.fill(100), Sizing.content());
         FlowLayout sidebar = panel(Containers.verticalFlow(Sizing.fixed(SIDEBAR_W), Sizing.fill(100)));
-        sidebar.child(Containers.verticalScroll(Sizing.fill(100), Sizing.fill(100), sidebarList).scrollbarThiccness(3).scrollStep(26));
+        sidebar.child(Containers.verticalScroll(Sizing.fill(100), Sizing.fill(100), sidebarList).scrollbarThiccness(3));
         body.child(sidebar);
 
         settings = Containers.verticalFlow(Sizing.content(), Sizing.content());
         settings.gap(2);
         settings.padding(Insets.right(6)); // room for the scrollbar
         FlowLayout settingsPanel = panel(Containers.verticalFlow(Sizing.content(), Sizing.fill(100)));
-        settingsPanel.child(Containers.verticalScroll(Sizing.content(), Sizing.fill(100), settings).scrollbarThiccness(3).scrollStep(ROW_H * 3));
+        settingsPanel.child(Containers.verticalScroll(Sizing.content(), Sizing.fill(100), settings).scrollbarThiccness(3));
         body.child(settingsPanel);
 
         FlowLayout previewPanel = panel(Containers.verticalFlow(Sizing.expand(), Sizing.fill(100)));
@@ -195,6 +198,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
         // ---- bottom bar ----
         FlowLayout bottom = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        bottom.margins(Insets.top(6));
         bottom.gap(6).verticalAlignment(VerticalAlignment.CENTER);
         nameBox = Components.textBox(Sizing.fixed(150));
         nameBox.setMaxLength(40);
@@ -358,7 +362,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.pixel_art_row"), "effortlessbuilding.screen.pixel_art.description",
                     () -> w(button("effortlessbuilding.screen.pixel_art_open", "effortlessbuilding.screen.pixel_art.description", () -> {
                         if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this, name -> setCurrent(current().withSchematic(name))));
-                    })).horizontalSizing(Sizing.fixed(fieldW))));
+                    })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
         } else {
             list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.size"), null,
                     () -> number(current().size(), 1, true, v -> setCurrent(current().withSize((int) v)))));
@@ -376,7 +380,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                         w(Components.button(Component.translatable(current().hollow() ? "options.on" : "options.off"), b -> {
                             setCurrent(current().withHollow(!current().hollow()));
                             refresh();
-                        })).horizontalSizing(Sizing.fixed(fieldW))));
+                        })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
             }
         }
         if (editing < 0) {
@@ -387,7 +391,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                         if (minecraft == null) return;
                         minecraft.setScreen(new BlockPickerScreen(this, Component.translatable("effortlessbuilding.screen.pick_center_block"),
                                 item -> params = params.withCenterBlock(item == null ? "" : BuiltInRegistries.ITEM.getKey(item).toString())));
-                    })).horizontalSizing(Sizing.fixed(fieldW))));
+                    })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
         }
 
         for (ShapeType.ParamSpec spec : type.params) {
@@ -435,7 +439,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         Integer[] targets = new Integer[params.parts().size() + 1];
         for (int i = 0; i < targets.length; i++) targets[i] = i - 1;
         io.wispforest.owo.ui.core.Component menu = choice(partLabel(editing), targets, this::partLabel, i -> editing = i);
-        menu.horizontalSizing(Sizing.fixed(fieldW - 36));
+        menu.sizing(Sizing.fixed(fieldW - 36), Sizing.fixed(CONTROL_H));
         flow.child(menu);
         ButtonComponent add = Components.button(Component.literal("+"), b -> addPart());
         add.active(params.parts().size() < ShapeParams.MAX_PARTS);
@@ -477,7 +481,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             opened.zIndex(300); // above the fields (drawn batched, so depth decides) and below tooltips
             opened.horizontalSizing(Sizing.fixed(Math.max(b.getWidth(), 60)));
         });
-        return w(button).horizontalSizing(Sizing.fixed(fieldW));
+        return w(button).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H));
     }
 
     /** A number field with − and + buttons; scrolling over it steps too (Alt: 5 steps). */
@@ -485,6 +489,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout flow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
         flow.gap(2).verticalAlignment(VerticalAlignment.CENTER);
         TextBoxComponent box = Components.textBox(Sizing.fixed(40));
+        w(box).verticalSizing(Sizing.fixed(CONTROL_H));
         box.text(format(value, integer));
         box.setFilter(s -> s.matches("-?\\d*" + (integer ? "" : "\\.?\\d*")));
         box.onChanged().subscribe(s -> {
@@ -498,7 +503,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         flow.child(w(Components.button(Component.literal("−"), b -> down.run())).sizing(Sizing.fixed(14), Sizing.fixed(16)));
         flow.child(w(box));
         flow.child(w(Components.button(Component.literal("+"), b -> up.run())).sizing(Sizing.fixed(14), Sizing.fixed(16)));
+        // The wheel changes the number only while the field is selected; otherwise it scrolls the settings
         w(box).mouseScroll().subscribe((x, y, amount) -> {
+            if (!box.isFocused()) return false;
             stepBox(box, (amount > 0 ? step : -step) * (Screen.hasAltDown() ? 5 : 1), integer);
             return true;
         });

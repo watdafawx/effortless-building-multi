@@ -52,6 +52,18 @@ public final class DevUiSnapshot {
     private static void dump(io.wispforest.owo.ui.core.Component c, int depth) {
         Constants.LOG.info("[UI] {}{} at {},{} size {}x{} sizing {} x {}", "  ".repeat(depth), c.getClass().getSimpleName(),
                 c.x(), c.y(), c.width(), c.height(), c.horizontalSizing().get(), c.verticalSizing().get());
+        if (c instanceof io.wispforest.owo.ui.container.ScrollContainer<?> scroll) {
+            try {
+                StringBuilder sb = new StringBuilder();
+                for (String name : new String[]{"maxScroll", "scrollOffset", "childSize"}) {
+                    var f = io.wispforest.owo.ui.container.ScrollContainer.class.getDeclaredField(name);
+                    f.setAccessible(true);
+                    sb.append(name).append('=').append(f.get(scroll)).append(' ');
+                }
+                Constants.LOG.info("[UI] {}  scroll: {}", "  ".repeat(depth), sb);
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
         if (depth < 6 && c instanceof io.wispforest.owo.ui.core.ParentComponent parent) {
             for (var child : parent.children()) dump(child, depth + 1);
         }
@@ -77,6 +89,10 @@ public final class DevUiSnapshot {
             java.util.List<net.minecraft.client.gui.components.Button> menus = new java.util.ArrayList<>();
             collectMenus(adapter(owo).rootComponent, menus);
             menus.stream().max(java.util.Comparator.comparingInt(net.minecraft.client.gui.components.Button::getY)).ifPresent(b -> b.onPress());
+        }
+        if (ticks == 5 && Boolean.getBoolean("effortlessbuilding.uitest.scroll") && mc.screen != null) {
+            // Scroll down over the middle of the screen (the settings on the Shape Generator)
+            mc.screen.mouseScrolled(mc.screen.width * 0.375, mc.screen.height * 0.5, 0, -100); // over a number field
         }
         if (ticks == 39 && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
             dump(adapter(owo).rootComponent, 0);
