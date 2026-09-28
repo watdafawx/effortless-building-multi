@@ -30,6 +30,24 @@ public final class DevUiSnapshot {
 
     private DevUiSnapshot() {}
 
+    private static io.wispforest.owo.ui.core.OwoUIAdapter<?> adapter(io.wispforest.owo.ui.base.BaseOwoScreen<?> screen) {
+        try {
+            var field = io.wispforest.owo.ui.base.BaseOwoScreen.class.getDeclaredField("uiAdapter");
+            field.setAccessible(true);
+            return (io.wispforest.owo.ui.core.OwoUIAdapter<?>) field.get(screen);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Buttons that open a dropdown (their text ends with ▼). */
+    private static void collectMenus(io.wispforest.owo.ui.core.Component c, java.util.List<net.minecraft.client.gui.components.Button> out) {
+        if (c instanceof net.minecraft.client.gui.components.Button b && b.getMessage().getString().endsWith("▼")) out.add(b);
+        if (c instanceof io.wispforest.owo.ui.core.ParentComponent parent) {
+            for (var child : parent.children()) collectMenus(child, out);
+        }
+    }
+
     /** Logs every component's type, position and size, indented by depth. */
     private static void dump(io.wispforest.owo.ui.core.Component c, int depth) {
         Constants.LOG.info("[UI] {}{} at {},{} size {}x{} sizing {} x {}", "  ".repeat(depth), c.getClass().getSimpleName(),
@@ -54,15 +72,14 @@ public final class DevUiSnapshot {
             ticks = 0;
             return;
         }
-        if (++ticks == 39 && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
-            try {
-                var field = io.wispforest.owo.ui.base.BaseOwoScreen.class.getDeclaredField("uiAdapter");
-                field.setAccessible(true);
-                var adapter = (io.wispforest.owo.ui.core.OwoUIAdapter<?>) field.get(owo);
-                dump(adapter.rootComponent, 0);
-            } catch (ReflectiveOperationException e) {
-                Constants.LOG.error("[EffortlessBuilding] UI dump failed", e);
-            }
+        if (++ticks == 20 && Boolean.getBoolean("effortlessbuilding.uitest.menu") && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            // Open the lowest dropdown on the screen, to check how menus are placed and layered
+            java.util.List<net.minecraft.client.gui.components.Button> menus = new java.util.ArrayList<>();
+            collectMenus(adapter(owo).rootComponent, menus);
+            menus.stream().max(java.util.Comparator.comparingInt(net.minecraft.client.gui.components.Button::getY)).ifPresent(b -> b.onPress());
+        }
+        if (ticks == 39 && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            dump(adapter(owo).rootComponent, 0);
         }
         if (ticks == 40) {
             File dir = mc.gameDirectory;

@@ -55,7 +55,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private static final int ROW_H = 18;
     private static final int COL_GAP = 10;
     /** Narrowest preview before the settings fall back to one column. */
-    private static final int MIN_PREVIEW_W = 280;
+    private static final int MIN_PREVIEW_W = 200;
+    /** Height of one entry in a dropdown menu, for placing the menu before it is laid out. */
+    private static final int MENU_ENTRY_H = 12;
 
     private static final int TEXT = 0xE0E0E0, MUTED = 0x9A9A9A, ACCENT = 0xFFD37F, SECTION = 0xE8A33D;
 
@@ -320,7 +322,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private void measure(List<Row> rows) {
         labelW = 40;
         for (Row row : rows) labelW = Math.max(labelW, font.width(row.label()) + 8);
-        fieldW = 104; // number fields with their −/+ buttons
+        fieldW = 76; // number fields with their −/+ buttons
         for (ShapeType.ParamSpec spec : current().type().params) {
             for (int i = 0; i < spec.options().size(); i++) fieldW = Math.max(fieldW, font.width(I18n.get(spec.getOptionKey(i))) + 22);
         }
@@ -371,8 +373,10 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             }
             if (type.hollowable) {
                 list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.hollow"), null, () ->
-                        w(Components.checkbox(Component.empty()).checked(current().hollow())
-                                .onChanged(on -> { setCurrent(current().withHollow(on)); refresh(); }))));
+                        w(Components.button(Component.translatable(current().hollow() ? "options.on" : "options.off"), b -> {
+                            setCurrent(current().withHollow(!current().hollow()));
+                            refresh();
+                        })).horizontalSizing(Sizing.fixed(fieldW))));
             }
         }
         if (editing < 0) {
@@ -456,16 +460,22 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private <T> io.wispforest.owo.ui.core.Component choice(String shown, T[] options, java.util.function.Function<T, String> name,
                                                            java.util.function.Consumer<T> pick) {
         ButtonComponent button = Components.button(Component.literal(shown + "  ▼"), b -> {
-            DropdownComponent.openContextMenu(this, root, FlowLayout::child, b.getX(), b.getY() + b.getHeight(), menu -> {
+            // Below the button, or above it when the menu would run off the bottom of the screen
+            int menuH = options.length * MENU_ENTRY_H + 8;
+            int menuY = b.getY() + b.getHeight() + menuH <= height - 4 ? b.getY() + b.getHeight() : Math.max(4, b.getY() - menuH);
+            DropdownComponent opened = DropdownComponent.openContextMenu(this, root, FlowLayout::child, b.getX(), menuY, menu -> {
                 menu.surface(Surface.flat(0xF0181818).and(Surface.outline(0xFF555555)));
                 for (T option : options) {
-                    menu.button(Component.literal(name.apply(option)), m -> {
+                    String text = name.apply(option);
+                    menu.button(Component.literal(text.equals(shown) ? "» " + text : "   " + text), m -> {
                         pick.accept(option);
                         m.remove();
                         refresh();
                     });
                 }
             });
+            opened.zIndex(300); // above the fields (drawn batched, so depth decides) and below tooltips
+            opened.horizontalSizing(Sizing.fixed(Math.max(b.getWidth(), 60)));
         });
         return w(button).horizontalSizing(Sizing.fixed(fieldW));
     }
@@ -474,7 +484,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private io.wispforest.owo.ui.core.Component number(double value, double step, boolean integer, DoubleConsumer set) {
         FlowLayout flow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
         flow.gap(2).verticalAlignment(VerticalAlignment.CENTER);
-        TextBoxComponent box = Components.textBox(Sizing.fixed(52));
+        TextBoxComponent box = Components.textBox(Sizing.fixed(40));
         box.text(format(value, integer));
         box.setFilter(s -> s.matches("-?\\d*" + (integer ? "" : "\\.?\\d*")));
         box.onChanged().subscribe(s -> {

@@ -38,6 +38,7 @@ neoForge {
         uiTest {
             client()
             systemProperty('effortlessbuilding.uitest', project.findProperty('uitest') ?: 'shape')
+            systemProperty('effortlessbuilding.uitest.menu', project.findProperty('uimenu') ?: 'false')
             def size = (project.findProperty('uisize') ?: '2000x1107').split('x')
             programArguments.addAll('--width', size[0], '--height', size[1])
         }
