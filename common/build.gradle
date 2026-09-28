@@ -28,6 +28,9 @@ dependencies {
     // Available on Maven Central: https://central.sonatype.com/artifact/org.appliedenergistics/appliedenergistics2
     compileOnly("org.appliedenergistics:appliedenergistics2:${ae2_version}")
 
+    // owo-ui for screens; each loader adds its own owo-lib build
+    compileOnly("io.wispforest:owo-lib-neoforge:${owo_neoforge_version}") { transitive = false }
+
     // Unit tests for pure logic (shape generation) — no Minecraft classes on the test path
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'

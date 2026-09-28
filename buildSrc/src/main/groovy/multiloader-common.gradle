@@ -42,6 +42,11 @@ repositories {
         name = 'BlameJared'
         url = 'https://maven.blamejared.com'
     }
+    // owo-lib (owo-ui) for the mod's screens
+    maven {
+        name = 'WispForest'
+        url = 'https://maven.wispforest.io/releases'
+    }
 }
 
 // Declare capabilities on the outgoing configurations.

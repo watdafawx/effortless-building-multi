@@ -449,5 +449,10 @@
   "effortlessbuilding.message.schematic_too_big": "Schematic %s is too big to send to this server; put it in the server's schematics folder instead",
   "effortlessbuilding.shape.param.align.description": "Where the parts stand when their heights differ: from the bottom up, grown both ways from the middle, or hanging from the top. The start values move each part further.",
   "effortlessbuilding.shape.param.follow_ground.description": "Off: the shape stays level. On: every column moves up or down to sit on the terrain below it.",
-  "effortlessbuilding.shape.param.super_glue.description": "Glue the built shape with Create super glue, only around its own blocks. In survival it uses your Super Glue's durability."
+  "effortlessbuilding.shape.param.super_glue.description": "Glue the built shape with Create super glue, only around its own blocks. In survival it uses your Super Glue's durability.",
+  "effortlessbuilding.screen.shapes": "Shapes",
+  "effortlessbuilding.screen.section.design": "Design",
+  "effortlessbuilding.screen.section.shape": "Shape",
+  "effortlessbuilding.screen.section.rotation": "Rotation",
+  "effortlessbuilding.screen.section.build": "Building"
 }

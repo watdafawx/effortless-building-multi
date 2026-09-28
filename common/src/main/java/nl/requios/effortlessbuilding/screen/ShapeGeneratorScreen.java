@@ -1,107 +1,88 @@
 package nl.requios.effortlessbuilding.screen;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.math.Axis;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.Tooltip;
+import io.wispforest.owo.ui.base.BaseComponent;
+import io.wispforest.owo.ui.base.BaseOwoScreen;
+import io.wispforest.owo.ui.component.ButtonComponent;
+import io.wispforest.owo.ui.component.Components;
+import io.wispforest.owo.ui.component.DropdownComponent;
+import io.wispforest.owo.ui.component.LabelComponent;
+import io.wispforest.owo.ui.component.TextBoxComponent;
+import io.wispforest.owo.ui.container.Containers;
+import io.wispforest.owo.ui.container.FlowLayout;
+import io.wispforest.owo.ui.core.Color;
+import io.wispforest.owo.ui.core.HorizontalAlignment;
+import io.wispforest.owo.ui.core.Insets;
+import io.wispforest.owo.ui.core.OwoUIAdapter;
+import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.core.Sizing;
+import io.wispforest.owo.ui.core.Surface;
+import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.resources.language.I18n;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.state.BlockState;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.BuildModes;
 import nl.requios.effortlessbuilding.buildpipeline.BuildPipelineClient;
-import nl.requios.effortlessbuilding.config.ServerConfig;
 import nl.requios.effortlessbuilding.compat.create.CreateGlue;
 import nl.requios.effortlessbuilding.network.BuildModeHintC2SPacket;
 import nl.requios.effortlessbuilding.network.PacketHandler;
 import nl.requios.effortlessbuilding.palette.BlockColorCache;
-import nl.requios.effortlessbuilding.palette.BlockPalette;
-import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.shape.*;
-import net.minecraft.core.BlockPos;
-import nl.requios.effortlessbuilding.utilities.ShareCode;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
-import org.joml.Matrix4f;
-
-import java.util.*;
+import nl.requios.effortlessbuilding.utilities.ShareCode;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.DoubleConsumer;
+import java.util.function.Supplier;
 
 /**
  * Shape Generator: pick a parametric shape (or a template, or a schematic), combine more shapes into it
  * (unite, subtract, intersect, exclude), check it in a 3D or slice preview, then build it with
  * SHAPE mode or save it as a template.
  * <p>
- * Layout: shape types and templates on the left, settings in the middle (scrolls),
- * preview on the right, name/save/use along the bottom.
+ * Built with owo-ui. Layout: shapes and templates on the left, settings in the middle (grouped,
+ * scrolling, two columns when there is room), preview on the right, name/save/build along the bottom.
  */
-public class ShapeGeneratorScreen extends Screen {
+public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
-    // ---- layout (the panel grows with the window; the preview takes the extra space) ----
-    private static final int LIST_W = 112;
-    private static final int PARAM_X = LIST_W + 12;
+    private static final int SIDEBAR_W = 124;
+    private static final int ROW_H = 18;
+    private static final int COL_GAP = 10;
     /** Narrowest preview before the settings fall back to one column. */
-    private static final int MIN_PREVIEW_W = 300;
-    private static final int TOP = 22;
-    private static final int ROW_H = 20;
-    private static final int LIST_ROW_H = 13;
-    private static final int BLOCK_COLOR = 0xE8A33D;
-    private int panelW = 460, panelH = 262, previewW = 150, previewH = 150, paramRows = 10;
-    /**
-     * Settings layout, measured from the text each time the screen is built: label width, control
-     * width (fits the longest option), column width, number of columns (1 or 2), and all columns together.
-     */
-    private int labelW = 62, fieldW = 122, colW = 190, cols = 1, paramW = 184, previewX = PARAM_X + 190;
+    private static final int MIN_PREVIEW_W = 280;
 
-    /** How the preview shows the shape: rotatable 3D, or a slice through one plane. */
-    private enum View { THREE_D, TOP, FRONT, SIDE }
+    private static final int TEXT = 0xE0E0E0, MUTED = 0x9A9A9A, ACCENT = 0xFFD37F, SECTION = 0xE8A33D;
 
-    /** One settings row: its label and how to build its widgets at a given y. */
-    private record Row(String label, RowBuilder build) {}
+    /** Settings are grouped under these headings. */
+    private enum Section { DESIGN, SHAPE, ROTATION, BUILD }
 
-    /** Adds a row's widgets with the label at (x, y). */
-    private interface RowBuilder {
-        void build(int x, int y);
-    }
+    /** One settings row: its label, optional hover text, and how to make its control. */
+    private record Row(Section section, String label, @Nullable String tooltipKey, Supplier<io.wispforest.owo.ui.core.Component> control) {}
 
     // ---- state ----
     private ShapeParams params;
     /** Which part the settings edit: -1 for the main shape, otherwise an index into its parts. */
     private int editing = -1;
     /** Name of the template being edited, or null for an unsaved shape. */
-    private String templateName;
-    private int paramScroll = 0;
-    private int listScroll = 0;
-    private View view = View.THREE_D;
-    /** Slice index along the view's depth axis (in 3D: build up to this layer), or -1 for all. */
-    private int layer = -1;
-    private String nameDraft = null;
+    private @Nullable String templateName;
+    private String nameDraft;
+    private final ShapePreview preview = new ShapePreview();
 
-    // ---- 3D camera ----
-    private float yaw = 35, pitch = 28, zoom = 1;
-    private boolean dragging = false;
+    // ---- layout, measured from the text ----
+    private int labelW = 60, fieldW = 110, cols = 1;
 
-    private ScreenWidgets widgets;
-    private EditBox nameBox;
-    private List<Row> rows = List.of();
-
-    // ---- preview cache ----
-    private ShapeParams previewParams;
-    private List<Cell> previewCells = List.of();
-    private ShapeParams facesParams;
-    private Object facesPalette;
-    private int facesLayer = Integer.MIN_VALUE;
-    /** Visible cube faces: x, y, z of four corners, then an ARGB color, per face. */
-    private float[][] faces = new float[0][];
-    private float[] facesCenter = new float[3];
-    private float facesRadius = 1;
+    // ---- containers refreshed on change ----
+    private FlowLayout root, sidebarList, settings;
+    private LabelComponent header, layerLabel, sizeLabel, hintLabel;
+    private TextBoxComponent nameBox;
+    private ButtonComponent viewButton;
+    private String shownSize = "", shownLayer = "";
 
     public ShapeGeneratorScreen() {
         super(Component.translatable("effortlessbuilding.screen.shape_generator"));
@@ -130,222 +111,304 @@ public class ShapeGeneratorScreen extends Screen {
     }
 
     // =========================================================================
-    // Init
+    // Build
     // =========================================================================
 
     @Override
+    protected OwoUIAdapter<FlowLayout> createAdapter() {
+        return OwoUIAdapter.create(this, Containers::verticalFlow);
+    }
+
+    @Override
     protected void init() {
-        panelW = Math.max(Math.min(width - 16, 960), Math.min(470, width));
-        panelH = Math.max(Math.min(height - 16, 560), Math.min(262, height));
-        previewH = panelH - TOP - 80;
-        paramRows = Math.max(4, (panelH - TOP - 52) / ROW_H);
+        boolean rebuilt = uiAdapter != null;
+        super.init();
+        // Back from the block picker, palette or pixel art: show what changed there
+        if (rebuilt && root != null) refresh();
+    }
+
+    @Override
+    protected void build(FlowLayout root) {
+        this.root = root;
         BlockColorCache.ensureReady();
-        widgets = new ScreenWidgets(font, this::addRenderableWidget);
-        widgets.clear();
-        if (editing >= params.parts().size()) editing = -1;
-        int px = panelX(), py = panelY();
+        root.surface(Surface.flat(0xB0101010));
+        root.padding(Insets.of(8));
+        root.gap(6);
 
-        buildListWidgets(px, py);
-        buildRows();
-        layoutColumns();
-        paramScroll = Math.max(0, Math.min(paramScroll, rows.size() - visibleRows()));
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + visibleRows()); i++) {
-            int k = i - paramScroll;
-            rows.get(i).build().build(px + PARAM_X + (k / paramRows) * colW, py + TOP + (k % paramRows) * ROW_H);
-        }
-        buildPreviewWidgets(px + previewX, py + TOP);
+        // ---- header ----
+        FlowLayout top = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        top.gap(6).verticalAlignment(VerticalAlignment.CENTER);
+        top.child(Components.label(title.copy().withStyle(s -> s.withBold(true))).color(Color.WHITE));
+        header = Components.label(Component.empty()).color(Color.ofRgb(ACCENT));
+        top.child(header);
+        top.child(Components.spacer());
+        top.child(w(button("effortlessbuilding.screen.copy_code", "effortlessbuilding.screen.copy_code.description", this::copyCode)));
+        top.child(w(button("effortlessbuilding.screen.paste_code", "effortlessbuilding.screen.paste_code.description", this::pasteCode)));
+        root.child(top);
 
-        // Bottom bar: template name, save, use, close
-        int by = py + panelH - 20;
-        nameBox = new EditBox(font, px + PARAM_X, by, 90, 16, Component.translatable("effortlessbuilding.screen.template_name"));
+        // ---- body: sidebar | settings | preview ----
+        FlowLayout body = Containers.horizontalFlow(Sizing.fill(100), Sizing.expand());
+        body.gap(6);
+
+        sidebarList = Containers.verticalFlow(Sizing.fill(100), Sizing.content());
+        FlowLayout sidebar = panel(Containers.verticalFlow(Sizing.fixed(SIDEBAR_W), Sizing.fill(100)));
+        sidebar.child(Containers.verticalScroll(Sizing.fill(100), Sizing.fill(100), sidebarList).scrollbarThiccness(3).scrollStep(26));
+        body.child(sidebar);
+
+        settings = Containers.verticalFlow(Sizing.content(), Sizing.content());
+        settings.gap(2);
+        settings.padding(Insets.right(6)); // room for the scrollbar
+        FlowLayout settingsPanel = panel(Containers.verticalFlow(Sizing.content(), Sizing.fill(100)));
+        settingsPanel.child(Containers.verticalScroll(Sizing.content(), Sizing.fill(100), settings).scrollbarThiccness(3).scrollStep(ROW_H * 3));
+        body.child(settingsPanel);
+
+        FlowLayout previewPanel = panel(Containers.verticalFlow(Sizing.expand(), Sizing.fill(100)));
+        previewPanel.gap(4);
+        previewPanel.child(new PreviewComponent().sizing(Sizing.fill(100), Sizing.expand()));
+        FlowLayout layerRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        layerRow.gap(4).verticalAlignment(VerticalAlignment.CENTER);
+        viewButton = button(() -> "", "effortlessbuilding.screen.view.description", () -> { preview.nextView(); refresh(); });
+        layerRow.child(w(viewButton).horizontalSizing(Sizing.fixed(56)));
+        layerRow.child(w(Components.button(Component.literal("◀"), b -> preview.stepLayer(params, -1))).sizing(Sizing.fixed(16), Sizing.fixed(16)));
+        layerLabel = Components.label(Component.empty()).color(Color.ofRgb(TEXT));
+        layerLabel.horizontalTextAlignment(HorizontalAlignment.CENTER).horizontalSizing(Sizing.expand());
+        layerRow.child(layerLabel);
+        layerRow.child(w(Components.button(Component.literal("▶"), b -> preview.stepLayer(params, 1))).sizing(Sizing.fixed(16), Sizing.fixed(16)));
+        previewPanel.child(layerRow);
+        FlowLayout infoRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        infoRow.gap(4).verticalAlignment(VerticalAlignment.CENTER);
+        sizeLabel = Components.label(Component.empty()).color(Color.ofRgb(TEXT));
+        infoRow.child(sizeLabel);
+        infoRow.child(Components.spacer());
+        infoRow.child(w(button("effortlessbuilding.screen.export_schem", "effortlessbuilding.screen.export_schem.description", () -> export(".schem"))));
+        infoRow.child(w(Components.button(Component.literal(".nbt"), b -> export(".nbt")))
+                .tooltip(Component.translatable("effortlessbuilding.screen.export_nbt.description")));
+        infoRow.child(w(button("effortlessbuilding.screen.materials", "effortlessbuilding.screen.materials.description",
+                () -> { if (minecraft != null) minecraft.setScreen(new MaterialsScreen(this, preview.requiredItems(params))); })));
+        previewPanel.child(infoRow);
+        hintLabel = Components.label(Component.empty()).color(Color.ofRgb(MUTED));
+        previewPanel.child(hintLabel);
+        body.child(previewPanel);
+        root.child(body);
+
+        // ---- bottom bar ----
+        FlowLayout bottom = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        bottom.gap(6).verticalAlignment(VerticalAlignment.CENTER);
+        nameBox = Components.textBox(Sizing.fixed(150));
         nameBox.setMaxLength(40);
-        nameBox.setValue(nameDraft != null ? nameDraft : templateName != null ? templateName : defaultName());
-        nameBox.setResponder(s -> nameDraft = s);
-        addRenderableWidget(nameBox);
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.save_template"), b -> saveTemplate())
-                .bounds(px + PARAM_X + 94, by, 44, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.palette_button"),
-                        b -> { if (minecraft != null) minecraft.setScreen(new PaletteScreen(this)); })
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.palette_button.description")))
-                .bounds(px + PARAM_X + 142, by, 42, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.use_shape"), b -> useShape())
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.use_shape.description")))
-                .bounds(px + previewX, by, 70, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
-                .bounds(px + panelW - 76, by, 70, 16).build());
+        nameBox.text(nameDraft != null ? nameDraft : templateName != null ? templateName : defaultName());
+        nameBox.onChanged().subscribe(s -> nameDraft = s);
+        bottom.child(w(nameBox));
+        bottom.child(w(button("effortlessbuilding.screen.save_template", null, this::saveTemplate)));
+        bottom.child(w(button("effortlessbuilding.screen.palette_button", "effortlessbuilding.screen.palette_button.description",
+                () -> { if (minecraft != null) minecraft.setScreen(new PaletteScreen(this)); })));
+        bottom.child(Components.spacer());
+        bottom.child(w(button("effortlessbuilding.screen.use_shape", "effortlessbuilding.screen.use_shape.description", this::useShape))
+                .horizontalSizing(Sizing.fixed(90)));
+        bottom.child(w(Components.button(Component.translatable("gui.done"), b -> onClose())).horizontalSizing(Sizing.fixed(70)));
+        root.child(bottom);
 
-        // Share: copy this design as a text code, or paste one from chat
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.copy_code"), b -> copyCode())
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.copy_code.description")))
-                .bounds(px + panelW - 6 - 70 - 4 - 70, py + 4, 70, 14).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.paste_code"), b -> pasteCode())
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.paste_code.description")))
-                .bounds(px + panelW - 6 - 70, py + 4, 70, 14).build());
+        refresh();
     }
 
-    private void copyCode() {
-        if (minecraft == null) return;
-        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-        json.addProperty("name", nameBox.getValue());
-        json.add("shape", ShapeTemplateStorage.toJson(params));
-        minecraft.keyboardHandler.setClipboard(ShareCode.encode(ShareCode.SHAPE, json));
-        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_copied"), true);
+    /** Rebuilds everything that depends on the design: list selection, settings, header, hints. */
+    private void refresh() {
+        if (editing >= params.parts().size()) editing = -1;
+        String headerText = templateName != null ? templateName : I18n.get(params.type().getNameKey());
+        if (!params.parts().isEmpty()) headerText += " + " + params.parts().size();
+        header.text(Component.literal(headerText));
+        fillSidebar();
+        fillSettings();
+        String hint = params.type() != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS
+                ? I18n.get("effortlessbuilding.screen.click_sizing_hint")
+                : params.sizing() == ShapeParams.Sizing.PATH ? I18n.get("effortlessbuilding.screen.path_sizing_hint")
+                : preview.view == ShapePreview.View.THREE_D ? I18n.get("effortlessbuilding.screen.drag_to_rotate") : "";
+        hintLabel.text(Component.literal(hint));
+        viewButton.setMessage(Component.translatable("effortlessbuilding.screen.view." + preview.view.name().toLowerCase()));
     }
 
-    private void pasteCode() {
-        if (minecraft == null) return;
-        com.google.gson.JsonObject json = ShareCode.decode(ShareCode.SHAPE, minecraft.keyboardHandler.getClipboard());
-        ShapeParams pasted = json != null && json.has("shape") ? ShapeTemplateStorage.fromJson(json.getAsJsonObject("shape")) : null;
-        if (pasted == null) {
-            if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_invalid"), true);
-            return;
+    // =========================================================================
+    // Sidebar: shape types and templates
+    // =========================================================================
+
+    private void fillSidebar() {
+        sidebarList.clearChildren();
+        sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.shapes")));
+        for (ShapeType type : ShapeType.values()) {
+            boolean selected = (editing >= 0 || templateName == null) && current().type() == type;
+            sidebarList.child(listRow(I18n.get(type.getNameKey()), TEXT, selected, () -> selectType(type), null));
         }
-        params = pasted;
-        editing = -1;
-        templateName = null;
-        nameDraft = json.has("name") ? json.get("name").getAsString() : null;
-        paramScroll = 0;
-        layer = -1;
-        rebuildWidgets();
-    }
-
-    private void buildListWidgets(int px, int py) {
-        // Delete buttons for templates (shape types are plain clickable rows)
+        sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.templates")).margins(Insets.top(6)));
         List<ShapeClientState.Template> templates = ShapeClientState.getTemplates();
-        int firstTemplateRow = ShapeType.values().length + 1;
-        for (int i = 0; i < templates.size(); i++) {
-            int row = firstTemplateRow + i - listScroll;
-            if (row < 0 || row >= listRows()) continue;
-            String name = templates.get(i).name();
-            addRenderableWidget(Button.builder(Component.literal("×"), b -> {
-                        ShapeClientState.deleteTemplate(name);
-                        if (name.equals(templateName)) templateName = null;
-                        ShapeTemplateStorage.save();
-                        rebuildWidgets();
-                    })
-                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.delete_template")))
-                    .bounds(px + 4 + LIST_W - 12, py + TOP + row * LIST_ROW_H, 11, 11).build());
+        if (templates.isEmpty()) {
+            sidebarList.child(Components.label(Component.translatable("effortlessbuilding.screen.no_templates")).color(Color.ofRgb(0x777777)));
+        }
+        for (ShapeClientState.Template template : templates) {
+            boolean selected = template.name().equals(templateName) && editing < 0;
+            sidebarList.child(listRow(template.name(), ACCENT, selected, () -> selectTemplate(template), () -> {
+                ShapeClientState.deleteTemplate(template.name());
+                if (template.name().equals(templateName)) templateName = null;
+                ShapeTemplateStorage.save();
+                refresh();
+            }));
         }
     }
 
-    /** All settings rows for what is being edited; only {@link #paramRows} are shown at once. */
-    private void buildRows() {
+    /** A clickable list line, highlighted when selected or hovered, with an optional delete button. */
+    private FlowLayout listRow(String text, int color, boolean selected, Runnable select, @Nullable Runnable delete) {
+        FlowLayout row = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(14));
+        row.verticalAlignment(VerticalAlignment.CENTER).padding(Insets.horizontal(3));
+        Surface normal = selected ? Surface.flat(0x50FFFFFF) : Surface.BLANK;
+        row.surface(normal);
+        row.mouseEnter().subscribe(() -> row.surface(selected ? normal : Surface.flat(0x22FFFFFF)));
+        row.mouseLeave().subscribe(() -> row.surface(normal));
+        row.mouseDown().subscribe((x, y, button) -> {
+            if (button != 0) return false;
+            select.run();
+            return true;
+        });
+        LabelComponent label = Components.label(Component.literal(text)).color(Color.ofRgb(color));
+        label.maxWidth(SIDEBAR_W - (delete != null ? 32 : 18));
+        row.child(label);
+        if (delete != null) {
+            row.child(Components.spacer());
+            row.child(w(Components.button(Component.literal("×"), b -> delete.run())).sizing(Sizing.fixed(11), Sizing.fixed(11))
+                    .tooltip(Component.translatable("effortlessbuilding.screen.delete_template")));
+        }
+        return row;
+    }
+
+    // =========================================================================
+    // Settings
+    // =========================================================================
+
+    private void fillSettings() {
+        List<Row> rows = rows();
+        measure(rows);
+        settings.clearChildren();
+        for (Section section : Section.values()) {
+            List<Row> inSection = rows.stream().filter(r -> r.section() == section).toList();
+            if (inSection.isEmpty()) continue;
+            settings.child(sectionLabel(I18n.get("effortlessbuilding.screen.section." + section.name().toLowerCase()))
+                    .margins(Insets.of(settings.children().isEmpty() ? 0 : 6, 2, 0, 0)));
+            // Rows fill the first column, then the second
+            FlowLayout columns = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+            columns.gap(COL_GAP);
+            int perColumn = (inSection.size() + cols - 1) / cols;
+            for (int c = 0; c < cols; c++) {
+                FlowLayout column = Containers.verticalFlow(Sizing.fixed(labelW + fieldW), Sizing.content());
+                column.gap(2);
+                for (int i = c * perColumn; i < Math.min(inSection.size(), (c + 1) * perColumn); i++) column.child(settingRow(inSection.get(i)));
+                columns.child(column);
+            }
+            settings.child(columns);
+        }
+    }
+
+    private FlowLayout settingRow(Row row) {
+        FlowLayout line = Containers.horizontalFlow(Sizing.fixed(labelW + fieldW), Sizing.fixed(ROW_H));
+        line.verticalAlignment(VerticalAlignment.CENTER);
+        LabelComponent label = Components.label(Component.literal(row.label())).color(Color.ofRgb(0xCCCCCC));
+        label.horizontalSizing(Sizing.fixed(labelW));
+        if (row.tooltipKey() != null && I18n.exists(row.tooltipKey())) label.tooltip(Component.translatable(row.tooltipKey()));
+        line.child(label);
+        line.child(row.control().get());
+        return line;
+    }
+
+    /** Label column as wide as the longest label; controls as wide as the longest choice; 1 or 2 columns. */
+    private void measure(List<Row> rows) {
+        labelW = 40;
+        for (Row row : rows) labelW = Math.max(labelW, font.width(row.label()) + 8);
+        fieldW = 104; // number fields with their −/+ buttons
+        for (ShapeType.ParamSpec spec : current().type().params) {
+            for (int i = 0; i < spec.options().size(); i++) fieldW = Math.max(fieldW, font.width(I18n.get(spec.getOptionKey(i))) + 22);
+        }
+        for (ShapeParams.Orientation o : ShapeParams.Orientation.values()) fieldW = Math.max(fieldW, font.width(I18n.get(o.getNameKey())) + 22);
+        for (ShapeParams.Sizing z : ShapeParams.Sizing.values()) fieldW = Math.max(fieldW, font.width(I18n.get(z.getNameKey())) + 22);
+        fieldW = Math.min(fieldW, 190);
+        int twoColumns = 2 * (labelW + fieldW) + COL_GAP + 20;
+        int room = width - 16 - SIDEBAR_W - 12 - 12;
+        cols = room - twoColumns >= MIN_PREVIEW_W ? 2 : 1;
+    }
+
+    /** All settings for what is being edited. */
+    private List<Row> rows() {
         List<Row> list = new ArrayList<>();
-
-        // Which part to edit, plus add/remove
-        list.add(new Row(I18n.get("effortlessbuilding.screen.editing"), (x, y) -> {
-            addRenderableWidget(Button.builder(Component.literal(editingLabel()), b -> {
-                        editing = editing + 1 >= params.parts().size() ? -1 : editing + 1;
-                        paramScroll = 0;
-                        rebuildWidgets();
-                    })
-                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.editing.description")))
-                    .bounds(x + labelW, y, fieldW - 34, 16).build());
-            Button add = addRenderableWidget(Button.builder(Component.literal("+"), b -> addPart())
-                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.add_part")))
-                    .bounds(x + labelW + fieldW - 32, y, 16, 16).build());
-            add.active = params.parts().size() < ShapeParams.MAX_PARTS;
-            Button remove = addRenderableWidget(Button.builder(Component.literal("×"), b -> removePart())
-                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.remove_part")))
-                    .bounds(x + labelW + fieldW - 16, y, 16, 16).build());
-            remove.active = editing >= 0;
-        }));
-
+        list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.editing"), "effortlessbuilding.screen.editing.description",
+                this::partControl));
         if (editing >= 0) {
-            list.add(new Row(I18n.get("effortlessbuilding.screen.operation"), (x, y) -> addCycleButton(x, y,
-                    I18n.get(currentPart().operation().getNameKey()),
-                    () -> setCurrentPart(currentPart().withOperation(next(ShapeParams.Operation.values(), currentPart().operation()))))));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_x"), (x, y) -> widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(currentPart().x()),
-                    v -> setCurrentPart(currentPart().withOffset(v, currentPart().y(), currentPart().z())))));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_y"), (x, y) -> widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(currentPart().y()),
-                    v -> setCurrentPart(currentPart().withOffset(currentPart().x(), v, currentPart().z())))));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.offset_z"), (x, y) -> widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(currentPart().z()),
-                    v -> setCurrentPart(currentPart().withOffset(currentPart().x(), currentPart().y(), v)))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.operation"), null, () -> choice(
+                    I18n.get(currentPart().operation().getNameKey()), ShapeParams.Operation.values(), o -> I18n.get(o.getNameKey()),
+                    o -> setCurrentPart(currentPart().withOperation(o)))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.offset_x"), null, () -> number(currentPart().x(), 1, true,
+                    v -> setCurrentPart(currentPart().withOffset((int) v, currentPart().y(), currentPart().z())))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.offset_y"), null, () -> number(currentPart().y(), 1, true,
+                    v -> setCurrentPart(currentPart().withOffset(currentPart().x(), (int) v, currentPart().z())))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.offset_z"), null, () -> number(currentPart().z(), 1, true,
+                    v -> setCurrentPart(currentPart().withOffset(currentPart().x(), currentPart().y(), (int) v)))));
         }
 
-        ShapeParams shape = current();
-        ShapeType type = shape.type();
+        ShapeType type = current().type();
         if (type == ShapeType.SCHEMATIC) {
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.file"), (x, y) -> {
-                List<String> names = SchematicLibrary.list();
-                String name = current().schematic().isEmpty() && !names.isEmpty() ? names.getFirst() : current().schematic();
-                if (!name.equals(current().schematic())) setCurrent(current().withSchematic(name));
-                addRenderableWidget(Button.builder(Component.literal(names.isEmpty()
-                                        ? I18n.get("effortlessbuilding.screen.no_schematics") : name),
-                                b -> { cycleSchematic(names); rebuildWidgets(); })
-                        .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.schematic.description")))
-                        .bounds(x + labelW, y, fieldW, 16).build());
-            }));
-            list.add(new Row(I18n.get("effortlessbuilding.screen.pixel_art_row"), (x, y) ->
-                    addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.pixel_art_open"), b -> {
-                                if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this,
-                                        name -> setCurrent(current().withSchematic(name))));
-                            })
-                            .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.pixel_art.description")))
-                            .bounds(x + labelW, y, fieldW, 16).build())));
-            for (ShapeType.ParamSpec spec : type.params) {
-                if (hidden(spec)) continue;
-                list.add(new Row(I18n.get(spec.getNameKey()), (x, y) -> {
-                    if (!spec.options().isEmpty()) {
-                        int chosen = current().getInt(spec.key());
-                        addCycleButton(x, y, spec.getNameKey() + ".description", I18n.get(spec.getOptionKey(chosen)),
-                                () -> setCurrent(current().with(spec.key(), (chosen + 1) % spec.options().size())));
-                    } else {
-                        widgets.addDoubleField(x + labelW - ScreenWidgets.LABEL_W, y, ScreenWidgets.formatDouble(current().get(spec.key())),
-                                v -> setCurrent(current().with(spec.key(), v)), spec.step());
-                    }
-                }));
-            }
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.file"), "effortlessbuilding.screen.schematic.description",
+                    this::schematicControl));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.pixel_art_row"), "effortlessbuilding.screen.pixel_art.description",
+                    () -> w(button("effortlessbuilding.screen.pixel_art_open", "effortlessbuilding.screen.pixel_art.description", () -> {
+                        if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this, name -> setCurrent(current().withSchematic(name))));
+                    })).horizontalSizing(Sizing.fixed(fieldW))));
         } else {
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.size"), (x, y) ->
-                    widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(current().size()), v -> setCurrent(current().withSize(v)))));
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.orientation"), (x, y) -> addCycleButton(x, y,
-                    I18n.get(current().orientation().getNameKey()),
-                    () -> setCurrent(current().withOrientation(next(ShapeParams.Orientation.values(), current().orientation()))))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.size"), null,
+                    () -> number(current().size(), 1, true, v -> setCurrent(current().withSize((int) v)))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.orientation"), null, () -> choice(
+                    I18n.get(current().orientation().getNameKey()), ShapeParams.Orientation.values(), o -> I18n.get(o.getNameKey()),
+                    o -> setCurrent(current().withOrientation(o)))));
             if (editing < 0) {
                 // Sizing belongs to the whole shape: parts scale along with it
-                list.add(new Row(I18n.get("effortlessbuilding.shape.param.sizing"), (x, y) -> addCycleButton(x, y,
-                        I18n.get(params.sizing().getNameKey()),
-                        () -> params = params.withSizing(next(ShapeParams.Sizing.values(), params.sizing())))));
+                list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.sizing"), null, () -> choice(
+                        I18n.get(params.sizing().getNameKey()), ShapeParams.Sizing.values(), z -> I18n.get(z.getNameKey()),
+                        z -> params = params.withSizing(z))));
+            }
+            if (type.hollowable) {
+                list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.hollow"), null, () ->
+                        w(Components.checkbox(Component.empty()).checked(current().hollow())
+                                .onChanged(on -> { setCurrent(current().withHollow(on)); refresh(); }))));
             }
         }
         if (editing < 0) {
             // A center axle in its own block; 2 by 2 when the shape has no single middle block
-            list.add(new Row(I18n.get("effortlessbuilding.shape.param.center_block"), (x, y) ->
-                    addRenderableWidget(Button.builder(Component.literal(centerBlockLabel()), b -> {
-                                if (minecraft == null) return;
-                                minecraft.setScreen(new BlockPickerScreen(this,
-                                        Component.translatable("effortlessbuilding.screen.pick_center_block"),
-                                        item -> params = params.withCenterBlock(item == null ? ""
-                                                : BuiltInRegistries.ITEM.getKey(item).toString())));
-                            })
-                            .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.shape.param.center_block.description")))
-                            .bounds(x + labelW, y, fieldW, 16).build())));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.center_block"),
+                    "effortlessbuilding.shape.param.center_block.description", () ->
+                    w(Components.button(Component.literal(centerBlockLabel()), b -> {
+                        if (minecraft == null) return;
+                        minecraft.setScreen(new BlockPickerScreen(this, Component.translatable("effortlessbuilding.screen.pick_center_block"),
+                                item -> params = params.withCenterBlock(item == null ? "" : BuiltInRegistries.ITEM.getKey(item).toString())));
+                    })).horizontalSizing(Sizing.fixed(fieldW))));
         }
-        if (type != ShapeType.SCHEMATIC) {
-            if (type.hollowable) {
-                list.add(new Row(I18n.get("effortlessbuilding.shape.param.hollow"), (x, y) ->
-                        widgets.addCheckbox(x + labelW, y + 4, "", current().hollow(),
-                                () -> { setCurrent(current().withHollow(!current().hollow())); rebuildWidgets(); })));
+
+        for (ShapeType.ParamSpec spec : type.params) {
+            if (hidden(spec)) continue;
+            String tooltip = spec.getNameKey() + ".description";
+            Supplier<io.wispforest.owo.ui.core.Component> control;
+            if (!spec.options().isEmpty()) {
+                List<Integer> options = new ArrayList<>();
+                for (int i = 0; i < spec.options().size(); i++) options.add(i);
+                control = () -> choice(I18n.get(spec.getOptionKey(current().getInt(spec.key()))), options.toArray(new Integer[0]),
+                        i -> I18n.get(spec.getOptionKey(i)), i -> setCurrent(current().with(spec.key(), i)));
+            } else {
+                double step = spec.integer() ? 1 : spec.step();
+                control = () -> number(current().get(spec.key()), step, spec.integer(), v -> setCurrent(current().with(spec.key(), v)));
             }
-            for (ShapeType.ParamSpec spec : type.params) {
-                if (hidden(spec)) continue;
-                list.add(new Row(I18n.get(spec.getNameKey()), (x, y) -> {
-                    if (!spec.options().isEmpty()) {
-                        int chosen = current().getInt(spec.key());
-                        addCycleButton(x, y, spec.getNameKey() + ".description", I18n.get(spec.getOptionKey(chosen)),
-                                () -> setCurrent(current().with(spec.key(), (chosen + 1) % spec.options().size())));
-                    } else if (spec.integer()) {
-                        widgets.addIntField(x + labelW - ScreenWidgets.LABEL_W, y, String.valueOf(current().getInt(spec.key())),
-                                v -> setCurrent(current().with(spec.key(), v)));
-                    } else {
-                        widgets.addDoubleField(x + labelW - ScreenWidgets.LABEL_W, y, ScreenWidgets.formatDouble(current().get(spec.key())),
-                                v -> setCurrent(current().with(spec.key(), v)), spec.step());
-                    }
-                }));
-            }
+            list.add(new Row(sectionOf(spec.key()), I18n.get(spec.getNameKey()), tooltip, control));
         }
-        rows = list;
+        return list;
+    }
+
+    private static Section sectionOf(String key) {
+        if (key.equals(ShapeType.ROTATE_X) || key.equals(ShapeType.ROTATE_Y) || key.equals(ShapeType.ROTATE_Z)) return Section.ROTATION;
+        if (ShapeType.isBuildSetting(key) || key.equals(TerrainBlender.ENABLED) || key.equals(TerrainBlender.MARGIN)
+                || key.equals(ShapeMaterials.USE_SAVED_BLOCKS)) return Section.BUILD;
+        return Section.SHAPE;
     }
 
     /** Super glue (only with Create) and ground blending are offered on the main shape only. */
@@ -356,125 +419,132 @@ public class ShapeGeneratorScreen extends Screen {
         if (spec.key().equals(ShapeType.PATH_SPACING) || spec.key().equals(ShapeType.PATH_ALIGN)) {
             return params.sizing() != ShapeParams.Sizing.PATH;
         }
-        // Ground blending belongs to the whole build, not to a part
         return editing >= 0 && (spec.key().equals(TerrainBlender.ENABLED) || spec.key().equals(TerrainBlender.MARGIN));
     }
 
-    private void addCycleButton(int x, int y, String label, Runnable cycle) {
-        addCycleButton(x, y, null, label, cycle);
+    // ---- controls ----
+
+    /** Which part to edit (opens a menu of the main shape and its parts), plus add/remove. */
+    private io.wispforest.owo.ui.core.Component partControl() {
+        FlowLayout flow = Containers.horizontalFlow(Sizing.fixed(fieldW), Sizing.content());
+        flow.gap(2);
+        Integer[] targets = new Integer[params.parts().size() + 1];
+        for (int i = 0; i < targets.length; i++) targets[i] = i - 1;
+        io.wispforest.owo.ui.core.Component menu = choice(partLabel(editing), targets, this::partLabel, i -> editing = i);
+        menu.horizontalSizing(Sizing.fixed(fieldW - 36));
+        flow.child(menu);
+        ButtonComponent add = Components.button(Component.literal("+"), b -> addPart());
+        add.active(params.parts().size() < ShapeParams.MAX_PARTS);
+        flow.child(w(add).sizing(Sizing.fixed(16), Sizing.fixed(16)).tooltip(Component.translatable("effortlessbuilding.screen.add_part")));
+        ButtonComponent remove = Components.button(Component.literal("×"), b -> removePart());
+        remove.active(editing >= 0);
+        flow.child(w(remove).sizing(Sizing.fixed(16), Sizing.fixed(16)).tooltip(Component.translatable("effortlessbuilding.screen.remove_part")));
+        return flow;
     }
 
-    /** @param tooltipKey shown on hover when the language has it (the long explanation of the choice) */
-    private void addCycleButton(int x, int y, @Nullable String tooltipKey, String label, Runnable cycle) {
-        Button.Builder builder = Button.builder(Component.literal(label), b -> { cycle.run(); rebuildWidgets(); })
-                .bounds(x + labelW, y, fieldW, 16);
-        if (tooltipKey != null && I18n.exists(tooltipKey)) builder.tooltip(Tooltip.create(Component.translatable(tooltipKey)));
-        addRenderableWidget(builder.build());
-    }
-
-    /**
-     * Sizes the settings from their text: labels as wide as the longest one, controls as wide as the
-     * longest choice, and two columns when the preview keeps enough room.
-     */
-    private void layoutColumns() {
-        labelW = 40;
-        for (Row row : rows) labelW = Math.max(labelW, font.width(row.label()) + 6);
-        fieldW = 96; // room for number fields and their −/+ buttons
-        ShapeType type = current().type();
-        for (ShapeType.ParamSpec spec : type.params) {
-            for (int i = 0; i < spec.options().size(); i++) fieldW = Math.max(fieldW, font.width(I18n.get(spec.getOptionKey(i))) + 12);
+    private io.wispforest.owo.ui.core.Component schematicControl() {
+        List<String> names = SchematicLibrary.list();
+        String name = current().schematic().isEmpty() && !names.isEmpty() ? names.getFirst() : current().schematic();
+        if (!name.equals(current().schematic())) setCurrent(current().withSchematic(name));
+        if (names.isEmpty()) {
+            return Components.label(Component.translatable("effortlessbuilding.screen.no_schematics")).color(Color.ofRgb(MUTED));
         }
-        for (ShapeParams.Orientation o : ShapeParams.Orientation.values()) fieldW = Math.max(fieldW, font.width(I18n.get(o.getNameKey())) + 12);
-        for (ShapeParams.Sizing z : ShapeParams.Sizing.values()) fieldW = Math.max(fieldW, font.width(I18n.get(z.getNameKey())) + 12);
-        fieldW = Math.min(fieldW, 180);
-        colW = labelW + fieldW + 10;
-        int room = panelW - PARAM_X - 12;
-        cols = room - 2 * colW >= MIN_PREVIEW_W && rows.size() > paramRows ? 2 : 1;
-        paramW = cols * colW - 10;
-        previewX = PARAM_X + paramW + 8;
-        previewW = panelW - previewX - 6;
+        return choice(name, names.toArray(new String[0]), n -> n, n -> setCurrent(current().withSchematic(n)));
     }
 
-    /** Rows shown at once, over all columns. */
-    private int visibleRows() {
-        return paramRows * cols;
+    /** A button showing the current choice; clicking opens a menu with every option. */
+    private <T> io.wispforest.owo.ui.core.Component choice(String shown, T[] options, java.util.function.Function<T, String> name,
+                                                           java.util.function.Consumer<T> pick) {
+        ButtonComponent button = Components.button(Component.literal(shown + "  ▾"), b -> {
+            DropdownComponent.openContextMenu(this, root, FlowLayout::child, b.getX(), b.getY() + b.getHeight(), menu -> {
+                menu.surface(Surface.flat(0xF0181818).and(Surface.outline(0xFF555555)));
+                for (T option : options) {
+                    menu.button(Component.literal(name.apply(option)), m -> {
+                        pick.accept(option);
+                        m.remove();
+                        refresh();
+                    });
+                }
+            });
+        });
+        return w(button).horizontalSizing(Sizing.fixed(fieldW));
     }
 
-    private void buildPreviewWidgets(int x, int y) {
-        int by = y + previewH + 4;
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.view." + view.name().toLowerCase()),
-                        b -> { view = next(View.values(), view); layer = -1; rebuildWidgets(); })
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.view.description")))
-                .bounds(x, by, 44, 16).build());
-        addRenderableWidget(Button.builder(Component.literal("◀"), b -> stepLayer(-1)).bounds(x + 48, by, 16, 16).build());
-        addRenderableWidget(Button.builder(Component.literal("▶"), b -> stepLayer(1)).bounds(x + previewW - 16, by, 16, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.materials"), b -> {
-                    if (minecraft != null) minecraft.setScreen(new MaterialsScreen(this, requiredItems()));
-                })
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.materials.description")))
-                .bounds(x + previewW - 76, by + 22, 76, 16).build());
-        addRenderableWidget(Button.builder(Component.literal(".nbt"), b -> export(".nbt"))
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.export_nbt.description")))
-                .bounds(x + previewW - 76 - 4 - 36, by + 22, 36, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.export_schem"), b -> export(".schem"))
-                .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.export_schem.description")))
-                .bounds(x + previewW - 76 - 4 - 36 - 4 - 80, by + 22, 80, 16).build());
+    /** A number field with − and + buttons; scrolling over it steps too (Alt: 5 steps). */
+    private io.wispforest.owo.ui.core.Component number(double value, double step, boolean integer, DoubleConsumer set) {
+        FlowLayout flow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        flow.gap(2).verticalAlignment(VerticalAlignment.CENTER);
+        TextBoxComponent box = Components.textBox(Sizing.fixed(52));
+        box.text(format(value, integer));
+        box.setFilter(s -> s.matches("-?\\d*" + (integer ? "" : "\\.?\\d*")));
+        box.onChanged().subscribe(s -> {
+            try {
+                set.accept(Double.parseDouble(s));
+            } catch (NumberFormatException ignored) {
+            }
+        });
+        Runnable down = () -> stepBox(box, -step, integer);
+        Runnable up = () -> stepBox(box, step, integer);
+        flow.child(w(Components.button(Component.literal("−"), b -> down.run())).sizing(Sizing.fixed(14), Sizing.fixed(16)));
+        flow.child(w(box));
+        flow.child(w(Components.button(Component.literal("+"), b -> up.run())).sizing(Sizing.fixed(14), Sizing.fixed(16)));
+        w(box).mouseScroll().subscribe((x, y, amount) -> {
+            stepBox(box, (amount > 0 ? step : -step) * (Screen.hasAltDown() ? 5 : 1), integer);
+            return true;
+        });
+        return flow;
     }
 
-    /** Saves exactly what would be built (saved blocks, middle block, palette, else the held block) as a schematic. */
-    private void export(String extension) {
-        if (minecraft == null || minecraft.player == null) return;
-        List<Cell> cells = cells();
-        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
-        for (Cell c : cells) { minY = Math.min(minY, c.y()); maxY = Math.max(maxY, c.y()); }
-        Item held = minecraft.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.BlockItem b ? b : null;
-        Map<Cell, BlockState> blocks = new HashMap<>();
-        for (Cell c : cells) {
-            BlockState saved = previewMaterials.get(c);
-            if (saved != null && !previewAxle.contains(c)) { blocks.put(c, saved); continue; }
-            Item item = cellItem(c, minY, maxY);
-            if (item == null) item = held;
-            if (item instanceof net.minecraft.world.item.BlockItem blockItem) blocks.put(c, blockItem.getBlock().defaultBlockState());
-        }
-        if (blocks.isEmpty()) {
-            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.export_hold_block"), true);
-            return;
-        }
-        String name = SchematicWriter.safeName(nameBox.getValue().isBlank() ? defaultName() : nameBox.getValue());
-        java.nio.file.Path file = SchematicLibrary.FOLDERS.getFirst().resolve(name + extension);
+    private static void stepBox(TextBoxComponent box, double delta, boolean integer) {
+        double value;
         try {
-            SchematicWriter.write(file, blocks);
-            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.exported", file.toString()), false);
-        } catch (java.io.IOException e) {
-            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.export_failed", e.getMessage()), false);
+            value = Double.parseDouble(box.getValue());
+        } catch (NumberFormatException e) {
+            value = 0;
         }
+        box.text(format(Math.round((value + delta) * 1000) / 1000.0, integer)); // fires onChanged
     }
 
-    /** Blocks the build needs, per item: saved schematic blocks, the middle block, palette, else the held block. */
-    private Map<Item, Integer> requiredItems() {
-        List<Cell> cells = cells();
-        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
-        for (Cell c : cells) { minY = Math.min(minY, c.y()); maxY = Math.max(maxY, c.y()); }
-        Item held = minecraft != null && minecraft.player != null
-                && minecraft.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.BlockItem b ? b : null;
-        Map<Item, Integer> out = new HashMap<>();
-        for (Cell c : cells) {
-            Item item = cellItem(c, minY, maxY);
-            if (item == null) item = held;
-            if (item != null) out.merge(item, 1, Integer::sum);
-        }
-        return out;
+    private static String format(double v, boolean integer) {
+        if (integer || v == Math.rint(v)) return String.valueOf((long) Math.rint(v));
+        return String.valueOf(v);
     }
 
-    private String editingLabel() {
-        if (editing < 0) return I18n.get("effortlessbuilding.screen.main_shape");
-        ShapeParams.Part part = currentPart();
-        return (editing + 1) + ". " + I18n.get(part.operation().getNameKey()) + " " + I18n.get(part.shape().type().getNameKey());
+    private ButtonComponent button(String key, @Nullable String tooltipKey, Runnable action) {
+        return button(() -> I18n.get(key), tooltipKey, action);
+    }
+
+    private ButtonComponent button(Supplier<String> text, @Nullable String tooltipKey, Runnable action) {
+        ButtonComponent b = Components.button(Component.literal(text.get()), btn -> action.run());
+        if (tooltipKey != null) w(b).tooltip(Component.translatable(tooltipKey));
+        return b;
+    }
+
+    private FlowLayout panel(FlowLayout flow) {
+        flow.surface(Surface.flat(0xC0202020).and(Surface.outline(0xFF3C3C3C)));
+        flow.padding(Insets.of(5));
+        return flow;
+    }
+
+    private static LabelComponent sectionLabel(String text) {
+        return (LabelComponent) Components.label(Component.literal(text).withStyle(s -> s.withBold(true))).color(Color.ofRgb(SECTION))
+                .margins(Insets.bottom(2));
+    }
+
+    /** owo turns vanilla widgets into UI components at runtime; this gives them that type for the compiler. */
+    private static io.wispforest.owo.ui.core.Component w(Object widget) {
+        return (io.wispforest.owo.ui.core.Component) widget;
     }
 
     // =========================================================================
     // Actions
     // =========================================================================
+
+    private String partLabel(int index) {
+        if (index < 0) return I18n.get("effortlessbuilding.screen.main_shape");
+        ShapeParams.Part part = params.parts().get(index);
+        return (index + 1) + ". " + I18n.get(part.operation().getNameKey()) + " " + I18n.get(part.shape().type().getNameKey());
+    }
 
     private void addPart() {
         if (params.parts().size() >= ShapeParams.MAX_PARTS) return;
@@ -485,8 +555,7 @@ public class ShapeGeneratorScreen extends Screen {
         parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.SUBTRACT, 0, 0, 0));
         params = params.withParts(parts);
         editing = parts.size() - 1;
-        paramScroll = 0;
-        rebuildWidgets();
+        refresh();
     }
 
     private void removePart() {
@@ -495,8 +564,7 @@ public class ShapeGeneratorScreen extends Screen {
         parts.remove(editing);
         params = params.withParts(parts);
         editing = Math.min(editing, parts.size() - 1);
-        paramScroll = 0;
-        rebuildWidgets();
+        refresh();
     }
 
     private void saveTemplate() {
@@ -506,7 +574,7 @@ public class ShapeGeneratorScreen extends Screen {
         templateName = name;
         nameDraft = null;
         ShapeTemplateStorage.save();
-        rebuildWidgets();
+        refresh();
     }
 
     /** Makes this the active shape, switches to SHAPE mode and closes. */
@@ -530,424 +598,71 @@ public class ShapeGeneratorScreen extends Screen {
         if (editing < 0) {
             params = ShapeParams.defaults(type).withSizing(params.sizing()).withParts(params.parts());
             templateName = null;
-            nameDraft = null;
+            setName(null);
         } else {
             setCurrent(ShapeParams.defaults(type));
         }
-        paramScroll = 0;
-        layer = -1;
-        rebuildWidgets();
+        preview.layer = -1;
+        refresh();
     }
 
     private void selectTemplate(ShapeClientState.Template template) {
         params = template.params();
         templateName = template.name();
         editing = -1;
-        nameDraft = null;
-        paramScroll = 0;
-        layer = -1;
-        rebuildWidgets();
+        setName(template.name());
+        preview.layer = -1;
+        refresh();
     }
 
-    private void cycleSchematic(List<String> names) {
-        if (names.isEmpty()) return;
-        int i = names.indexOf(current().schematic());
-        setCurrent(current().withSchematic(names.get((i + 1) % names.size())));
+    /** Puts a name in the name box (null: the default name for the design). */
+    private void setName(@Nullable String name) {
+        nameDraft = name;
+        nameBox.text(name != null ? name : defaultName());
     }
 
-    private void stepLayer(int dir) {
-        int depth = previewDepth();
-        if (depth <= 0) return;
-        // -1 (all) → 0 → … → depth-1 → -1
-        layer = layer + dir < -1 ? depth - 1 : layer + dir >= depth ? -1 : layer + dir;
+    private void copyCode() {
+        if (minecraft == null) return;
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+        json.addProperty("name", nameBox.getValue());
+        json.add("shape", ShapeTemplateStorage.toJson(params));
+        minecraft.keyboardHandler.setClipboard(ShareCode.encode(ShareCode.SHAPE, json));
+        if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_copied"), true);
     }
 
-    // =========================================================================
-    // Input
-    // =========================================================================
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (widgets.handleCheckboxClick(mouseX, mouseY)) return true;
-
-        int lx = panelX() + 4, ly = panelY() + TOP;
-        if (mouseX >= lx && mouseX < lx + LIST_W - 14 && mouseY >= ly && mouseY < ly + listRows() * LIST_ROW_H) {
-            int row = (int) (mouseY - ly) / LIST_ROW_H + listScroll;
-            ShapeType[] types = ShapeType.values();
-            List<ShapeClientState.Template> templates = ShapeClientState.getTemplates();
-            if (row < types.length) {
-                selectType(types[row]);
-                return true;
-            }
-            int t = row - types.length - 1;
-            if (t >= 0 && t < templates.size()) {
-                selectTemplate(templates.get(t));
-                return true;
-            }
-        }
-        if (view == View.THREE_D && inPreview(mouseX, mouseY)) {
-            dragging = true;
-            return true;
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (dragging) {
-            yaw += (float) dragX * 0.9f;
-            pitch = Math.max(-89, Math.min(89, pitch + (float) dragY * 0.9f));
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        dragging = false;
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (widgets.handleScroll(mouseX, mouseY, scrollY)) return true;
-        int px = panelX();
-        int dir = scrollY > 0 ? -1 : 1;
-        if (mouseX < px + LIST_W + 4) {
-            int max = Math.max(0, ShapeType.values().length + 1 + ShapeClientState.getTemplates().size() - listRows());
-            listScroll = Math.max(0, Math.min(max, listScroll + dir * BlockGrid.scrollStep(listRows())));
-            rebuildWidgets();
-            return true;
-        }
-        if (mouseX < px + previewX) {
-            int step = dir * BlockGrid.scrollStep(paramRows);
-            paramScroll = Math.max(0, Math.min(Math.max(0, rows.size() - visibleRows()), paramScroll + step));
-            rebuildWidgets();
-            return true;
-        }
-        if (view == View.THREE_D && inPreview(mouseX, mouseY)) {
-            zoom = Math.max(0.3f, Math.min(6f, zoom * (scrollY > 0 ? 1.15f : 1 / 1.15f)));
-        } else {
-            stepLayer(-dir);
-        }
-        return true;
-    }
-
-    private boolean inPreview(double mouseX, double mouseY) {
-        int x = panelX() + previewX, y = panelY() + TOP;
-        return mouseX >= x && mouseX < x + previewW && mouseY >= y && mouseY < y + previewH;
-    }
-
-    // =========================================================================
-    // Rendering
-    // =========================================================================
-
-    @Override
-    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        g.fill(0, 0, width, height, 150 << 24);
-    }
-
-    @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        super.render(g, mouseX, mouseY, partialTick);
-        int px = panelX(), py = panelY();
-
-        g.fill(px + LIST_W + 6, py + 2, px + LIST_W + 7, py + panelH - 24, 0xFF555555);
-        g.fill(px + previewX - 4, py + 2, px + previewX - 3, py + panelH - 24, 0xFF555555);
-
-        g.drawString(font, title, px + 5, py + 8, 0xFFFFFF);
-        String header = templateName != null ? templateName : I18n.get(params.type().getNameKey());
-        if (!params.parts().isEmpty()) header += " + " + params.parts().size();
-        g.drawString(font, font.plainSubstrByWidth(header, paramW), px + PARAM_X, py + 8, 0xFFFFFF);
-
-        renderList(g, px + 4, py + TOP, mouseX, mouseY);
-        renderRowLabels(g, px + PARAM_X, py + TOP);
-        widgets.renderCheckboxes(g, mouseX, mouseY);
-        renderPreview(g, px + previewX, py + TOP);
-    }
-
-    private void renderList(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
-        ShapeType[] types = ShapeType.values();
-        List<ShapeClientState.Template> templates = ShapeClientState.getTemplates();
-        int rows = listRows();
-        for (int r = 0; r < rows; r++) {
-            int i = r + listScroll;
-            int ry = y + r * LIST_ROW_H;
-            String text;
-            boolean selected;
-            int color = 0xEEEEEE;
-            if (i < types.length) {
-                text = I18n.get(types[i].getNameKey());
-                selected = (editing >= 0 || templateName == null) && current().type() == types[i];
-            } else if (i == types.length) {
-                g.drawString(font, I18n.get("effortlessbuilding.screen.templates"), x + 1, ry + 3, 0xAAAAAA);
-                continue;
-            } else if (i - types.length - 1 < templates.size()) {
-                text = templates.get(i - types.length - 1).name();
-                selected = text.equals(templateName) && editing < 0;
-                color = 0xFFD37F;
-            } else {
-                if (templates.isEmpty() && i == types.length + 1) {
-                    g.drawString(font, I18n.get("effortlessbuilding.screen.no_templates"), x + 2, ry + 3, 0x777777);
-                }
-                continue;
-            }
-            boolean hovered = mouseX >= x && mouseX < x + LIST_W - 14 && mouseY >= ry && mouseY < ry + LIST_ROW_H;
-            if (selected) g.fill(x, ry, x + LIST_W - 14, ry + LIST_ROW_H - 1, 0x40FFFFFF);
-            else if (hovered) g.fill(x, ry, x + LIST_W - 14, ry + LIST_ROW_H - 1, 0x20FFFFFF);
-            g.drawString(font, font.plainSubstrByWidth(text, LIST_W - 18), x + 2, ry + 3, color);
-        }
-    }
-
-    private void renderRowLabels(GuiGraphics g, int x, int y) {
-        for (int i = paramScroll; i < Math.min(rows.size(), paramScroll + visibleRows()); i++) {
-            int k = i - paramScroll;
-            g.drawString(font, font.plainSubstrByWidth(rows.get(i).label(), labelW - 2),
-                    x + (k / paramRows) * colW, y + (k % paramRows) * ROW_H + 4, 0xCCCCCC);
-        }
-        if (cols == 2) g.fill(x + colW - 6, y, x + colW - 5, y + paramRows * ROW_H - 4, 0xFF444444);
-        if (rows.size() > visibleRows()) {
-            String more = (paramScroll + 1) + "–" + Math.min(rows.size(), paramScroll + visibleRows()) + " / " + rows.size()
-                    + "  " + I18n.get("effortlessbuilding.screen.scroll_for_more");
-            g.drawString(font, more, x, y + paramRows * ROW_H + 2, 0x777777);
-        }
-        if (params.type() != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS) {
-            g.drawString(font, I18n.get("effortlessbuilding.screen.click_sizing_hint"), x, y + paramRows * ROW_H + 12, 0x999999);
-        } else if (params.sizing() == ShapeParams.Sizing.PATH) {
-            g.drawString(font, I18n.get("effortlessbuilding.screen.path_sizing_hint"), x, y + paramRows * ROW_H + 12, 0x999999);
-        }
-    }
-
-    /** 3D view or a slice/projection through one plane, plus block count and size. */
-    private void renderPreview(GuiGraphics g, int x, int y) {
-        List<Cell> cells = cells();
-        g.fill(x, y, x + previewW, y + previewH, 0xFF1E1E1E);
-        if (cells.isEmpty()) {
-            g.drawCenteredString(font, I18n.get("effortlessbuilding.screen.nothing_to_build"), x + previewW / 2, y + previewH / 2 - 4, 0x888888);
+    private void pasteCode() {
+        if (minecraft == null) return;
+        com.google.gson.JsonObject json = ShareCode.decode(ShareCode.SHAPE, minecraft.keyboardHandler.getClipboard());
+        ShapeParams pasted = json != null && json.has("shape") ? ShapeTemplateStorage.fromJson(json.getAsJsonObject("shape")) : null;
+        if (pasted == null) {
+            if (minecraft.player != null) minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.code_invalid"), true);
             return;
         }
-        int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
-        int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
-        for (Cell c : cells) {
-            int[] v = {c.x(), c.y(), c.z()};
-            for (int a = 0; a < 3; a++) { min[a] = Math.min(min[a], v[a]); max[a] = Math.max(max[a], v[a]); }
-        }
-        int depth = previewDepth();
-        if (layer >= depth) layer = -1;
-
-        if (view == View.THREE_D) render3D(g, x, y, cells, min[1]);
-        else renderSlice(g, x, y, cells, min, max, depth);
-
-        int iy = y + previewH + 24;
-        String layerText = layer < 0 ? I18n.get("effortlessbuilding.screen.all_layers")
-                : I18n.get(view == View.THREE_D ? "effortlessbuilding.screen.up_to_layer" : "effortlessbuilding.screen.layer", layer + 1, depth);
-        g.drawCenteredString(font, layerText, x + 48 + 16 + (previewW - 48 - 32) / 2, y + previewH + 8, 0xDDDDDD);
-        g.drawString(font, I18n.get("effortlessbuilding.screen.block_count", cells.size()), x, iy, 0xDDDDDD);
-        g.drawString(font, (max[0] - min[0] + 1) + " × " + (max[1] - min[1] + 1) + " × " + (max[2] - min[2] + 1)
-                + " " + I18n.get("effortlessbuilding.screen.dimensions"), x, iy + 11, 0xAAAAAA);
-        if (view == View.THREE_D) {
-            g.drawString(font, I18n.get("effortlessbuilding.screen.drag_to_rotate"), x, iy + 22, 0x777777);
-        } else if (params.sizing() == ShapeParams.Sizing.CLICKS && params.type().resizable()) {
-            g.drawString(font, I18n.get("effortlessbuilding.screen.preview_at_size", params.size()), x, iy + 22, 0x888888);
-        }
+        params = pasted;
+        editing = -1;
+        templateName = null;
+        setName(json.has("name") ? json.get("name").getAsString() : null);
+        preview.layer = -1;
+        refresh();
     }
 
-    /** Solid cubes with a light per face direction, depth-tested, rotatable by dragging. */
-    private void render3D(GuiGraphics g, int x, int y, List<Cell> cells, int minY) {
-        updateFaces(cells, minY);
-        float scale = zoom * 0.46f * Math.min(previewW, previewH) / facesRadius;
-
-        g.enableScissor(x, y, x + previewW, y + previewH);
-        PoseStack pose = g.pose();
-        pose.pushPose();
-        pose.translate(x + previewW / 2f, y + previewH / 2f, 100);
-        // World y up = screen up. Depth is squashed (order kept) so the cubes stay between
-        // the panel background (z 0) and tooltips (z 400) at any zoom.
-        pose.scale(scale, -scale, Math.min(scale, 60f / facesRadius));
-        pose.mulPose(Axis.XP.rotationDegrees(pitch));
-        pose.mulPose(Axis.YP.rotationDegrees(yaw));
-        pose.translate(-facesCenter[0], -facesCenter[1], -facesCenter[2]);
-        Matrix4f matrix = pose.last().pose();
-        VertexConsumer buffer = g.bufferSource().getBuffer(RenderType.debugQuads());
-        for (float[] f : faces) {
-            int color = (int) f[12];
-            for (int v = 0; v < 4; v++) buffer.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color);
+    /** Saves exactly what would be built (saved blocks, middle block, palette, else the held block) as a schematic. */
+    private void export(String extension) {
+        if (minecraft == null || minecraft.player == null) return;
+        Map<Cell, BlockState> blocks = preview.blocksToExport(params);
+        if (blocks.isEmpty()) {
+            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.export_hold_block"), true);
+            return;
         }
-        g.flush();
-        pose.popPose();
-        g.disableScissor();
-    }
-
-    /** Rebuilds the visible-face list when the shape or the shown layers change. */
-    private void updateFaces(List<Cell> cells, int minY) {
-        Object paletteKey = paletteKey();
-        if (params.equals(facesParams) && layer == facesLayer && paletteKey.equals(facesPalette)) return;
-        facesParams = params;
-        facesLayer = layer;
-        facesPalette = paletteKey;
-        int maxY = Integer.MIN_VALUE;
-        for (Cell c : cells) maxY = Math.max(maxY, c.y());
-
-        Set<Cell> shown = new HashSet<>();
-        for (Cell c : cells) if (layer < 0 || c.y() - minY <= layer) shown.add(c);
-
-        float[] lo = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE};
-        float[] hi = {-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
-        for (Cell c : cells) {
-            float[] v = {c.x(), c.y(), c.z()};
-            for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a] + 1); }
-        }
-        facesCenter = new float[]{(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2};
-        facesRadius = Math.max(1, (float) Math.sqrt(sq(hi[0] - lo[0]) + sq(hi[1] - lo[1]) + sq(hi[2] - lo[2])) / 2);
-
-        // Neighbor offset, brightness, and the four corners of that face on a unit cube
-        int[][] dirs = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
-        float[] light = {1f, 0.5f, 0.8f, 0.8f, 0.65f, 0.65f};
-        float[][][] corners = {
-                {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}},
-                {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}},
-                {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}},
-                {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}},
-                {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}},
-                {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}};
-        List<float[]> out = new ArrayList<>();
-        for (Cell c : shown) {
-            boolean topLayer = layer >= 0 && c.y() - minY == layer;
-            float checker = ((c.x() + c.y() + c.z()) & 1) == 1 ? 0.88f : 1f; // alternating shades make blocks countable
-            for (int d = 0; d < 6; d++) {
-                if (shown.contains(new Cell(c.x() + dirs[d][0], c.y() + dirs[d][1], c.z() + dirs[d][2]))) continue;
-                float[] f = new float[13];
-                for (int v = 0; v < 4; v++) {
-                    f[v * 3] = c.x() + corners[d][v][0];
-                    f[v * 3 + 1] = c.y() + corners[d][v][1];
-                    f[v * 3 + 2] = c.z() + corners[d][v][2];
-                }
-                float dim = layer >= 0 && !topLayer ? 0.6f : 1f; // layers below the chosen one are dimmed
-                f[12] = shade(cellColor(c, minY, maxY), light[d] * checker * dim);
-                out.add(f);
-            }
-        }
-        faces = out.toArray(new float[0][]);
-    }
-
-    private static float sq(float v) { return v * v; }
-
-    /** The block color a cell gets: from the palette when it is on, else the plain preview color. */
-    private int cellColor(Cell c, int minY, int maxY) {
-        Item item = cellItem(c, minY, maxY);
-        return item != null ? BlockColorCache.colorOf(item) : BLOCK_COLOR;
-    }
-
-    /** The block a cell gets on its own (middle block, saved schematic block, palette), or null for the held block. */
-    private @org.jetbrains.annotations.Nullable Item cellItem(Cell c, int minY, int maxY) {
-        if (previewAxle.contains(c)) {
-            ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
-            return id == null ? null : BuiltInRegistries.ITEM.get(id);
-        }
-        BlockState saved = previewMaterials.get(c);
-        if (saved != null) {
-            Item item = saved.getBlock().asItem();
-            return item == net.minecraft.world.item.Items.AIR ? null : item;
-        }
-        List<Item> blocks = paletteBlocks();
-        if (blocks.isEmpty()) return null;
-        BlockPalette palette = PaletteClientState.getPalette();
-        int index = palette.pattern().index(blocks.size(), palette.band(), c.x(), c.y(), c.z(), minY, maxY,
-                BlockPos.asLong(c.x(), c.y(), c.z()));
-        return blocks.get(index);
-    }
-
-    private List<Item> paletteBlocks() {
-        BlockPalette palette = PaletteClientState.getActive();
-        if (palette == null || minecraft == null || minecraft.player == null) return List.of();
-        return palette.resolve(minecraft.player);
-    }
-
-    /** Changes when anything that affects preview colors changes. */
-    private Object paletteKey() {
-        return List.of(paletteBlocks(), PaletteClientState.getPalette(), BlockColorCache.colors().size());
-    }
-
-    /** Slice (or projection when all layers) through the chosen plane. */
-    private void renderSlice(GuiGraphics g, int x, int y, List<Cell> cells, int[] min, int[] max, int depth) {
-        // Axes of the view: (horizontal, vertical-on-screen, depth)
-        int[] axes = switch (view) {
-            case FRONT -> new int[]{0, 1, 2};
-            case SIDE -> new int[]{2, 1, 0};
-            default -> new int[]{0, 2, 1};
-        };
-        boolean flipVertical = view != View.TOP; // y up on screen
-        int spanU = max[axes[0]] - min[axes[0]] + 1, spanV = max[axes[1]] - min[axes[1]] + 1;
-        int scale = Math.max(1, Math.min((previewW - 4) / spanU, (previewH - 4) / spanV));
-        int ox = x + (previewW - spanU * scale) / 2, oy = y + (previewH - spanV * scale) / 2;
-
-        // Nearest-to-viewer depth per column (projection), or the chosen slice
-        int[][] top = new int[spanU][spanV];
-        Cell[][] topCell = new Cell[spanU][spanV];
-        for (int[] col : top) Arrays.fill(col, Integer.MIN_VALUE);
-        for (Cell c : cells) {
-            int[] v = {c.x(), c.y(), c.z()};
-            int d = v[axes[2]] - min[axes[2]];
-            int u = v[axes[0]] - min[axes[0]], w = v[axes[1]] - min[axes[1]];
-            if (layer >= 0) {
-                if (d == layer) { top[u][w] = d; topCell[u][w] = c; }
-                else if (d == layer - 1 && top[u][w] == Integer.MIN_VALUE) top[u][w] = -2; // ghost of the layer below
-            } else if (d > top[u][w]) {
-                top[u][w] = d;
-                topCell[u][w] = c;
-            }
-        }
-        for (int u = 0; u < spanU; u++) {
-            for (int w = 0; w < spanV; w++) {
-                int d = top[u][w];
-                if (d == Integer.MIN_VALUE) continue;
-                int sy = flipVertical ? spanV - 1 - w : w;
-                int color;
-                if (d == -2) {
-                    color = 0xFF3A3A3A;
-                } else {
-                    float light = layer >= 0 ? 1f : 0.55f + 0.45f * (d + 1) / depth;
-                    if (((u + w + d) & 1) == 1) light *= 0.85f; // alternating shades make blocks countable
-                    color = shade(cellColor(topCell[u][w], min[1], max[1]), light);
-                }
-                g.fill(ox + u * scale, oy + sy * scale, ox + (u + 1) * scale - (scale > 3 ? 1 : 0),
-                        oy + (sy + 1) * scale - (scale > 3 ? 1 : 0), color);
-            }
+        String name = SchematicWriter.safeName(nameBox.getValue().isBlank() ? defaultName() : nameBox.getValue());
+        java.nio.file.Path file = SchematicLibrary.FOLDERS.getFirst().resolve(name + extension);
+        try {
+            SchematicWriter.write(file, blocks);
+            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.exported", file.toString()), false);
+        } catch (java.io.IOException e) {
+            minecraft.player.displayClientMessage(Component.translatable("effortlessbuilding.message.export_failed", e.getMessage()), false);
         }
     }
-
-    /** Number of layers the ◀ ▶ buttons step through: height in 3D and top view, else the view's depth. */
-    private int previewDepth() {
-        List<Cell> cells = cells();
-        if (cells.isEmpty()) return 0;
-        int axis = switch (view) { case FRONT -> 2; case SIDE -> 0; default -> 1; };
-        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
-        for (Cell c : cells) {
-            int v = axis == 0 ? c.x() : axis == 1 ? c.y() : c.z();
-            lo = Math.min(lo, v);
-            hi = Math.max(hi, v);
-        }
-        return hi - lo + 1;
-    }
-
-    private List<Cell> cells() {
-        if (!params.equals(previewParams)) {
-            int maxAxis = minecraft != null && minecraft.player != null
-                    ? ServerConfig.INSTANCE.getMaxBlocksPerAxis(minecraft.player) : 1000;
-            List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
-            previewAxle = params.centerBlock().isEmpty() ? Set.of()
-                    : new HashSet<>(ShapeGenerator.centerAxis(params.orientation(), cells));
-            previewMaterials = ShapeMaterials.of(params);
-            Set<Cell> all = new LinkedHashSet<>(cells);
-            all.addAll(previewAxle);
-            previewCells = List.copyOf(all);
-            previewParams = params;
-        }
-        return previewCells;
-    }
-
-    private Set<Cell> previewAxle = Set.of();
-    private Map<Cell, BlockState> previewMaterials = Map.of();
 
     private String centerBlockLabel() {
         ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
@@ -955,30 +670,60 @@ public class ShapeGeneratorScreen extends Screen {
         return BuiltInRegistries.ITEM.get(id).getDescription().getString();
     }
 
-    // =========================================================================
-    // Helpers
-    // =========================================================================
-
-    private static int shade(int rgb, float f) {
-        int r = Math.min(255, (int) (((rgb >> 16) & 0xFF) * f));
-        int gr = Math.min(255, (int) (((rgb >> 8) & 0xFF) * f));
-        int b = Math.min(255, (int) ((rgb & 0xFF) * f));
-        return 0xFF000000 | r << 16 | gr << 8 | b;
-    }
-
-    private static <T> T next(T[] values, T current) {
-        for (int i = 0; i < values.length; i++) if (values[i] == current) return values[(i + 1) % values.length];
-        return values[0];
-    }
-
     private String defaultName() {
         String base = I18n.get(params.type().getNameKey());
         return params.type() == ShapeType.SCHEMATIC ? base + " " + params.schematic() : base + " " + params.size();
     }
 
-    private int listRows() { return (panelH - TOP - 26) / LIST_ROW_H; }
-    private int panelX() { return (width - panelW) / 2; }
-    private int panelY() { return (height - panelH) / 2; }
+    // =========================================================================
+    // Per-frame text and the preview
+    // =========================================================================
+
+    @Override
+    public void render(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // Only touch the labels when their text changes (each change re-lays out the screen)
+        if (sizeLabel != null) {
+            String size = preview.sizeText(params);
+            if (!size.equals(shownSize)) { shownSize = size; sizeLabel.text(Component.literal(size)); }
+            String layer = preview.layerText(params);
+            if (!layer.equals(shownLayer)) { shownLayer = layer; layerLabel.text(Component.literal(layer)); }
+        }
+        super.render(g, mouseX, mouseY, partialTick);
+    }
+
+    /** The 3D or slice preview: drag to turn, scroll to zoom (or step layers in slice views). */
+    private class PreviewComponent extends BaseComponent {
+
+        @Override
+        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+            preview.render(context, font, x, y, width, height, params);
+            context.renderOutline(x, y, width, height, 0xFF3C3C3C);
+        }
+
+        @Override
+        public boolean canFocus(FocusSource source) {
+            return source == FocusSource.MOUSE_CLICK;
+        }
+
+        @Override
+        public boolean onMouseDown(double mouseX, double mouseY, int button) {
+            super.onMouseDown(mouseX, mouseY, button);
+            return preview.view == ShapePreview.View.THREE_D;
+        }
+
+        @Override
+        public boolean onMouseDrag(double mouseX, double mouseY, double deltaX, double deltaY, int button) {
+            if (preview.view != ShapePreview.View.THREE_D) return false;
+            preview.drag(deltaX, deltaY);
+            return true;
+        }
+
+        @Override
+        public boolean onMouseScroll(double mouseX, double mouseY, double amount) {
+            preview.scroll(params, amount);
+            return true;
+        }
+    }
 
     @Override
     public boolean isPauseScreen() {
