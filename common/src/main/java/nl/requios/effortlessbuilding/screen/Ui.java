@@ -54,6 +54,40 @@ public final class Ui {
         return flow;
     }
 
+    /** Height of one entry in a dropdown menu, for placing the menu before it is laid out. */
+    private static final int MENU_ENTRY_H = 12;
+
+    /**
+     * A button showing the current choice with a ▼; clicking opens a menu of every option (current one
+     * marked). Picking applies it, then runs {@code after}.
+     */
+    public static <T> io.wispforest.owo.ui.component.ButtonComponent choice(net.minecraft.client.gui.screens.Screen screen,
+            FlowLayout root, String shown, java.util.List<T> options, java.util.function.Function<T, String> name,
+            java.util.function.Consumer<T> pick, Runnable after) {
+        return Components.button(Component.literal(shown + "  ▼"), b -> openMenu(screen, root, b, shown, options, name, pick, after));
+    }
+
+    /** Opens a menu under the button (above it when there is no room below); entries are guarded like {@link #label}. */
+    public static <T> void openMenu(net.minecraft.client.gui.screens.Screen screen, FlowLayout root,
+            net.minecraft.client.gui.components.AbstractWidget b, String current, java.util.List<T> options,
+            java.util.function.Function<T, String> name, java.util.function.Consumer<T> pick, Runnable after) {
+        int menuH = options.size() * MENU_ENTRY_H + 8;
+        int menuY = b.getY() + b.getHeight() + menuH <= screen.height - 4 ? b.getY() + b.getHeight() : Math.max(4, b.getY() - menuH);
+        var opened = io.wispforest.owo.ui.component.DropdownComponent.openContextMenu(screen, root, FlowLayout::child, b.getX(), menuY, menu -> {
+            menu.surface(Surface.flat(0xF0181818).and(Surface.outline(0xFF555555)));
+            for (T option : options) {
+                String text = name.apply(option);
+                menu.button(Component.literal(text.equals(current) ? "» " + text : "   " + text), m -> {
+                    pick.accept(option);
+                    m.remove();
+                    after.run();
+                });
+            }
+        });
+        ignoreTextClicks(opened);
+        opened.zIndex(300); // above fields (drawn batched, so depth decides) and below tooltips
+    }
+
     /** owo turns vanilla widgets into UI components at runtime; this gives them that type for the compiler. */
     public static io.wispforest.owo.ui.core.Component w(Object widget) {
         return (io.wispforest.owo.ui.core.Component) widget;
