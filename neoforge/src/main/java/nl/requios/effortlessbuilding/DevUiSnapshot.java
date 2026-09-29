@@ -48,6 +48,13 @@ public final class DevUiSnapshot {
         }
     }
 
+    private static void collectButtons(io.wispforest.owo.ui.core.Component c, String text, java.util.List<net.minecraft.client.gui.components.Button> out) {
+        if (c instanceof net.minecraft.client.gui.components.Button b && b.getMessage().getString().equals(text)) out.add(b);
+        if (c instanceof io.wispforest.owo.ui.core.ParentComponent parent) {
+            for (var child : parent.children()) collectButtons(child, text, out);
+        }
+    }
+
     /** Logs every component's type, position and size, indented by depth. */
     private static void dump(io.wispforest.owo.ui.core.Component c, int depth) {
         Constants.LOG.info("[UI] {}{} at {},{} size {}x{} sizing {} x {}", "  ".repeat(depth), c.getClass().getSimpleName(),
@@ -96,6 +103,21 @@ public final class DevUiSnapshot {
                 if (c instanceof io.wispforest.owo.ui.component.DropdownComponent menu
                         && menu.children().getFirst() instanceof io.wispforest.owo.ui.core.ParentComponent entries
                         && entries.children().size() > 1) {
+                    var entry = entries.children().get(1);
+                    mc.screen.mouseClicked(entry.x() + 3, entry.y() + 3, 0);
+                }
+            }
+        }
+        if (ticks == 10 && Boolean.getBoolean("effortlessbuilding.uitest.addpart") && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            // Press "+" (add part), then pick the second shape in its menu
+            java.util.List<net.minecraft.client.gui.components.Button> plus = new java.util.ArrayList<>();
+            collectButtons(adapter(owo).rootComponent, "+", plus);
+            plus.stream().min(java.util.Comparator.comparingInt(net.minecraft.client.gui.components.Button::getY)).ifPresent(b -> b.onPress());
+        }
+        if (ticks == 15 && Boolean.getBoolean("effortlessbuilding.uitest.addpart") && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            for (var c : adapter(owo).rootComponent.children()) {
+                if (c instanceof io.wispforest.owo.ui.component.DropdownComponent menu
+                        && menu.children().getFirst() instanceof io.wispforest.owo.ui.core.ParentComponent entries) {
                     var entry = entries.children().get(1);
                     mc.screen.mouseClicked(entry.x() + 3, entry.y() + 3, 0);
                 }

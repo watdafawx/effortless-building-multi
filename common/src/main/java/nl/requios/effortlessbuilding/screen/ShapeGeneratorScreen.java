@@ -240,6 +240,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private void fillSidebar() {
         sidebarList.clearChildren();
         sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.shapes")));
+        if (editing >= 0) {
+            // While a part is being edited, the list sets that part's shape
+            sidebarList.child(label(Component.translatable("effortlessbuilding.screen.shapes_for_part", editing + 1))
+                    .color(Color.ofRgb(MUTED)).maxWidth(SIDEBAR_W - 10).margins(Insets.bottom(3)));
+        }
         for (ShapeType type : ShapeType.values()) {
             boolean selected = (editing >= 0 || templateName == null) && current().type() == type;
             sidebarList.child(listRow(I18n.get(type.getNameKey()), TEXT, selected, () -> selectType(type), null));
@@ -441,7 +446,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         io.wispforest.owo.ui.core.Component menu = choice(partLabel(editing), targets, this::partLabel, i -> editing = i);
         menu.sizing(Sizing.fixed(fieldW - 36), Sizing.fixed(CONTROL_H));
         flow.child(menu);
-        ButtonComponent add = Components.button(Component.literal("+"), b -> addPart());
+        // "+" asks which shape to add
+        ButtonComponent add = Components.button(Component.literal("+"),
+                b -> openMenu(b, "", ShapeType.values(), t -> I18n.get(t.getNameKey()), this::addPart));
         add.active(params.parts().size() < ShapeParams.MAX_PARTS);
         flow.child(w(add).sizing(Sizing.fixed(16), Sizing.fixed(16)).tooltip(Component.translatable("effortlessbuilding.screen.add_part")));
         ButtonComponent remove = Components.button(Component.literal("×"), b -> removePart());
@@ -463,26 +470,29 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     /** A button showing the current choice; clicking opens a menu with every option. */
     private <T> io.wispforest.owo.ui.core.Component choice(String shown, T[] options, java.util.function.Function<T, String> name,
                                                            java.util.function.Consumer<T> pick) {
-        ButtonComponent button = Components.button(Component.literal(shown + "  ▼"), b -> {
-            // Below the button, or above it when the menu would run off the bottom of the screen
-            int menuH = options.length * MENU_ENTRY_H + 8;
-            int menuY = b.getY() + b.getHeight() + menuH <= height - 4 ? b.getY() + b.getHeight() : Math.max(4, b.getY() - menuH);
-            DropdownComponent opened = DropdownComponent.openContextMenu(this, root, FlowLayout::child, b.getX(), menuY, menu -> {
-                menu.surface(Surface.flat(0xF0181818).and(Surface.outline(0xFF555555)));
-                for (T option : options) {
-                    String text = name.apply(option);
-                    menu.button(Component.literal(text.equals(shown) ? "» " + text : "   " + text), m -> {
-                        pick.accept(option);
-                        m.remove();
-                        refresh();
-                    });
-                }
-            });
-            ignoreTextClicks(opened); // menu entries are labels too: same guard as label()
-            opened.zIndex(300); // above the fields (drawn batched, so depth decides) and below tooltips
-            opened.horizontalSizing(Sizing.fixed(Math.max(b.getWidth(), 60)));
-        });
+        ButtonComponent button = Components.button(Component.literal(shown + "  ▼"), b -> openMenu(b, shown, options, name, pick));
         return w(button).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H));
+    }
+
+    /** Opens a menu of options under the button (the current one marked); picking one applies it and refreshes. */
+    private <T> void openMenu(ButtonComponent b, String current, T[] options, java.util.function.Function<T, String> name,
+                              java.util.function.Consumer<T> pick) {
+        // Below the button, or above it when the menu would run off the bottom of the screen
+        int menuH = options.length * MENU_ENTRY_H + 8;
+        int menuY = b.getY() + b.getHeight() + menuH <= height - 4 ? b.getY() + b.getHeight() : Math.max(4, b.getY() - menuH);
+        DropdownComponent opened = DropdownComponent.openContextMenu(this, root, FlowLayout::child, b.getX(), menuY, menu -> {
+            menu.surface(Surface.flat(0xF0181818).and(Surface.outline(0xFF555555)));
+            for (T option : options) {
+                String text = name.apply(option);
+                menu.button(Component.literal(text.equals(current) ? "» " + text : "   " + text), m -> {
+                    pick.accept(option);
+                    m.remove();
+                    refresh();
+                });
+            }
+        });
+        ignoreTextClicks(opened); // menu entries are labels too: same guard as label()
+        opened.zIndex(300); // above the fields (drawn batched, so depth decides) and below tooltips
     }
 
     /** A number field with − and + buttons; scrolling over it steps too (Alt: 5 steps). */
@@ -578,16 +588,16 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private String partLabel(int index) {
         if (index < 0) return I18n.get("effortlessbuilding.screen.main_shape");
         ShapeParams.Part part = params.parts().get(index);
-        return (index + 1) + ". " + I18n.get(part.operation().getNameKey()) + " " + I18n.get(part.shape().type().getNameKey());
+        return (index + 1) + ". " + I18n.get(part.shape().type().getNameKey()); // its operation has its own row
     }
 
-    private void addPart() {
+    /** Adds a part of the chosen shape, half the main shape's size, joined on (Operation changes that). */
+    private void addPart(ShapeType type) {
         if (params.parts().size() >= ShapeParams.MAX_PARTS) return;
-        // Start with a smaller copy of the main shape, cutting a hole: the most common first step
-        ShapeParams shape = ShapeParams.defaults(params.type() == ShapeType.SCHEMATIC ? ShapeType.ELLIPSOID : params.type())
-                .withSize(Math.max(1, params.size() / 2));
+        ShapeParams shape = ShapeParams.defaults(type);
+        if (type.resizable()) shape = shape.withSize(Math.max(1, params.size() / 2));
         List<ShapeParams.Part> parts = new ArrayList<>(params.parts());
-        parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.SUBTRACT, 0, 0, 0));
+        parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.UNITE, 0, 0, 0));
         params = params.withParts(parts);
         editing = parts.size() - 1;
         refresh();

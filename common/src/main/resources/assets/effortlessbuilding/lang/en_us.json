@@ -241,7 +241,7 @@
   "effortlessbuilding.screen.editing": "Editing",
   "effortlessbuilding.screen.editing.description": "Click to switch between the main shape and its parts. Parts combine with everything before them, in order.",
   "effortlessbuilding.screen.main_shape": "Main shape",
-  "effortlessbuilding.screen.add_part": "Add a part: another shape to unite, subtract, intersect or exclude",
+  "effortlessbuilding.screen.add_part": "Add another shape. It joins on; change its Operation to cut, intersect or exclude instead.",
   "effortlessbuilding.screen.remove_part": "Remove this part",
   "effortlessbuilding.screen.operation": "Combine",
   "effortlessbuilding.screen.offset_x": "Offset X",
@@ -454,5 +454,6 @@
   "effortlessbuilding.screen.section.design": "Design",
   "effortlessbuilding.screen.section.shape": "Shape",
   "effortlessbuilding.screen.section.rotation": "Rotation",
-  "effortlessbuilding.screen.section.build": "Building"
+  "effortlessbuilding.screen.section.build": "Building",
+  "effortlessbuilding.screen.shapes_for_part": "Shape of part %s:"
 }
