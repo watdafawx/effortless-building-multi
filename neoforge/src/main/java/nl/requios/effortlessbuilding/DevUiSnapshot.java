@@ -90,6 +90,17 @@ public final class DevUiSnapshot {
             collectMenus(adapter(owo).rootComponent, menus);
             menus.stream().max(java.util.Comparator.comparingInt(net.minecraft.client.gui.components.Button::getY)).ifPresent(b -> b.onPress());
         }
+        if (ticks == 25 && Boolean.getBoolean("effortlessbuilding.uitest.menu") && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            // Click the second entry of the open menu, as a player would
+            for (var c : adapter(owo).rootComponent.children()) {
+                if (c instanceof io.wispforest.owo.ui.component.DropdownComponent menu
+                        && menu.children().getFirst() instanceof io.wispforest.owo.ui.core.ParentComponent entries
+                        && entries.children().size() > 1) {
+                    var entry = entries.children().get(1);
+                    mc.screen.mouseClicked(entry.x() + 3, entry.y() + 3, 0);
+                }
+            }
+        }
         if (ticks == 5 && Boolean.getBoolean("effortlessbuilding.uitest.scroll") && mc.screen != null) {
             // Scroll down over the middle of the screen (the settings on the Shape Generator)
             mc.screen.mouseScrolled(mc.screen.width * 0.25, mc.screen.height * 0.5, 0, -100); // over the labels

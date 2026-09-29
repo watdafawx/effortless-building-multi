@@ -143,8 +143,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout top = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
         top.margins(Insets.bottom(6));
         top.gap(6).verticalAlignment(VerticalAlignment.CENTER);
-        top.child(Components.label(title.copy().withStyle(s -> s.withBold(true))).color(Color.WHITE));
-        header = Components.label(Component.empty()).color(Color.ofRgb(ACCENT));
+        top.child(label(title.copy().withStyle(s -> s.withBold(true))).color(Color.WHITE));
+        header = label(Component.empty()).color(Color.ofRgb(ACCENT));
         top.child(header);
         top.child(hspace());
         top.child(w(button("effortlessbuilding.screen.copy_code", "effortlessbuilding.screen.copy_code.description", this::copyCode)));
@@ -175,14 +175,14 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         viewButton = button(() -> "", "effortlessbuilding.screen.view.description", () -> { preview.nextView(); refresh(); });
         layerRow.child(w(viewButton).horizontalSizing(Sizing.fixed(56)));
         layerRow.child(w(Components.button(Component.literal("◀"), b -> preview.stepLayer(params, -1))).sizing(Sizing.fixed(16), Sizing.fixed(16)));
-        layerLabel = Components.label(Component.empty()).color(Color.ofRgb(TEXT));
+        layerLabel = label(Component.empty()).color(Color.ofRgb(TEXT));
         layerLabel.horizontalTextAlignment(HorizontalAlignment.CENTER).horizontalSizing(Sizing.expand());
         layerRow.child(layerLabel);
         layerRow.child(w(Components.button(Component.literal("▶"), b -> preview.stepLayer(params, 1))).sizing(Sizing.fixed(16), Sizing.fixed(16)));
         previewPanel.child(layerRow);
         FlowLayout infoRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
         infoRow.gap(4).verticalAlignment(VerticalAlignment.CENTER);
-        sizeLabel = Components.label(Component.empty()).color(Color.ofRgb(TEXT));
+        sizeLabel = label(Component.empty()).color(Color.ofRgb(TEXT));
         previewPanel.child(sizeLabel);
         infoRow.child(hspace());
         infoRow.child(w(button("effortlessbuilding.screen.export_schem", "effortlessbuilding.screen.export_schem.description", () -> export(".schem"))));
@@ -191,7 +191,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         infoRow.child(w(button("effortlessbuilding.screen.materials", "effortlessbuilding.screen.materials.description",
                 () -> { if (minecraft != null) minecraft.setScreen(new MaterialsScreen(this, preview.requiredItems(params))); })));
         previewPanel.child(infoRow);
-        hintLabel = Components.label(Component.empty()).color(Color.ofRgb(MUTED));
+        hintLabel = label(Component.empty()).color(Color.ofRgb(MUTED));
         previewPanel.child(hintLabel);
         body.child(previewPanel);
         root.child(body);
@@ -247,7 +247,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.templates")).margins(Insets.top(6)));
         List<ShapeClientState.Template> templates = ShapeClientState.getTemplates();
         if (templates.isEmpty()) {
-            sidebarList.child(Components.label(Component.translatable("effortlessbuilding.screen.no_templates")).color(Color.ofRgb(0x777777)));
+            sidebarList.child(label(Component.translatable("effortlessbuilding.screen.no_templates")).color(Color.ofRgb(0x777777)));
         }
         for (ShapeClientState.Template template : templates) {
             boolean selected = template.name().equals(templateName) && editing < 0;
@@ -273,7 +273,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             select.run();
             return true;
         });
-        LabelComponent label = Components.label(Component.literal(text)).color(Color.ofRgb(color));
+        LabelComponent label = label(Component.literal(text)).color(Color.ofRgb(color));
         label.maxWidth(SIDEBAR_W - (delete != null ? 32 : 18));
         row.child(label);
         if (delete != null) {
@@ -314,7 +314,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private FlowLayout settingRow(Row row) {
         FlowLayout line = Containers.horizontalFlow(Sizing.fixed(labelW + fieldW), Sizing.fixed(ROW_H));
         line.verticalAlignment(VerticalAlignment.CENTER);
-        LabelComponent label = Components.label(Component.literal(row.label())).color(Color.ofRgb(0xCCCCCC));
+        LabelComponent label = label(Component.literal(row.label())).color(Color.ofRgb(0xCCCCCC));
         label.horizontalSizing(Sizing.fixed(labelW));
         if (row.tooltipKey() != null && I18n.exists(row.tooltipKey())) label.tooltip(Component.translatable(row.tooltipKey()));
         line.child(label);
@@ -455,7 +455,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         String name = current().schematic().isEmpty() && !names.isEmpty() ? names.getFirst() : current().schematic();
         if (!name.equals(current().schematic())) setCurrent(current().withSchematic(name));
         if (names.isEmpty()) {
-            return Components.label(Component.translatable("effortlessbuilding.screen.no_schematics")).color(Color.ofRgb(MUTED));
+            return label(Component.translatable("effortlessbuilding.screen.no_schematics")).color(Color.ofRgb(MUTED));
         }
         return choice(name, names.toArray(new String[0]), n -> n, n -> setCurrent(current().withSchematic(n)));
     }
@@ -478,6 +478,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                     });
                 }
             });
+            ignoreTextClicks(opened); // menu entries are labels too: same guard as label()
             opened.zIndex(300); // above the fields (drawn batched, so depth decides) and below tooltips
             opened.horizontalSizing(Sizing.fixed(Math.max(b.getWidth(), 60)));
         });
@@ -543,8 +544,21 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private static LabelComponent sectionLabel(String text) {
-        return (LabelComponent) Components.label(Component.literal(text).withStyle(s -> s.withBold(true))).color(Color.ofRgb(SECTION))
+        return (LabelComponent) label(Component.literal(text).withStyle(s -> s.withBold(true))).color(Color.ofRgb(SECTION))
                 .margins(Insets.bottom(2));
+    }
+
+    /**
+     * A label whose text clicks do nothing. owo passes clicks on plain text to the screen with no style,
+     * and a mod in the pack (an EMI add-on) crashes on that; none of our labels have links anyway.
+     */
+    private static LabelComponent label(Component text) {
+        return Components.label(text).textClickHandler(style -> false);
+    }
+
+    private static void ignoreTextClicks(io.wispforest.owo.ui.core.Component c) {
+        if (c instanceof LabelComponent l) l.textClickHandler(style -> false);
+        if (c instanceof io.wispforest.owo.ui.core.ParentComponent parent) parent.children().forEach(ShapeGeneratorScreen::ignoreTextClicks);
     }
 
     /** Pushes what follows to the right edge (owo's own spacer also grows vertically, stretching the row). */
