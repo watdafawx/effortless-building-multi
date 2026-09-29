@@ -83,6 +83,10 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
     // ---- containers refreshed on change ----
     private FlowLayout root, sidebarList, settings;
+    /** Sidebar search text (lower case matching). */
+    private String filter = "";
+    /** Top-down thumbnails of saved templates, by design (made once, reused while the screen is open). */
+    private final Map<ShapeParams, int[]> thumbnails = new java.util.HashMap<>();
     private LabelComponent header, layerLabel, sizeLabel, hintLabel;
     private TextBoxComponent nameBox;
     private ButtonComponent viewButton;
@@ -171,7 +175,17 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
         sidebarList = Containers.verticalFlow(Sizing.fill(100), Sizing.content());
         FlowLayout sidebar = panel(Containers.verticalFlow(Sizing.fixed(SIDEBAR_W), Sizing.fill(100)));
-        sidebar.child(Containers.verticalScroll(Sizing.fill(100), Sizing.fill(100), sidebarList).scrollbarThiccness(3));
+        // Search: filters shapes and templates as you type
+        TextBoxComponent search = Components.textBox(Sizing.fill(100));
+        w(search).verticalSizing(Sizing.fixed(CONTROL_H)).margins(Insets.bottom(4));
+        search.setHint(Component.translatable("effortlessbuilding.screen.search"));
+        search.text(filter);
+        search.onChanged().subscribe(text -> {
+            filter = text;
+            fillSidebar();
+        });
+        sidebar.child(w(search));
+        sidebar.child(Containers.verticalScroll(Sizing.fill(100), Sizing.expand(), sidebarList).scrollbarThiccness(3));
         body.child(sidebar);
 
         settings = Containers.verticalFlow(Sizing.content(), Sizing.content());
@@ -261,14 +275,19 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             sidebarList.child(label(Component.translatable("effortlessbuilding.screen.shapes_for_part", editing + 1))
                     .color(Color.ofRgb(MUTED)).maxWidth(SIDEBAR_W - 10).margins(Insets.bottom(3)));
         }
+        String query = filter.trim().toLowerCase(java.util.Locale.ROOT);
         for (ShapeType type : ShapeType.values()) {
+            String name = I18n.get(type.getNameKey());
+            if (!query.isEmpty() && !name.toLowerCase(java.util.Locale.ROOT).contains(query)) continue;
             boolean selected = (editing >= 0 || templateName == null) && current().type() == type;
-            sidebarList.child(listRow(I18n.get(type.getNameKey()), TEXT, selected, () -> selectType(type), null));
+            sidebarList.child(listRow(name, TEXT, selected, () -> selectType(type), null, null));
         }
         sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.templates")).margins(Insets.top(6)));
-        List<ShapeClientState.Template> templates = ShapeClientState.getTemplates();
+        List<ShapeClientState.Template> templates = ShapeClientState.getTemplates().stream()
+                .filter(t -> query.isEmpty() || t.name().toLowerCase(java.util.Locale.ROOT).contains(query)).toList();
         if (templates.isEmpty()) {
-            sidebarList.child(label(Component.translatable("effortlessbuilding.screen.no_templates")).color(Color.ofRgb(0x777777)));
+            sidebarList.child(label(Component.translatable(query.isEmpty() ? "effortlessbuilding.screen.no_templates"
+                    : "effortlessbuilding.screen.no_matches")).color(Color.ofRgb(0x777777)));
         }
         for (ShapeClientState.Template template : templates) {
             boolean selected = template.name().equals(templateName) && editing < 0;
@@ -277,13 +296,74 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                 if (template.name().equals(templateName)) templateName = null;
                 ShapeTemplateStorage.save();
                 refresh();
-            }));
+            }, template.params()));
+        }
+    }
+
+    private static final int THUMB = 16;
+
+    /**
+     * A small top-down picture of a design: THUMB x THUMB colors (0 = empty), higher blocks lighter.
+     * Parts with their own block show its color.
+     */
+    private int[] thumbnail(ShapeParams params) {
+        return thumbnails.computeIfAbsent(params, p -> {
+            int[] pixels = new int[THUMB * THUMB];
+            var labels = ShapeGenerator.generateLabeled(p, 256, SchematicLibrary::cells);
+            if (labels.isEmpty()) return pixels;
+            int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+            int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+            for (Cell c : labels.keySet()) {
+                minX = Math.min(minX, c.x()); maxX = Math.max(maxX, c.x());
+                minZ = Math.min(minZ, c.z()); maxZ = Math.max(maxZ, c.z());
+                minY = Math.min(minY, c.y()); maxY = Math.max(maxY, c.y());
+            }
+            int span = Math.max(maxX - minX, maxZ - minZ) + 1;
+            int[] top = new int[THUMB * THUMB];
+            java.util.Arrays.fill(top, Integer.MIN_VALUE);
+            for (var e : labels.entrySet()) {
+                Cell c = e.getKey();
+                int px = (c.x() - minX) * THUMB / span, pz = (c.z() - minZ) * THUMB / span;
+                int i = pz * THUMB + px;
+                if (c.y() <= top[i]) continue;
+                top[i] = c.y();
+                int base = 0xE8A33D;
+                Integer label = e.getValue();
+                if (label != null && label >= 0 && label < p.parts().size() && !p.parts().get(label).block().isEmpty()) {
+                    ResourceLocation id = ResourceLocation.tryParse(p.parts().get(label).block());
+                    if (id != null) base = BlockColorCache.colorOf(BuiltInRegistries.ITEM.get(id));
+                }
+                float light = maxY == minY ? 1f : 0.55f + 0.45f * (c.y() - minY) / (maxY - minY);
+                int r = (int) (((base >> 16) & 0xFF) * light), g = (int) (((base >> 8) & 0xFF) * light), b = (int) ((base & 0xFF) * light);
+                pixels[i] = 0xFF000000 | r << 16 | g << 8 | b;
+            }
+            return pixels;
+        });
+    }
+
+    /** Draws a design's thumbnail. */
+    private class ThumbnailComponent extends BaseComponent {
+        private final ShapeParams params;
+
+        ThumbnailComponent(ShapeParams params) {
+            this.params = params;
+            sizing(Sizing.fixed(THUMB), Sizing.fixed(THUMB));
+        }
+
+        @Override
+        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+            int[] pixels = thumbnail(params);
+            context.fill(x, y, x + THUMB, y + THUMB, 0xFF151515);
+            for (int i = 0; i < pixels.length; i++) {
+                if (pixels[i] != 0) context.fill(x + i % THUMB, y + i / THUMB, x + i % THUMB + 1, y + i / THUMB + 1, pixels[i]);
+            }
         }
     }
 
     /** A clickable list line, highlighted when selected or hovered, with an optional delete button. */
-    private FlowLayout listRow(String text, int color, boolean selected, Runnable select, @Nullable Runnable delete) {
-        FlowLayout row = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(14));
+    private FlowLayout listRow(String text, int color, boolean selected, Runnable select, @Nullable Runnable delete,
+                               @Nullable ShapeParams thumbnail) {
+        FlowLayout row = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(thumbnail != null ? THUMB + 2 : 14));
         row.verticalAlignment(VerticalAlignment.CENTER).padding(Insets.horizontal(3));
         Surface normal = selected ? Surface.flat(0x50FFFFFF) : Surface.BLANK;
         row.surface(normal);
@@ -294,8 +374,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             select.run();
             return true;
         });
+        if (thumbnail != null) row.child(new ThumbnailComponent(thumbnail).margins(Insets.right(4)));
         LabelComponent label = label(Component.literal(text)).color(Color.ofRgb(color));
-        label.maxWidth(SIDEBAR_W - (delete != null ? 32 : 18));
+        label.maxWidth(SIDEBAR_W - (delete != null ? 32 : 18) - (thumbnail != null ? THUMB + 4 : 0));
         row.child(label);
         if (delete != null) {
             row.child(hspace());

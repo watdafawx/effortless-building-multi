@@ -466,5 +466,7 @@
   "effortlessbuilding.screen.drag_part_3d": "Shift+drag: move the blue part \u00b7 Ctrl+drag: up/down \u00b7 drag: turn",
   "effortlessbuilding.screen.drag_part_slice": "Drag to move the blue part",
   "effortlessbuilding.screen.undo_short": "Undo",
-  "effortlessbuilding.screen.redo_short": "Redo"
+  "effortlessbuilding.screen.redo_short": "Redo",
+  "effortlessbuilding.screen.search": "Search\u2026",
+  "effortlessbuilding.screen.no_matches": "No matches"
 }

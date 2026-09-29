@@ -141,6 +141,11 @@ public final class DevUiSnapshot {
                 mc.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_Z, 0, org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL);
             }
         }
+        if (ticks == 30 && Boolean.getBoolean("effortlessbuilding.uitest.save") && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            java.util.List<net.minecraft.client.gui.components.Button> save = new java.util.ArrayList<>();
+            collectButtons(adapter(owo).rootComponent, "Save", save);
+            save.forEach(b -> b.onPress());
+        }
         if (ticks == 5 && Boolean.getBoolean("effortlessbuilding.uitest.scroll") && mc.screen != null) {
             // Scroll down over the middle of the screen (the settings on the Shape Generator)
             mc.screen.mouseScrolled(mc.screen.width * 0.25, mc.screen.height * 0.5, 0, -100); // over the labels
