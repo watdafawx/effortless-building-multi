@@ -211,6 +211,50 @@ public class BlockPreviewRenderer {
                     camX, camY, camZ, outlineWidth, 100, 100, 100, 255);
             bufferSource.endBatch(RenderType.entityTranslucent(OUTLINE_TEXTURE));
         }
+
+        renderSizeLabels(poseStack, bufferSource, blockSet.keySet(), camX, camY, camZ);
+    }
+
+    /**
+     * Width, height and depth written along the preview's bounding box (width on the front bottom edge,
+     * depth on the side bottom edge, height up the front corner), facing the camera and visible through
+     * blocks, so the size can be judged before placing. Skipped for flat or tiny previews' 1-block sides.
+     */
+    private static void renderSizeLabels(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource,
+                                         Set<BlockPos> positions, double camX, double camY, double camZ) {
+        if (positions.size() < 2) return;
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (BlockPos p : positions) {
+            minX = Math.min(minX, p.getX()); maxX = Math.max(maxX, p.getX());
+            minY = Math.min(minY, p.getY()); maxY = Math.max(maxY, p.getY());
+            minZ = Math.min(minZ, p.getZ()); maxZ = Math.max(maxZ, p.getZ());
+        }
+        int w = maxX - minX + 1, h = maxY - minY + 1, d = maxZ - minZ + 1;
+        // Label the sides nearest the camera
+        double frontZ = Math.abs(camZ - minZ) < Math.abs(camZ - (maxZ + 1)) ? minZ - 0.3 : maxZ + 1.3;
+        double sideX = Math.abs(camX - minX) < Math.abs(camX - (maxX + 1)) ? minX - 0.3 : maxX + 1.3;
+        if (w > 1) sizeLabel(poseStack, bufferSource, "W " + w, (minX + maxX + 1) / 2.0, minY + 0.2, frontZ, camX, camY, camZ);
+        if (d > 1) sizeLabel(poseStack, bufferSource, "D " + d, sideX, minY + 0.2, (minZ + maxZ + 1) / 2.0, camX, camY, camZ);
+        if (h > 1) sizeLabel(poseStack, bufferSource, "H " + h, sideX, (minY + maxY + 1) / 2.0, frontZ, camX, camY, camZ);
+        bufferSource.endBatch();
+    }
+
+    private static void sizeLabel(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, String text,
+                                  double x, double y, double z, double camX, double camY, double camZ) {
+        Minecraft mc = Minecraft.getInstance();
+        // Keep the text readable at any distance: scale with how far it is
+        double dist = Math.sqrt((x - camX) * (x - camX) + (y - camY) * (y - camY) + (z - camZ) * (z - camZ));
+        float scale = (float) (0.025 * Math.max(1, dist / 8));
+        poseStack.pushPose();
+        poseStack.translate(x - camX, y - camY, z - camZ);
+        poseStack.mulPose(mc.gameRenderer.getMainCamera().rotation());
+        poseStack.scale(scale, -scale, scale);
+        var font = mc.font;
+        float left = -font.width(text) / 2f;
+        font.drawInBatch(text, left, -4, 0xFFFFFFFF, false, poseStack.last().pose(), bufferSource,
+                net.minecraft.client.gui.Font.DisplayMode.SEE_THROUGH, 0x80000000, LightTexture.FULL_BRIGHT);
+        poseStack.popPose();
     }
 
     private static void renderBoundingBoxFaces(PoseStack poseStack, MultiBufferSource bufferSource,
