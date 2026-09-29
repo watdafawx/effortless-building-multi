@@ -151,6 +151,17 @@ public final class DevUiSnapshot {
             collectButtons(adapter(owo).rootComponent, "Save", save);
             save.forEach(b -> b.onPress());
         }
+        if (ticks == 3 && SCREEN.equals("undo")) {
+            // No server here: show made-up history
+            var kind = nl.requios.effortlessbuilding.utilities.UndoManager.Summary.Kind.class;
+            java.util.List<nl.requios.effortlessbuilding.utilities.UndoManager.Summary> done = java.util.List.of(
+                    new nl.requios.effortlessbuilding.utilities.UndoManager.Summary(net.minecraft.world.item.Items.COBBLESTONE, 340, kind.getEnumConstants()[0], 25, false),
+                    new nl.requios.effortlessbuilding.utilities.UndoManager.Summary(net.minecraft.world.item.Items.OAK_PLANKS, 96, kind.getEnumConstants()[0], 190, false),
+                    new nl.requios.effortlessbuilding.utilities.UndoManager.Summary(net.minecraft.world.item.Items.STONE, 12, kind.getEnumConstants()[1], 4000, true));
+            java.util.List<nl.requios.effortlessbuilding.utilities.UndoManager.Summary> undone = java.util.List.of(
+                    new nl.requios.effortlessbuilding.utilities.UndoManager.Summary(net.minecraft.world.item.Items.GLASS, 48, kind.getEnumConstants()[0], 10, false));
+            nl.requios.effortlessbuilding.screen.UndoHistoryScreen.receive(new nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket(done, undone));
+        }
         if (ticks == 5 && Boolean.getBoolean("effortlessbuilding.uitest.scroll") && mc.screen != null) {
             // Scroll down over the middle of the screen (the settings on the Shape Generator)
             mc.screen.mouseScrolled(mc.screen.width * 0.25, mc.screen.height * 0.5, 0, -100); // over the labels
