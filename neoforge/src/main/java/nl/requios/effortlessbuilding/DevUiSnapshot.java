@@ -85,6 +85,7 @@ public final class DevUiSnapshot {
             Supplier<Screen> screen = switch (SCREEN) {
                 case "palette" -> () -> new PaletteScreen(null);
                 case "undo" -> UndoHistoryScreen::new;
+                case "anchor" -> nl.requios.effortlessbuilding.screen.AnchorViewScreen::new;
                 default -> ShapeGeneratorScreen::new;
             };
             String type = System.getProperty("effortlessbuilding.uitest.type", "");

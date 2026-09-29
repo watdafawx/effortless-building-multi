@@ -1,8 +1,18 @@
 package nl.requios.effortlessbuilding.screen;
 
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
+import io.wispforest.owo.ui.base.BaseComponent;
+import io.wispforest.owo.ui.base.BaseOwoScreen;
+import io.wispforest.owo.ui.component.ButtonComponent;
+import io.wispforest.owo.ui.component.Components;
+import io.wispforest.owo.ui.component.LabelComponent;
+import io.wispforest.owo.ui.container.Containers;
+import io.wispforest.owo.ui.container.FlowLayout;
+import io.wispforest.owo.ui.core.Insets;
+import io.wispforest.owo.ui.core.OwoUIAdapter;
+import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.core.Sizing;
+import io.wispforest.owo.ui.core.Surface;
+import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
@@ -24,12 +34,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static nl.requios.effortlessbuilding.screen.Ui.*;
+
 /**
  * Overview of the anchored preview: a rotatable 3D view of the whole build with the real terrain around
  * it, for builds too big to see from where you stand. Buttons move the anchor a block at a time
  * (5 with Shift), build it, or release it.
  */
-public class AnchorViewScreen extends Screen {
+public class AnchorViewScreen extends BaseOwoScreen<FlowLayout> {
 
     /** Terrain shown around the build, in blocks. */
     private static final int MARGIN = 6;
@@ -38,45 +50,73 @@ public class AnchorViewScreen extends Screen {
 
     private final VoxelView view = new VoxelView();
     private boolean showTerrain = true;
-    private int panelW, panelH;
     private String note = "";
     private Object cellsKey;
+    private LabelComponent info, noteLabel;
+    private ButtonComponent terrainButton;
+    private String shownInfo = "", shownNote = "";
 
     public AnchorViewScreen() {
         super(Component.translatable("effortlessbuilding.screen.anchor_view"));
     }
 
     @Override
-    protected void init() {
-        panelW = Math.min(width - 16, 900);
-        panelH = Math.min(height - 16, 520);
-        int px = panelX(), by = panelY() + panelH - 20;
+    protected OwoUIAdapter<FlowLayout> createAdapter() {
+        return OwoUIAdapter.create(this, Containers::verticalFlow);
+    }
+
+    @Override
+    protected void build(FlowLayout root) {
+        root.surface(Surface.flat(BACKGROUND));
+        root.padding(Insets.of(8));
+
+        FlowLayout top = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        top.gap(10).verticalAlignment(VerticalAlignment.CENTER).margins(Insets.bottom(6));
+        top.child(label(title.copy().withStyle(s -> s.withBold(true)), 0xFFFFFF));
+        info = label(Component.empty(), 0xAAAAAA);
+        top.child(info);
+        root.child(top);
+
+        FlowLayout body = panel(Containers.verticalFlow(Sizing.fill(100), Sizing.expand()));
+        noteLabel = label(Component.empty(), 0xFFAA66);
+        body.child(noteLabel);
+        body.child(new ViewComponent().sizing(Sizing.fill(100), Sizing.expand()));
+        root.child(body);
+
+        FlowLayout bottom = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        bottom.gap(4).verticalAlignment(VerticalAlignment.CENTER).margins(Insets.top(6));
         String[][] moves = {{"X-", "-1,0,0"}, {"X+", "1,0,0"}, {"Y-", "0,-1,0"}, {"Y+", "0,1,0"}, {"Z-", "0,0,-1"}, {"Z+", "0,0,1"}};
-        int bx = px + 6;
         for (String[] m : moves) {
             String[] d = m[1].split(",");
-            addRenderableWidget(Button.builder(Component.literal(m[0]), b -> {
-                        int step = hasShiftDown() ? 5 : 1;
+            bottom.child(w(Components.button(Component.literal(m[0]), b -> {
+                        int step = Screen.hasShiftDown() ? 5 : 1;
                         BuildPipelineClient.nudgeAnchor(Integer.parseInt(d[0]) * step, Integer.parseInt(d[1]) * step,
                                 Integer.parseInt(d[2]) * step);
-                    })
-                    .tooltip(Tooltip.create(Component.translatable("effortlessbuilding.screen.anchor_move.description")))
-                    .bounds(bx, by, 26, 16).build());
-            bx += 28;
+                    })).horizontalSizing(Sizing.fixed(28))
+                    .tooltip(Component.translatable("effortlessbuilding.screen.anchor_move.description")));
         }
-        addRenderableWidget(Button.builder(Component.translatable(showTerrain
-                        ? "effortlessbuilding.screen.anchor_terrain_on" : "effortlessbuilding.screen.anchor_terrain_off"),
-                b -> { showTerrain = !showTerrain; rebuildWidgets(); }).bounds(bx + 8, by, 84, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.use_shape"), b -> {
+        terrainButton = Components.button(Component.empty(), b -> {
+            showTerrain = !showTerrain;
+            updateTerrainButton();
+        });
+        updateTerrainButton();
+        bottom.child(w(terrainButton).horizontalSizing(Sizing.fixed(96)).margins(Insets.left(8)));
+        bottom.child(hspace());
+        bottom.child(w(Components.button(Component.translatable("effortlessbuilding.screen.use_shape"), b -> {
             BuildPipelineClient.buildAnchor();
             onClose();
-        }).bounds(px + panelW - 76 - 4 - 70 - 4 - 70, by, 70, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("effortlessbuilding.screen.anchor_release"), b -> {
+        })).horizontalSizing(Sizing.fixed(80)));
+        bottom.child(w(Components.button(Component.translatable("effortlessbuilding.screen.anchor_release"), b -> {
             BuildPipelineClient.clearAnchor();
             onClose();
-        }).bounds(px + panelW - 76 - 4 - 70, by, 70, 16).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
-                .bounds(px + panelW - 76, by, 70, 16).build());
+        })).horizontalSizing(Sizing.fixed(80)));
+        bottom.child(w(Components.button(Component.translatable("gui.done"), b -> onClose())).horizontalSizing(Sizing.fixed(70)));
+        root.child(bottom);
+    }
+
+    private void updateTerrainButton() {
+        terrainButton.setMessage(Component.translatable(showTerrain
+                ? "effortlessbuilding.screen.anchor_terrain_on" : "effortlessbuilding.screen.anchor_terrain_off"));
     }
 
     /** Anchored blocks in their own colors, plus the terrain around them in dimmer map colors. */
@@ -133,57 +173,64 @@ public class AnchorViewScreen extends Screen {
     }
 
     @Override
-    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        g.fill(0, 0, width, height, 170 << 24);
-    }
-
-    @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        super.render(g, mouseX, mouseY, partialTick);
-        int px = panelX(), py = panelY();
-        g.drawString(font, title, px + 6, py + 7, 0xFFFFFF);
+    public void render(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // Only touch the labels when their text changes (each change re-lays out the screen)
         BlockSet blocks = BuildPipelineClient.getAnchorBlocks();
-        int vx = px + 6, vy = py + 22, vw = panelW - 12, vh = panelH - 22 - 26;
-        g.fill(vx, vy, vx + vw, vy + vh, 0xFF1B1D22);
-        if (blocks == null || blocks.isEmpty()) {
-            g.drawCenteredString(font, I18n.get("effortlessbuilding.screen.anchor_none"), vx + vw / 2, vy + vh / 2, 0x888888);
-            return;
+        String text = "";
+        if (blocks != null && !blocks.isEmpty()) {
+            BlockPos first = blocks.firstPos;
+            text = I18n.get("effortlessbuilding.screen.block_count", blocks.size())
+                    + (first != null ? "   @ " + first.getX() + ", " + first.getY() + ", " + first.getZ() : "")
+                    + "   " + I18n.get("effortlessbuilding.screen.drag_to_rotate");
         }
-        updateCells(blocks);
-        view.render(g, vx, vy, vw, vh);
-        BlockPos first = blocks.firstPos;
-        String info = I18n.get("effortlessbuilding.screen.block_count", blocks.size())
-                + (first != null ? "   @ " + first.getX() + ", " + first.getY() + ", " + first.getZ() : "")
-                + "   " + I18n.get("effortlessbuilding.screen.drag_to_rotate");
-        g.drawString(font, info, px + 110, py + 7, 0xAAAAAA);
-        if (!note.isEmpty()) g.drawString(font, note, vx + 4, vy + 4, 0xFFAA66);
+        if (info != null && !text.equals(shownInfo)) { shownInfo = text; info.text(Component.literal(text)); }
+        if (noteLabel != null && !note.equals(shownNote)) { shownNote = note; noteLabel.text(Component.literal(note)); }
+        super.render(g, mouseX, mouseY, partialTick);
     }
 
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (super.mouseClicked(mouseX, mouseY, button)) return true;
-        return view.mouseClicked(mouseX, mouseY, panelX() + 6, panelY() + 22, panelW - 12, panelH - 48);
-    }
+    /** The 3D view of the build and its surroundings: drag to turn, scroll to zoom. */
+    private class ViewComponent extends BaseComponent {
 
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        return view.mouseDragged(dragX, dragY) || super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
+        @Override
+        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+            context.fill(x, y, x + width, y + height, 0xFF1B1D22);
+            BlockSet blocks = BuildPipelineClient.getAnchorBlocks();
+            if (blocks == null || blocks.isEmpty()) {
+                context.drawCenteredString(font, I18n.get("effortlessbuilding.screen.anchor_none"), x + width / 2, y + height / 2, 0x888888);
+                return;
+            }
+            updateCells(blocks);
+            view.render(context, x, y, width, height);
+        }
 
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        view.mouseReleased();
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
+        @Override
+        public boolean canFocus(FocusSource source) {
+            return source == FocusSource.MOUSE_CLICK;
+        }
 
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        view.zoom(scrollY);
-        return true;
-    }
+        @Override
+        public boolean onMouseDown(double mouseX, double mouseY, int button) {
+            super.onMouseDown(mouseX, mouseY, button);
+            return view.mouseClicked(x + 1, y + 1, x, y, width, height); // the click is on this view; start turning
+        }
 
-    private int panelX() { return (width - panelW) / 2; }
-    private int panelY() { return (height - panelH) / 2; }
+        @Override
+        public boolean onMouseDrag(double mouseX, double mouseY, double deltaX, double deltaY, int button) {
+            return view.mouseDragged(deltaX, deltaY);
+        }
+
+        @Override
+        public boolean onMouseUp(double mouseX, double mouseY, int button) {
+            view.mouseReleased();
+            return super.onMouseUp(mouseX, mouseY, button);
+        }
+
+        @Override
+        public boolean onMouseScroll(double mouseX, double mouseY, double amount) {
+            view.zoom(amount);
+            return true;
+        }
+    }
 
     @Override
     public boolean isPauseScreen() {
