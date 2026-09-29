@@ -87,6 +87,11 @@ public final class DevUiSnapshot {
                 case "undo" -> UndoHistoryScreen::new;
                 default -> ShapeGeneratorScreen::new;
             };
+            String type = System.getProperty("effortlessbuilding.uitest.type", "");
+            if (!type.isEmpty()) {
+                nl.requios.effortlessbuilding.shape.ShapeClientState.setActive(
+                        nl.requios.effortlessbuilding.shape.ShapeParams.defaults(nl.requios.effortlessbuilding.shape.ShapeType.valueOf(type)));
+            }
             mc.setScreen(screen.get());
             ticks = 0;
             return;

@@ -308,6 +308,7 @@ public final class ShapeGenerator {
             case WHEEL -> wheel(p, local);
             case TOWER -> tower(p, local);
             case SPIRAL -> spiral(p, local);
+            case TEXT -> text(p, local);
             case SCHEMATIC -> { }
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
@@ -609,6 +610,43 @@ public final class ShapeGenerator {
             if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
         }
         return inside;
+    }
+
+    /**
+     * Block letters from {@link PixelFont}: each pixel a scale x scale square, depth blocks thick, lines
+     * split at '|' and each line centered. Bold widens every stroke by a pixel.
+     */
+    private static void text(ShapeParams p, Set<Cell> out) {
+        int scale = p.getInt("scale"), depth = p.getInt("depth"), spacing = p.getInt("letter_spacing");
+        boolean bold = p.getInt("bold") == 1;
+        String[] lines = p.text().split("\\|", -1);
+        int lineHeight = PixelFont.HEIGHT + 2;
+        for (int line = 0; line < lines.length; line++) {
+            String text = lines[line].length() > 64 ? lines[line].substring(0, 64) : lines[line];
+            // Pixels of this line: (column, row from the bottom)
+            List<int[]> pixels = new ArrayList<>();
+            int cursor = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char ch = text.charAt(i);
+                if (ch == ' ') { cursor += PixelFont.SPACE + spacing; continue; }
+                String[] rows = PixelFont.glyph(ch);
+                for (int r = 0; r < rows.length; r++)
+                    for (int col = 0; col < rows[r].length(); col++) {
+                        if (rows[r].charAt(col) != '1') continue;
+                        pixels.add(new int[]{cursor + col, PixelFont.HEIGHT - 1 - r});
+                        if (bold) pixels.add(new int[]{cursor + col + 1, PixelFont.HEIGHT - 1 - r});
+                    }
+                cursor += rows[0].length() + (bold ? 1 : 0) + spacing;
+            }
+            int width = Math.max(0, cursor - spacing);
+            int base = (lines.length - 1 - line) * lineHeight; // first line on top
+            for (int[] px : pixels) {
+                int u0 = (px[0] - width / 2) * scale, v0 = (px[1] + base) * scale;
+                for (int du = 0; du < scale; du++)
+                    for (int dv = 0; dv < scale; dv++)
+                        for (int w = 0; w < depth; w++) out.add(new Cell(u0 + du, v0 + dv, w));
+            }
+        }
     }
 
     /** Shapes whose hollow form is a 3D shell; the others handle hollow themselves. */

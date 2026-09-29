@@ -89,7 +89,13 @@ public enum ShapeType {
     SCHEMATIC(0, false, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.choice(ShapeMaterials.USE_SAVED_BLOCKS, 1, "held", "saved"),
             ParamSpec.choice(TerrainBlender.ENABLED, 0, "off", "on"),
-            ParamSpec.count(TerrainBlender.MARGIN, 6, 1, 32)));
+            ParamSpec.count(TerrainBlender.MARGIN, 6, 1, 32))),
+    /** Block letters in a 5x7 pixel font; the text is {@link ShapeParams#text()}, '|' starts a new line. */
+    TEXT(1, false, ShapeParams.Orientation.UPRIGHT_NS, List.of(
+            ParamSpec.count("scale", 1, 1, 8),
+            ParamSpec.count("depth", 1, 1, 16),
+            ParamSpec.count("letter_spacing", 1, 0, 4),
+            ParamSpec.choice("bold", 0, "off", "on")));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;
@@ -145,7 +151,7 @@ public enum ShapeType {
 
     /** Whether the shape can be sized by clicking (everything but fixed-size schematics). */
     public boolean resizable() {
-        return this != SCHEMATIC;
+        return this != SCHEMATIC && this != TEXT;
     }
 
     public ParamSpec param(String key) {

@@ -128,6 +128,11 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
         this(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock, List.of());
     }
 
+    /** The words of a {@link ShapeType#TEXT} shape (kept in the same field as a schematic's file name). */
+    public String text() {
+        return schematic;
+    }
+
     public ShapeParams withPath(List<ShapeGenerator.Cell> path) {
         return new ShapeParams(type, size, values, orientation, hollow, sizing, schematic, parts, centerBlock, path);
     }
@@ -150,7 +155,7 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
 
     public static ShapeParams defaults(ShapeType type) {
         return new ShapeParams(type, Math.max(1, type.defaultSize), Map.of(), type.defaultOrientation,
-                false, Sizing.SCREEN, "");
+                false, Sizing.SCREEN, type == ShapeType.TEXT ? "Hello" : "");
     }
 
     public double get(String key) {

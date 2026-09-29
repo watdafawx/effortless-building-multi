@@ -476,8 +476,19 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                         if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this, name -> setCurrent(current().withSchematic(name))));
                     })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
         } else {
-            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.size"), null,
-                    () -> number(current().size(), 1, true, v -> setCurrent(current().withSize((int) v)))));
+            if (type == ShapeType.TEXT) {
+                list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.text"), "effortlessbuilding.shape.param.text.description", () -> {
+                    TextBoxComponent box = Components.textBox(Sizing.fixed(fieldW));
+                    w(box).verticalSizing(Sizing.fixed(CONTROL_H));
+                    box.setMaxLength(200);
+                    box.text(current().text());
+                    box.onChanged().subscribe(text -> setCurrent(current().withSchematic(text)));
+                    return w(box);
+                }));
+            } else {
+                list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.size"), null,
+                        () -> number(current().size(), 1, true, v -> setCurrent(current().withSize((int) v)))));
+            }
             list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.shape.param.orientation"), null, () -> choice(
                     I18n.get(current().orientation().getNameKey()), ShapeParams.Orientation.values(), o -> I18n.get(o.getNameKey()),
                     o -> setCurrent(current().withOrientation(o)))));
@@ -829,6 +840,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
     private String defaultName() {
         String base = I18n.get(params.type().getNameKey());
+        if (params.type() == ShapeType.TEXT) return base + " " + params.text().replace('|', ' ');
         return params.type() == ShapeType.SCHEMATIC ? base + " " + params.schematic() : base + " " + params.size();
     }
 

@@ -427,4 +427,15 @@ class ShapeGeneratorTest {
         assertTrue(cells.contains(new Cell(c.x(), c.y(), c.z() + offset)));
         assertTrue(cells.contains(new Cell(c.x(), c.y(), c.z() - offset)));
     }
+
+    // ---- text ---------------------------------------------------------------
+
+    @Test
+    void textIsBuiltFromFontPixels() {
+        ShapeParams hi = ShapeParams.defaults(ShapeType.TEXT).withSchematic("HI");
+        assertEquals(17 + 11, gen(hi).size(), "H has 17 pixels, I has 11");
+        assertEquals(4 * 28, gen(hi.with("scale", 2)).size(), "each pixel becomes 2 x 2");
+        assertEquals(3 * 28, gen(hi.with("depth", 3)).size());
+        assertEquals(2 * 28, gen(ShapeParams.defaults(ShapeType.TEXT).withSchematic("HI|HI")).size(), "two lines");
+    }
 }

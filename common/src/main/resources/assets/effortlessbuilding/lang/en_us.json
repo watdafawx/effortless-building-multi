@@ -468,5 +468,14 @@
   "effortlessbuilding.screen.undo_short": "Undo",
   "effortlessbuilding.screen.redo_short": "Redo",
   "effortlessbuilding.screen.search": "Search\u2026",
-  "effortlessbuilding.screen.no_matches": "No matches"
+  "effortlessbuilding.screen.no_matches": "No matches",
+  "effortlessbuilding.shape.text": "Text",
+  "effortlessbuilding.shape.param.text": "Text",
+  "effortlessbuilding.shape.param.text.description": "The words to build. Use | to start a new line. Letters, digits and common punctuation.",
+  "effortlessbuilding.shape.param.scale": "Pixel size",
+  "effortlessbuilding.shape.param.scale.description": "Blocks per font pixel: 1 makes letters 7 blocks tall, 2 makes them 14.",
+  "effortlessbuilding.shape.param.letter_spacing": "Letter spacing",
+  "effortlessbuilding.shape.param.bold": "Bold",
+  "effortlessbuilding.shape.param.bold.off": "Off",
+  "effortlessbuilding.shape.param.bold.on": "On"
 }
