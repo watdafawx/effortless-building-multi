@@ -43,7 +43,7 @@ public class ShapeMode extends BaseBuildMode {
     private ShapeParams cachedParams;
     private int cachedAxis;
     private List<Long> cachedVersions;
-    private Built cachedBuilt = new Built(List.of(), Set.of(), Set.of(), null, null);
+    private Built cachedBuilt = new Built(List.of(), Set.of(), Map.of(), Set.of(), null, null);
 
     @Override
     public void initialize() {
@@ -129,6 +129,7 @@ public class ShapeMode extends BaseBuildMode {
         for (Placement placement : placements(first, second, params)) {
             Built built = cells(placement.params(), maxAxis);
             Map<Cell, BlockState> saved = ShapeMaterials.of(placement.params());
+            List<BlockState> partBlocks = partBlocks(placement.params());
             List<Cell> all = new ArrayList<>(built.cells());
             for (Cell c : built.axle()) if (!built.cellSet().contains(c)) all.add(c); // the axle fills even open middles
             if (built.bearing() != null) {
@@ -141,6 +142,8 @@ public class ShapeMode extends BaseBuildMode {
                 BlockState own = null;
                 if (centerState != null && built.axle().contains(c)) {
                     own = centerState;
+                } else if (partBlock(partBlocks, built.labels().get(c)) != null) {
+                    own = partBlock(partBlocks, built.labels().get(c));
                 } else if (saved.containsKey(c)) {
                     own = saved.get(c);
                     if (!(own.getBlock().asItem() instanceof BlockItem)) continue; // water, portals: left out
@@ -208,6 +211,20 @@ public class ShapeMode extends BaseBuildMode {
         return null;
     }
 
+    /** Per part, the block its blocks use (null: the held block or palette). */
+    private static List<BlockState> partBlocks(ShapeParams params) {
+        List<BlockState> out = new ArrayList<>();
+        for (ShapeParams.Part part : params.parts()) {
+            ResourceLocation id = part.block().isEmpty() ? null : ResourceLocation.tryParse(part.block());
+            out.add(id != null && BuiltInRegistries.ITEM.get(id) instanceof BlockItem item ? item.getBlock().defaultBlockState() : null);
+        }
+        return out;
+    }
+
+    private static @Nullable BlockState partBlock(List<BlockState> partBlocks, @Nullable Integer label) {
+        return label != null && label >= 0 && label < partBlocks.size() ? partBlocks.get(label) : null;
+    }
+
     private List<Placement> placements(BlockPos first, BlockPos second, ShapeParams params) {
         return switch (params.sizing()) {
             case SCREEN -> List.of(new Placement(first, params));
@@ -263,14 +280,15 @@ public class ShapeMode extends BaseBuildMode {
      * The shape's cells (as a list and a set), its center axle (empty without a center block or bearing)
      * and where a Create bearing goes, facing the shape (null without one).
      */
-    private record Built(List<Cell> cells, Set<Cell> cellSet, Set<Cell> axle,
+    private record Built(List<Cell> cells, Set<Cell> cellSet, Map<Cell, Integer> labels, Set<Cell> axle,
                          @Nullable Cell bearing, @Nullable Direction bearingFacing) {}
 
     private synchronized Built cells(ShapeParams params, int maxAxis) {
         // Schematic versions: a re-uploaded or edited schematic with the same name must not reuse old cells
         List<Long> versions = SchematicLibrary.namesIn(params).stream().map(SchematicLibrary::version).toList();
         if (!Objects.equals(params, cachedParams) || maxAxis != cachedAxis || !versions.equals(cachedVersions)) {
-            List<Cell> cells = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
+            Map<Cell, Integer> labels = ShapeGenerator.generateLabeled(params, maxAxis, SchematicLibrary::cells);
+            List<Cell> cells = new ArrayList<>(labels.keySet());
             int bearingEnd = CreateGlue.isAvailable() && params.getInt(ShapeType.SUPER_GLUE) == 1
                     ? params.getInt(ShapeType.BEARING) : 0;
             // A bearing needs something to hold in the middle, so it brings the axle with it
@@ -294,7 +312,7 @@ public class ShapeMode extends BaseBuildMode {
                 facing = Direction.fromAxisAndDirection(axis, atStart ? Direction.AxisDirection.POSITIVE : Direction.AxisDirection.NEGATIVE);
                 bearing = new Cell(end.x() - facing.getStepX(), end.y() - facing.getStepY(), end.z() - facing.getStepZ());
             }
-            cachedBuilt = new Built(cells, new HashSet<>(cells), axle, bearing, facing);
+            cachedBuilt = new Built(cells, new HashSet<>(cells), labels, axle, bearing, facing);
             cachedParams = params;
             cachedAxis = maxAxis;
             cachedVersions = versions;

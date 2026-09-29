@@ -395,4 +395,36 @@ class ShapeGeneratorTest {
         assertEquals(2.0, p.get("height"));
         assertFalse(ShapeParams.defaults(ShapeType.ARCH).withHollow(true).hollow(), "arch has no hollow form");
     }
+
+    // ---- part labels and repeats --------------------------------------------
+
+    @Test
+    void cellsKnowWhichPartPutThemThere() {
+        ShapeParams p = combine(ShapeParams.Operation.UNITE, 20); // far apart: no overlap
+        var labels = ShapeGenerator.generateLabeled(p, NO_LIMIT, name -> List.of());
+        long main = labels.values().stream().filter(l -> l == ShapeGenerator.MAIN).count();
+        long part = labels.values().stream().filter(l -> l == 0).count();
+        assertEquals(gen(box(3, 1)).size(), main);
+        assertEquals(main, part);
+        // Where they overlap, the part that joins on owns the blocks
+        var overlapping = ShapeGenerator.generateLabeled(combine(ShapeParams.Operation.UNITE, 0), NO_LIMIT, name -> List.of());
+        assertTrue(overlapping.values().stream().allMatch(l -> l == 0));
+    }
+
+    @Test
+    void repeatedPartGoesAroundTheMainShape() {
+        // A single block 4 east of a one-block center, repeated 4 times: north, south, east and west
+        ShapeParams center = box(1, 1);
+        ShapeParams pillar = box(1, 1);
+        int offset = 4;
+        ShapeParams p = center.withParts(List.of(new ShapeParams.Part(pillar, ShapeParams.Operation.UNITE, offset, 0, 0, "", 4)));
+        Set<Cell> cells = new HashSet<>(gen(p));
+        Set<Cell> one = new HashSet<>(gen(center));
+        assertEquals(5 * one.size(), cells.size(), "center plus four copies");
+        Cell c = one.iterator().next();
+        assertTrue(cells.contains(new Cell(c.x() + offset, c.y(), c.z())));
+        assertTrue(cells.contains(new Cell(c.x() - offset, c.y(), c.z())));
+        assertTrue(cells.contains(new Cell(c.x(), c.y(), c.z() + offset)));
+        assertTrue(cells.contains(new Cell(c.x(), c.y(), c.z() - offset)));
+    }
 }

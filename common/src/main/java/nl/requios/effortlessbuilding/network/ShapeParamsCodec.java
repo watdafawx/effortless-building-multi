@@ -33,6 +33,8 @@ public final class ShapeParamsCodec {
             buf.writeVarInt(part.x());
             buf.writeVarInt(part.y());
             buf.writeVarInt(part.z());
+            buf.writeUtf(part.block(), 256);
+            buf.writeVarInt(part.repeat());
         }
     }
 
@@ -45,7 +47,8 @@ public final class ShapeParamsCodec {
         for (int i = 0; i < count; i++) {
             ShapeParams partShape = readShape(buf);
             ShapeParams.Operation op = byOrdinal(ShapeParams.Operation.values(), buf.readVarInt());
-            parts.add(new ShapeParams.Part(partShape, op, buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
+            parts.add(new ShapeParams.Part(partShape, op, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
+                    buf.readUtf(256), buf.readVarInt()));
         }
         return shape.withParts(parts);
     }

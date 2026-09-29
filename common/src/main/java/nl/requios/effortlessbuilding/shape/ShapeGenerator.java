@@ -3,7 +3,10 @@ package nl.requios.effortlessbuilding.shape;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
@@ -35,27 +38,99 @@ public final class ShapeGenerator {
      * @return cells sorted bottom layer first
      */
     public static List<Cell> generate(ShapeParams p, int maxAxis, Function<String, List<Cell>> schematics) {
-        Set<Cell> result = new HashSet<>(single(p, schematics));
-        for (ShapeParams.Part part : p.parts()) {
-            Set<Cell> other = new HashSet<>();
+        return new ArrayList<>(generateLabeled(p, maxAxis, schematics).keySet());
+    }
+
+    /** Label of cells that come from the main shape (parts are labelled with their index). */
+    public static final int MAIN = -1;
+
+    /**
+     * Like {@link #generate}, also telling which shape each cell comes from: {@link #MAIN} or the index of
+     * the part that put it there (a part that joins on owns the blocks it covers, so it can have its own block).
+     */
+    public static LinkedHashMap<Cell, Integer> generateLabeled(ShapeParams p, int maxAxis, Function<String, List<Cell>> schematics) {
+        Collection<Cell> main = single(p, schematics);
+        Map<Cell, Integer> result = new HashMap<>();
+        for (Cell c : main) result.put(c, MAIN);
+        int axis = depthAxis(p.orientation());
+        double[] pivot = center(main);
+        for (int i = 0; i < p.parts().size(); i++) {
+            ShapeParams.Part part = p.parts().get(i);
+            Set<Cell> placed = new HashSet<>();
             // Each part turns on its own before it is placed at its offset
             for (Cell c : rotate(single(part.shape(), schematics), part.shape())) {
-                other.add(new Cell(c.x() + part.x(), c.y() + part.y(), c.z() + part.z()));
+                placed.add(new Cell(c.x() + part.x(), c.y() + part.y(), c.z() + part.z()));
             }
+            Set<Cell> other = repeatAround(placed, part.repeat(), axis, pivot);
             switch (part.operation()) {
-                case UNITE -> result.addAll(other);
-                case SUBTRACT -> result.removeAll(other);
-                case INTERSECT -> result.retainAll(other);
+                case UNITE -> { for (Cell c : other) result.put(c, i); }
+                case SUBTRACT -> result.keySet().removeAll(other);
+                case INTERSECT -> result.keySet().retainAll(other);
                 case EXCLUDE -> {
-                    Set<Cell> both = new HashSet<>(result);
-                    both.retainAll(other);
-                    result.addAll(other);
-                    result.removeAll(both);
+                    for (Cell c : other) {
+                        if (result.remove(c) == null) result.put(c, i);
+                    }
                 }
             }
         }
         // The main shape's rotation turns the whole combination
-        return clip(rotate(result, p), maxAxis);
+        return clip(rotateLabeled(result, p.get(ShapeType.ROTATE_X), p.get(ShapeType.ROTATE_Y), p.get(ShapeType.ROTATE_Z)), maxAxis);
+    }
+
+    /** The axis a shape's face looks along: up for flat shapes, through the face for upright ones (0 x, 1 y, 2 z). */
+    static int depthAxis(ShapeParams.Orientation orientation) {
+        return switch (orientation) { case FLAT -> 1; case UPRIGHT_NS -> 2; case UPRIGHT_EW -> 0; };
+    }
+
+    /** Middle of the cells' bounding box (half-block values for even spans). */
+    private static double[] center(Collection<Cell> cells) {
+        if (cells.isEmpty()) return new double[3];
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
+        int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+        for (Cell c : cells) {
+            int[] v = {c.x(), c.y(), c.z()};
+            for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a]); }
+        }
+        return new double[]{(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0};
+    }
+
+    /**
+     * The cells plus {@code count - 1} copies turned evenly around the given axis through the pivot
+     * (a part repeated around the main shape: spokes, pillars, teeth). Copies are found by inverse
+     * mapping, like {@link #rotate}, so turned copies stay solid.
+     */
+    static Set<Cell> repeatAround(Set<Cell> cells, int count, int axis, double[] pivot) {
+        if (count <= 1 || cells.isEmpty()) return cells;
+        int a = (axis + 1) % 3, b = (axis + 2) % 3;
+        Set<Cell> out = new HashSet<>(cells);
+        for (int k = 1; k < count; k++) {
+            double angle = Math.toRadians(360.0 * k / count);
+            double cos = Math.cos(angle), sin = Math.sin(angle);
+            if (Math.abs(cos) < 1e-9) cos = 0;
+            if (Math.abs(sin) < 1e-9) sin = 0;
+            Set<Cell> candidates = new HashSet<>();
+            for (Cell c : cells) {
+                int[] v = {c.x(), c.y(), c.z()};
+                double da = v[a] - pivot[a], db = v[b] - pivot[b];
+                int ta = (int) Math.round(pivot[a] + da * cos - db * sin), tb = (int) Math.round(pivot[b] + da * sin + db * cos);
+                for (int ea = -1; ea <= 1; ea++)
+                    for (int eb = -1; eb <= 1; eb++) {
+                        int[] t = v.clone();
+                        t[a] = ta + ea;
+                        t[b] = tb + eb;
+                        candidates.add(new Cell(t[0], t[1], t[2]));
+                    }
+            }
+            for (Cell t : candidates) {
+                int[] v = {t.x(), t.y(), t.z()};
+                double da = v[a] - pivot[a], db = v[b] - pivot[b];
+                int[] src = v.clone();
+                src[a] = (int) Math.round(pivot[a] + da * cos + db * sin); // turned back
+                src[b] = (int) Math.round(pivot[b] - da * sin + db * cos);
+                if (cells.contains(new Cell(src[0], src[1], src[2]))) out.add(t);
+            }
+        }
+        return out;
     }
 
     /**
@@ -65,7 +140,7 @@ public final class ShapeGenerator {
      */
     public static List<Cell> centerAxis(ShapeParams.Orientation orientation, Collection<Cell> cells) {
         if (cells.isEmpty()) return List.of();
-        int axis = switch (orientation) { case FLAT -> 1; case UPRIGHT_NS -> 2; case UPRIGHT_EW -> 0; };
+        int axis = depthAxis(orientation);
         int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
         for (Cell c : cells) {
@@ -106,23 +181,31 @@ public final class ShapeGenerator {
      */
     static Collection<Cell> rotate(Collection<Cell> cells, double rx, double ry, double rz) {
         if (cells.isEmpty() || (rx % 360 == 0 && ry % 360 == 0 && rz % 360 == 0)) return cells;
+        Map<Cell, Integer> labeled = new HashMap<>();
+        for (Cell c : cells) labeled.put(c, MAIN);
+        return rotateLabeled(labeled, rx, ry, rz).keySet();
+    }
+
+    /** {@link #rotate} keeping each cell's label (taken from the original block it maps back to). */
+    static Map<Cell, Integer> rotateLabeled(Map<Cell, Integer> cells, double rx, double ry, double rz) {
+        if (cells.isEmpty() || (rx % 360 == 0 && ry % 360 == 0 && rz % 360 == 0)) return cells;
         double[][] m = rotationMatrix(rx, ry, rz);
         boolean exact = rx % 90 == 0 && ry % 90 == 0 && rz % 90 == 0;
 
         int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
-        for (Cell c : cells) {
+        for (Cell c : cells.keySet()) {
             int[] v = {c.x(), c.y(), c.z()};
             for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a]); }
         }
         // A whole-block pivot keeps quarter turns exact (no half-block rounding)
         double[] center = {Math.floorDiv(lo[0] + hi[0], 2), Math.floorDiv(lo[1] + hi[1], 2), Math.floorDiv(lo[2] + hi[2], 2)};
-        Set<Cell> source = cells instanceof Set<Cell> set ? set : new HashSet<>(cells);
+        Map<Cell, Integer> source = cells;
 
         // Only blocks near where some original block lands can be part of the result
         int reach = exact ? 0 : 1;
         Set<Cell> candidates = new HashSet<>();
-        for (Cell c : cells) {
+        for (Cell c : cells.keySet()) {
             double[] q = transform(m, c.x() - center[0], c.y() - center[1], c.z() - center[2], false);
             int x = (int) Math.round(q[0] + center[0]), y = (int) Math.round(q[1] + center[1]), z = (int) Math.round(q[2] + center[2]);
             for (int dx = -reach; dx <= reach; dx++)
@@ -130,33 +213,39 @@ public final class ShapeGenerator {
                     for (int dz = -reach; dz <= reach; dz++) candidates.add(new Cell(x + dx, y + dy, z + dz));
         }
 
-        List<Cell> out = new ArrayList<>();
+        Map<Cell, Integer> out = new HashMap<>();
         for (Cell t : candidates) {
-            if (insideOriginal(source, m, center, t.x(), t.y(), t.z())) {
-                out.add(t);
+            Integer label = labelAt(source, m, center, t.x(), t.y(), t.z());
+            if (label != null) {
+                out.put(t, label);
             } else if (!exact) {
                 int hits = 0;
+                Integer first = null;
                 for (int corner = 0; corner < 8; corner++) {
                     double ox = (corner & 1) == 0 ? -0.3 : 0.3, oy = (corner & 2) == 0 ? -0.3 : 0.3, oz = (corner & 4) == 0 ? -0.3 : 0.3;
-                    if (insideOriginal(source, m, center, t.x() + ox, t.y() + oy, t.z() + oz)) hits++;
+                    Integer l = labelAt(source, m, center, t.x() + ox, t.y() + oy, t.z() + oz);
+                    if (l != null) {
+                        hits++;
+                        if (first == null) first = l;
+                    }
                 }
-                if (hits >= 3) out.add(t);
+                if (hits >= 3) out.put(t, first);
             }
         }
         if (out.isEmpty()) return out;
 
         int minY = Integer.MAX_VALUE;
-        for (Cell c : out) minY = Math.min(minY, c.y());
+        for (Cell c : out.keySet()) minY = Math.min(minY, c.y());
         int shift = lo[1] - minY;
-        List<Cell> shifted = new ArrayList<>(out.size());
-        for (Cell c : out) shifted.add(new Cell(c.x(), c.y() + shift, c.z()));
+        Map<Cell, Integer> shifted = new HashMap<>(out.size() * 2);
+        out.forEach((c, l) -> shifted.put(new Cell(c.x(), c.y() + shift, c.z()), l));
         return shifted;
     }
 
-    /** Whether the point, turned back into the original frame, falls in one of the original blocks. */
-    private static boolean insideOriginal(Set<Cell> source, double[][] m, double[] center, double x, double y, double z) {
+    /** The label of the original block the point falls in when turned back into the original frame, or null. */
+    private static Integer labelAt(Map<Cell, Integer> source, double[][] m, double[] center, double x, double y, double z) {
         double[] s = transform(m, x - center[0], y - center[1], z - center[2], true);
-        return source.contains(new Cell((int) Math.round(s[0] + center[0]), (int) Math.round(s[1] + center[1]),
+        return source.get(new Cell((int) Math.round(s[0] + center[0]), (int) Math.round(s[1] + center[1]),
                 (int) Math.round(s[2] + center[2])));
     }
 
@@ -574,13 +663,15 @@ public final class ShapeGenerator {
     }
 
     /** Drops cells outside the size limit (a span of at most maxAxis blocks, centered on the anchor) and sorts bottom up. */
-    private static List<Cell> clip(Collection<Cell> cells, int maxAxis) {
+    private static LinkedHashMap<Cell, Integer> clip(Map<Cell, Integer> cells, int maxAxis) {
         int half = (maxAxis - 1) / 2;
-        List<Cell> out = new ArrayList<>(cells.size());
-        for (Cell c : cells) {
-            if (Math.abs(c.x()) <= half && c.y() >= -half && c.y() < maxAxis && Math.abs(c.z()) <= half) out.add(c);
+        List<Cell> kept = new ArrayList<>(cells.size());
+        for (Cell c : cells.keySet()) {
+            if (Math.abs(c.x()) <= half && c.y() >= -half && c.y() < maxAxis && Math.abs(c.z()) <= half) kept.add(c);
         }
-        out.sort(Comparator.comparingInt(Cell::y).thenComparingInt(Cell::z).thenComparingInt(Cell::x));
+        kept.sort(Comparator.comparingInt(Cell::y).thenComparingInt(Cell::z).thenComparingInt(Cell::x));
+        LinkedHashMap<Cell, Integer> out = new LinkedHashMap<>(kept.size() * 2);
+        for (Cell c : kept) out.put(c, cells.get(c));
         return out;
     }
 }

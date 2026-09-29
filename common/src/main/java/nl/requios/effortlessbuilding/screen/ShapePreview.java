@@ -49,6 +49,8 @@ public final class ShapePreview {
     private List<Cell> cells = List.of();
     private Set<Cell> axle = Set.of();
     private Map<Cell, BlockState> materials = Map.of();
+    /** Which shape each cell comes from ({@link ShapeGenerator#MAIN} or a part index). */
+    private Map<Cell, Integer> labels = Map.of();
 
     // ---- 3D faces cache ----
     private ShapeParams facesParams;
@@ -67,7 +69,8 @@ public final class ShapePreview {
         if (!params.equals(cellsParams)) {
             Minecraft mc = Minecraft.getInstance();
             int maxAxis = mc.player != null ? ServerConfig.INSTANCE.getMaxBlocksPerAxis(mc.player) : 1000;
-            List<Cell> generated = ShapeGenerator.generate(params, maxAxis, SchematicLibrary::cells);
+            labels = ShapeGenerator.generateLabeled(params, maxAxis, SchematicLibrary::cells);
+            List<Cell> generated = new ArrayList<>(labels.keySet());
             axle = params.centerBlock().isEmpty() ? Set.of()
                     : new HashSet<>(ShapeGenerator.centerAxis(params.orientation(), generated));
             materials = ShapeMaterials.of(params);
@@ -85,6 +88,11 @@ public final class ShapePreview {
         if (axle.contains(c)) {
             ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
             return id == null ? null : BuiltInRegistries.ITEM.get(id);
+        }
+        Integer label = labels.get(c);
+        if (label != null && label >= 0 && label < params.parts().size() && !params.parts().get(label).block().isEmpty()) {
+            ResourceLocation id = ResourceLocation.tryParse(params.parts().get(label).block());
+            if (id != null) return BuiltInRegistries.ITEM.get(id);
         }
         BlockState saved = materials.get(c);
         if (saved != null) {
@@ -121,7 +129,9 @@ public final class ShapePreview {
         Map<Cell, BlockState> blocks = new HashMap<>();
         for (Cell c : all) {
             BlockState saved = materials.get(c);
-            if (saved != null && !axle.contains(c)) { blocks.put(c, saved); continue; }
+            Integer label = labels.get(c);
+            boolean partBlock = label != null && label >= 0 && label < params.parts().size() && !params.parts().get(label).block().isEmpty();
+            if (saved != null && !axle.contains(c) && !partBlock) { blocks.put(c, saved); continue; }
             Item item = cellItem(params, c, y[0], y[1]);
             if (item == null) item = held;
             if (item instanceof BlockItem blockItem) blocks.put(c, blockItem.getBlock().defaultBlockState());

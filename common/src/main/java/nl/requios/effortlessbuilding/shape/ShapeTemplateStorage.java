@@ -86,6 +86,8 @@ public final class ShapeTemplateStorage {
                 po.addProperty("x", part.x());
                 po.addProperty("y", part.y());
                 po.addProperty("z", part.z());
+                if (!part.block().isEmpty()) po.addProperty("block", part.block());
+                if (part.repeat() > 1) po.addProperty("repeat", part.repeat());
                 parts.add(po);
             }
             o.add("parts", parts);
@@ -107,7 +109,9 @@ public final class ShapeTemplateStorage {
                     ShapeParams shape = fromJson(po.getAsJsonObject("shape"));
                     if (shape == null) continue;
                     parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.valueOf(po.get("operation").getAsString()),
-                            po.get("x").getAsInt(), po.get("y").getAsInt(), po.get("z").getAsInt()));
+                            po.get("x").getAsInt(), po.get("y").getAsInt(), po.get("z").getAsInt(),
+                            po.has("block") ? po.get("block").getAsString() : "",
+                            po.has("repeat") ? po.get("repeat").getAsInt() : 1));
                 }
             }
             return new ShapeParams(

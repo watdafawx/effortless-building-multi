@@ -67,12 +67,17 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
         }
     }
 
+    /** Most copies a part can be repeated into around the main shape. */
+    public static final int MAX_REPEAT = 64;
+
     /**
      * A shape combined into the main one.
      *
-     * @param x offset of the part's anchor from the main anchor, in blocks (likewise y, z)
+     * @param x      offset of the part's anchor from the main anchor, in blocks (likewise y, z)
+     * @param block  item id of the block this part's blocks use, or "" for the held block / palette
+     * @param repeat copies spread evenly around the main shape's axis (1: just this one)
      */
-    public record Part(ShapeParams shape, Operation operation, int x, int y, int z) {
+    public record Part(ShapeParams shape, Operation operation, int x, int y, int z, String block, int repeat) {
         public Part {
             // Parts are flat: drop any nested parts
             if (!shape.parts().isEmpty()) shape = shape.withParts(List.of());
@@ -80,11 +85,19 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
             x = Math.max(-limit, Math.min(limit, x));
             y = Math.max(-limit, Math.min(limit, y));
             z = Math.max(-limit, Math.min(limit, z));
+            block = block == null ? "" : block;
+            repeat = Math.max(1, Math.min(MAX_REPEAT, repeat));
         }
 
-        public Part withShape(ShapeParams shape) { return new Part(shape, operation, x, y, z); }
-        public Part withOperation(Operation operation) { return new Part(shape, operation, x, y, z); }
-        public Part withOffset(int x, int y, int z) { return new Part(shape, operation, x, y, z); }
+        public Part(ShapeParams shape, Operation operation, int x, int y, int z) {
+            this(shape, operation, x, y, z, "", 1);
+        }
+
+        public Part withShape(ShapeParams shape) { return new Part(shape, operation, x, y, z, block, repeat); }
+        public Part withOperation(Operation operation) { return new Part(shape, operation, x, y, z, block, repeat); }
+        public Part withOffset(int x, int y, int z) { return new Part(shape, operation, x, y, z, block, repeat); }
+        public Part withBlock(String block) { return new Part(shape, operation, x, y, z, block, repeat); }
+        public Part withRepeat(int repeat) { return new Part(shape, operation, x, y, z, block, repeat); }
     }
 
     public ShapeParams {

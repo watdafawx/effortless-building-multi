@@ -455,5 +455,10 @@
   "effortlessbuilding.screen.section.shape": "Shape",
   "effortlessbuilding.screen.section.rotation": "Rotation",
   "effortlessbuilding.screen.section.build": "Building",
-  "effortlessbuilding.screen.shapes_for_part": "Shape of part %s:"
+  "effortlessbuilding.screen.shapes_for_part": "Shape of part %s:",
+  "effortlessbuilding.screen.part_block": "Block",
+  "effortlessbuilding.screen.part_block.description": "The block this part is built with. None: the held block or palette, like the main shape.",
+  "effortlessbuilding.screen.pick_part_block": "Block for this part",
+  "effortlessbuilding.screen.part_repeat": "Repeat",
+  "effortlessbuilding.screen.part_repeat.description": "Copies of this part spread evenly around the main shape (spokes, pillars, towers on a wall). Move the part off-center with the offsets first."
 }

@@ -358,6 +358,16 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                     v -> setCurrentPart(currentPart().withOffset(currentPart().x(), (int) v, currentPart().z())))));
             list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.offset_z"), null, () -> number(currentPart().z(), 1, true,
                     v -> setCurrentPart(currentPart().withOffset(currentPart().x(), currentPart().y(), (int) v)))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.part_block"), "effortlessbuilding.screen.part_block.description", () ->
+                    w(Components.button(Component.literal(blockLabel(currentPart().block())), b -> {
+                        if (minecraft == null) return;
+                        int index = editing;
+                        minecraft.setScreen(new BlockPickerScreen(this, Component.translatable("effortlessbuilding.screen.pick_part_block"),
+                                item -> params = params.withPart(index, params.parts().get(index)
+                                        .withBlock(item == null ? "" : BuiltInRegistries.ITEM.getKey(item).toString()))));
+                    })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
+            list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.part_repeat"), "effortlessbuilding.screen.part_repeat.description",
+                    () -> number(currentPart().repeat(), 1, true, v -> setCurrentPart(currentPart().withRepeat((int) v)))));
         }
 
         ShapeType type = current().type();
@@ -710,8 +720,13 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private String centerBlockLabel() {
-        ResourceLocation id = ResourceLocation.tryParse(params.centerBlock());
-        if (params.centerBlock().isEmpty() || id == null) return I18n.get("effortlessbuilding.screen.picker_none");
+        return blockLabel(params.centerBlock());
+    }
+
+    /** A block's name from its item id, or "None" when empty. */
+    private static String blockLabel(String itemId) {
+        ResourceLocation id = itemId.isEmpty() ? null : ResourceLocation.tryParse(itemId);
+        if (id == null) return I18n.get("effortlessbuilding.screen.picker_none");
         return BuiltInRegistries.ITEM.get(id).getDescription().getString();
     }
 
