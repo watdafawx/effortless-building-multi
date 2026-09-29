@@ -392,7 +392,7 @@
   "effortlessbuilding.shape.param.path_align": "Face the path",
   "effortlessbuilding.shape.param.path_align.off": "Off",
   "effortlessbuilding.shape.param.path_align.on": "On",
-  "effortlessbuilding.screen.path_sizing_hint": "Click the start, then the end of the path",
+  "effortlessbuilding.screen.path_sizing_hint": "Click the start, then each point the path goes through. Sneak-click (or click the last point again) to finish",
   "key.effortlessbuilding.anchor_overview": "Anchor Overview",
   "key.effortlessbuilding.anchor_forward": "Move Anchor Forward",
   "key.effortlessbuilding.anchor_back": "Move Anchor Back",

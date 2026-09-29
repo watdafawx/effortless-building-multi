@@ -45,10 +45,14 @@ public class ShapeMode extends BaseBuildMode {
     private List<Long> cachedVersions;
     private Built cachedBuilt = new Built(List.of(), Set.of(), Map.of(), Set.of(), null, null);
 
+    /** Path sizing: the points clicked after the start (client side, while placing). */
+    private final List<BlockPos> waypoints = new ArrayList<>();
+
     @Override
     public void initialize() {
         super.initialize();
         center = null;
+        waypoints.clear();
     }
 
     @Override
@@ -58,13 +62,33 @@ public class ShapeMode extends BaseBuildMode {
             center = clickedPos;
             return ShapeClientState.getActive().sizing() == ShapeParams.Sizing.SCREEN;
         }
+        if (ShapeClientState.getActive().sizing() == ShapeParams.Sizing.PATH && center != null) {
+            // Each click adds a point; sneak-click, or clicking the last point again, ends the path there
+            BlockPos point = Floor.findFloor(player, center, true);
+            if (point == null) point = clickedPos;
+            boolean again = !waypoints.isEmpty() && waypoints.getLast().equals(point);
+            if (player.isShiftKeyDown() || again || waypoints.size() >= ShapeParams.MAX_PATH_POINTS) {
+                if (again) waypoints.removeLast(); // that point is the end
+                return true;
+            }
+            waypoints.add(point);
+            return false;
+        }
         return true;
+    }
+
+    /** The clicked points as the path the packet carries (relative to the start). */
+    public List<Cell> pathPoints() {
+        List<Cell> out = new ArrayList<>(waypoints.size());
+        if (center == null) return out;
+        for (BlockPos p : waypoints) out.add(new Cell(p.getX() - center.getX(), p.getY() - center.getY(), p.getZ() - center.getZ()));
+        return out;
     }
 
     @Override
     public void findCoordinates(BlockSet blocks, Player player) {
         if (clicks == 0 || center == null) return;
-        ShapeParams params = ShapeClientState.getActive();
+        ShapeParams params = ShapeClientState.getActive().withPath(pathPoints());
         BlockPos edge = params.sizing() != ShapeParams.Sizing.SCREEN ? Floor.findFloor(player, center, true) : center;
         if (edge == null) edge = center;
         fill(blocks, player, center, edge, params);
@@ -233,20 +257,23 @@ public class ShapeMode extends BaseBuildMode {
                 yield List.of(new Placement(first, params.scaledTo(Math.max(1, radius))));
             }
             case PATH -> {
-                double dx = second.getX() - first.getX(), dz = second.getZ() - first.getZ();
-                double length = Math.hypot(dx, dz);
+                // Start, the clicked points, then the end; copies every few blocks along a smooth curve through them
+                List<double[]> points = new ArrayList<>();
+                points.add(new double[]{first.getX(), first.getY(), first.getZ()});
+                for (Cell c : params.path()) points.add(new double[]{first.getX() + c.x(), first.getY() + c.y(), first.getZ() + c.z()});
+                points.add(new double[]{second.getX(), first.getY() + (params.path().isEmpty() ? 0 : second.getY() - first.getY()), second.getZ()});
                 int spacing = Math.max(1, params.getInt(ShapeType.PATH_SPACING));
-                ShapeParams copy = params;
-                if (params.getInt(ShapeType.PATH_ALIGN) == 1 && length > 0) {
-                    // Turn so the shape's front (+z) points along the path
-                    double turn = Math.toDegrees(Math.atan2(dx, dz));
-                    copy = params.with(ShapeType.ROTATE_Y, Math.round(params.get(ShapeType.ROTATE_Y) + turn));
-                }
+                boolean align = params.getInt(ShapeType.PATH_ALIGN) == 1;
+                ShapeParams plain = params.withPath(List.of());
                 List<Placement> list = new ArrayList<>();
-                for (double t = 0; t <= length + 1e-6; t += spacing) {
-                    double f = length == 0 ? 0 : t / length;
-                    BlockPos at = new BlockPos((int) Math.round(first.getX() + dx * f), first.getY(),
-                            (int) Math.round(first.getZ() + dz * f));
+                for (double[] stop : PathCurve.stops(points, spacing)) {
+                    BlockPos at = new BlockPos((int) Math.round(stop[0]), (int) Math.round(stop[1]), (int) Math.round(stop[2]));
+                    ShapeParams copy = plain;
+                    if (align && (stop[3] != 0 || stop[4] != 0)) {
+                        // Turn so the shape's front (+z) points along the path here
+                        double turn = Math.toDegrees(Math.atan2(stop[3], stop[4]));
+                        copy = plain.with(ShapeType.ROTATE_Y, Math.round(plain.get(ShapeType.ROTATE_Y) + turn));
+                    }
                     list.add(new Placement(at, copy));
                 }
                 yield list;

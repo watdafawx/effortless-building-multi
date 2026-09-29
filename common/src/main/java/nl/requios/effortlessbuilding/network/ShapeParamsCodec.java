@@ -1,6 +1,7 @@
 package nl.requios.effortlessbuilding.network;
 
 import net.minecraft.network.FriendlyByteBuf;
+import nl.requios.effortlessbuilding.shape.ShapeGenerator;
 import nl.requios.effortlessbuilding.shape.ShapeParams;
 import nl.requios.effortlessbuilding.shape.ShapeType;
 import org.jetbrains.annotations.Nullable;
@@ -36,6 +37,12 @@ public final class ShapeParamsCodec {
             buf.writeUtf(part.block(), 256);
             buf.writeVarInt(part.repeat());
         }
+        buf.writeVarInt(p.path().size());
+        for (ShapeGenerator.Cell c : p.path()) {
+            buf.writeVarInt(c.x());
+            buf.writeVarInt(c.y());
+            buf.writeVarInt(c.z());
+        }
     }
 
     public static @Nullable ShapeParams read(FriendlyByteBuf buf) {
@@ -50,7 +57,11 @@ public final class ShapeParamsCodec {
             parts.add(new ShapeParams.Part(partShape, op, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
                     buf.readUtf(256), buf.readVarInt()));
         }
-        return shape.withParts(parts);
+        int points = buf.readVarInt();
+        if (points < 0 || points > ShapeParams.MAX_PATH_POINTS) throw new IllegalArgumentException("Too many path points: " + points);
+        List<ShapeGenerator.Cell> path = new ArrayList<>(points);
+        for (int i = 0; i < points; i++) path.add(new ShapeGenerator.Cell(buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
+        return shape.withParts(parts).withPath(path);
     }
 
     /** One shape without its parts. */

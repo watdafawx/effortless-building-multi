@@ -539,7 +539,10 @@ public class BuildPipelineClient {
 
     /** The Shape Generator settings to send with a build, only for SHAPE mode. */
     private static @Nullable ShapeParams shapeFor(BuildModeEnum mode) {
-        return mode == BuildModeEnum.SHAPE ? ShapeClientState.getActive() : null;
+        if (mode != BuildModeEnum.SHAPE) return null;
+        ShapeParams active = ShapeClientState.getActive();
+        return mode.instance instanceof nl.requios.effortlessbuilding.buildmode.buildmodes.ShapeMode shape
+                ? active.withPath(shape.pathPoints()) : active;
     }
 
     private static BlockPos resolveFirstClickPos(BlockHitResult hit, BuildPipeline.BuildState action, Level level) {
