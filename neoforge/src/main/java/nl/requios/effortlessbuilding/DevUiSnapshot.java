@@ -123,6 +123,24 @@ public final class DevUiSnapshot {
                 }
             }
         }
+        if (Boolean.getBoolean("effortlessbuilding.uitest.drag") && mc.screen instanceof io.wispforest.owo.ui.base.BaseOwoScreen<?> owo) {
+            // After adding a part: switch the preview to the top view, then drag in it
+            if (ticks == 18) {
+                java.util.List<net.minecraft.client.gui.components.Button> view = new java.util.ArrayList<>();
+                collectButtons(adapter(owo).rootComponent, "3D", view);
+                view.forEach(b -> b.onPress());
+            }
+            if (ticks == 22) {
+                double x = mc.screen.width * 0.82, y = mc.screen.height * 0.4;
+                mc.screen.mouseClicked(x, y, 0);
+                for (int i = 1; i <= 6; i++) mc.screen.mouseDragged(x + i * 10, y, 0, 10, 0);
+                mc.screen.mouseReleased(x + 60, y, 0);
+            }
+            // Optionally undo the drag with Ctrl+Z
+            if (ticks == 32 && Boolean.getBoolean("effortlessbuilding.uitest.undo")) {
+                mc.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_Z, 0, org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL);
+            }
+        }
         if (ticks == 5 && Boolean.getBoolean("effortlessbuilding.uitest.scroll") && mc.screen != null) {
             // Scroll down over the middle of the screen (the settings on the Shape Generator)
             mc.screen.mouseScrolled(mc.screen.width * 0.25, mc.screen.height * 0.5, 0, -100); // over the labels

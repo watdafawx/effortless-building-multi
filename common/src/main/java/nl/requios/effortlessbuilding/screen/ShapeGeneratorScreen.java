@@ -88,6 +88,18 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private ButtonComponent viewButton;
     private String shownSize = "", shownLayer = "";
 
+    // ---- undo: earlier designs; quick successive edits (typing, dragging) count as one step ----
+    private record Snapshot(ShapeParams params, int editing) {}
+    private final java.util.ArrayDeque<Snapshot> undo = new java.util.ArrayDeque<>(), redo = new java.util.ArrayDeque<>();
+    private ShapeParams lastSeen;
+    private int lastSeenEditing;
+    private long lastEditTime;
+    private static final long EDIT_MERGE_MS = 800;
+    private static final int UNDO_LIMIT = 100;
+
+    // ---- dragging a part: blocks moved but not applied yet ----
+    private final double[] dragRest = new double[3];
+
     public ShapeGeneratorScreen() {
         super(Component.translatable("effortlessbuilding.screen.shape_generator"));
         params = ShapeClientState.getActive();
@@ -147,6 +159,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         header = label(Component.empty()).color(Color.ofRgb(ACCENT));
         top.child(header);
         top.child(hspace());
+        top.child(w(button("effortlessbuilding.screen.undo_short", "effortlessbuilding.screen.undo_design", this::undo)));
+        top.child(w(button("effortlessbuilding.screen.redo_short", "effortlessbuilding.screen.redo_design", this::redo)));
         top.child(w(button("effortlessbuilding.screen.copy_code", "effortlessbuilding.screen.copy_code.description", this::copyCode)));
         top.child(w(button("effortlessbuilding.screen.paste_code", "effortlessbuilding.screen.paste_code.description", this::pasteCode)));
         root.child(top);
@@ -228,6 +242,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         String hint = params.type() != ShapeType.SCHEMATIC && params.sizing() == ShapeParams.Sizing.CLICKS
                 ? I18n.get("effortlessbuilding.screen.click_sizing_hint")
                 : params.sizing() == ShapeParams.Sizing.PATH ? I18n.get("effortlessbuilding.screen.path_sizing_hint")
+                : editing >= 0 ? I18n.get(preview.view == ShapePreview.View.THREE_D
+                        ? "effortlessbuilding.screen.drag_part_3d" : "effortlessbuilding.screen.drag_part_slice")
                 : preview.view == ShapePreview.View.THREE_D ? I18n.get("effortlessbuilding.screen.drag_to_rotate") : "";
         hintLabel.text(Component.literal(hint));
         viewButton.setMessage(Component.translatable("effortlessbuilding.screen.view." + preview.view.name().toLowerCase()));
@@ -739,8 +755,103 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     // Per-frame text and the preview
     // =========================================================================
 
+    // =========================================================================
+    // Undo / redo of design changes
+    // =========================================================================
+
+    /** Notices a design change since the last frame and keeps the design before it for undo. */
+    private void trackChanges() {
+        if (lastSeen == null) {
+            lastSeen = params;
+            lastSeenEditing = editing;
+            return;
+        }
+        if (params.equals(lastSeen)) {
+            lastSeenEditing = editing;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        // Adding or removing a part, or changing a shape, is always its own step
+        boolean structural = !structure(lastSeen).equals(structure(params));
+        if (structural || now - lastEditTime > EDIT_MERGE_MS || undo.isEmpty()) {
+            undo.push(new Snapshot(lastSeen, lastSeenEditing));
+            while (undo.size() > UNDO_LIMIT) undo.removeLast();
+        }
+        redo.clear();
+        lastEditTime = structural ? 0 : now;
+        lastSeen = params;
+        lastSeenEditing = editing;
+    }
+
+    /** The main shape type and each part's type: what changes when a design changes shape rather than a value. */
+    private static List<ShapeType> structure(ShapeParams p) {
+        List<ShapeType> out = new ArrayList<>();
+        out.add(p.type());
+        for (ShapeParams.Part part : p.parts()) out.add(part.shape().type());
+        return out;
+    }
+
+    private void undo() {
+        trackChanges();
+        if (undo.isEmpty()) return;
+        redo.push(new Snapshot(params, editing));
+        restore(undo.pop());
+    }
+
+    private void redo() {
+        trackChanges();
+        if (redo.isEmpty()) return;
+        undo.push(new Snapshot(params, editing));
+        restore(redo.pop());
+    }
+
+    private void restore(Snapshot snapshot) {
+        params = snapshot.params();
+        editing = Math.min(snapshot.editing(), params.parts().size() - 1);
+        lastSeen = params;
+        lastSeenEditing = editing;
+        lastEditTime = 0; // the next edit starts a new step
+        refresh();
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        boolean control = (modifiers & org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL) != 0;
+        if (control && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_Z) {
+            if ((modifiers & org.lwjgl.glfw.GLFW.GLFW_MOD_SHIFT) != 0) redo(); else undo();
+            return true;
+        }
+        if (control && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_Y) {
+            redo();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    // =========================================================================
+    // Dragging a part in the preview
+    // =========================================================================
+
+    /** Moves the part being edited by a screen drag; whole blocks only, the rest carries over. */
+    private void dragPart(double dx, double dy, boolean vertical) {
+        if (editing < 0) return;
+        double[] move = preview.dragToBlocks(dx, dy, vertical);
+        int[] step = new int[3];
+        for (int a = 0; a < 3; a++) {
+            dragRest[a] += move[a];
+            step[a] = (int) dragRest[a];
+            dragRest[a] -= step[a];
+        }
+        if (step[0] == 0 && step[1] == 0 && step[2] == 0) return;
+        ShapeParams.Part part = currentPart();
+        setCurrentPart(part.withOffset(part.x() + step[0], part.y() + step[1], part.z() + step[2]));
+        refresh(); // the offset fields show the new position
+    }
+
     @Override
     public void render(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        trackChanges();
+        preview.highlight = editing >= 0 ? editing : Integer.MIN_VALUE;
         // Only touch the labels when their text changes (each change re-lays out the screen)
         if (sizeLabel != null) {
             String size = preview.sizeText(params);
@@ -768,11 +879,18 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         @Override
         public boolean onMouseDown(double mouseX, double mouseY, int button) {
             super.onMouseDown(mouseX, mouseY, button);
-            return preview.view == ShapePreview.View.THREE_D;
+            java.util.Arrays.fill(dragRest, 0);
+            // 3D turns; slice views drag the part being edited
+            return preview.view == ShapePreview.View.THREE_D || editing >= 0;
         }
 
         @Override
         public boolean onMouseDrag(double mouseX, double mouseY, double deltaX, double deltaY, int button) {
+            boolean moving = editing >= 0 && (preview.view != ShapePreview.View.THREE_D || Screen.hasShiftDown() || Screen.hasControlDown());
+            if (moving) {
+                dragPart(deltaX, deltaY, preview.view == ShapePreview.View.THREE_D && Screen.hasControlDown());
+                return true;
+            }
             if (preview.view != ShapePreview.View.THREE_D) return false;
             preview.drag(deltaX, deltaY);
             return true;

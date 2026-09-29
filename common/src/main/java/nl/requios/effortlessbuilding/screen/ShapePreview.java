@@ -43,6 +43,11 @@ public final class ShapePreview {
     /** Slice index along the view's depth axis (in 3D: build up to this layer), or -1 for all. */
     public int layer = -1;
     public float yaw = 35, pitch = 28, zoom = 1;
+    /** Part whose blocks are tinted (the one being edited), or none. */
+    public int highlight = Integer.MIN_VALUE;
+    /** Screen pixels per block in the last drawn 3D view and slice, for dragging parts. */
+    public float lastScale = 1;
+    public int lastSliceScale = 1;
 
     // ---- cells cache ----
     private ShapeParams cellsParams;
@@ -56,6 +61,7 @@ public final class ShapePreview {
     private ShapeParams facesParams;
     private Object facesPalette;
     private int facesLayer = Integer.MIN_VALUE;
+    private int facesHighlight = Integer.MIN_VALUE;
     /** Visible cube faces: x, y, z of four corners, then an ARGB color, per face. */
     private float[][] faces = new float[0][];
     private float[] facesCenter = new float[3];
@@ -252,6 +258,7 @@ public final class ShapePreview {
     private void render3D(GuiGraphics g, int x, int y, int w, int h, ShapeParams params, List<Cell> all, int minY) {
         updateFaces(params, all, minY);
         float scale = zoom * 0.46f * Math.min(w, h) / facesRadius;
+        lastScale = scale;
 
         g.enableScissor(x, y, x + w, y + h);
         PoseStack pose = g.pose();
@@ -278,9 +285,10 @@ public final class ShapePreview {
     /** Rebuilds the visible-face list when the shape or the shown layers change. */
     private void updateFaces(ShapeParams params, List<Cell> all, int minY) {
         Object paletteKey = List.of(paletteBlocks(), PaletteClientState.getPalette(), BlockColorCache.colors().size());
-        if (params.equals(facesParams) && layer == facesLayer && paletteKey.equals(facesPalette)) return;
+        if (params.equals(facesParams) && layer == facesLayer && highlight == facesHighlight && paletteKey.equals(facesPalette)) return;
         facesParams = params;
         facesLayer = layer;
+        facesHighlight = highlight;
         facesPalette = paletteKey;
         int maxY = Integer.MIN_VALUE;
         for (Cell c : all) maxY = Math.max(maxY, c.y());
@@ -339,6 +347,7 @@ public final class ShapePreview {
         boolean flipVertical = view != View.TOP; // y up on screen
         int spanU = max[axes[0]] - min[axes[0]] + 1, spanV = max[axes[1]] - min[axes[1]] + 1;
         int scale = Math.max(1, Math.min((w - 4) / spanU, (h - 4) / spanV));
+        lastSliceScale = scale;
         int ox = x + (w - spanU * scale) / 2, oy = y + (h - spanV * scale) / 2;
 
         // Nearest-to-viewer depth per column (projection), or the chosen slice
@@ -379,7 +388,54 @@ public final class ShapePreview {
     /** The block color a cell gets: from its own block when it has one, else the plain preview color. */
     private int cellColor(ShapeParams params, Cell c, int minY, int maxY) {
         Item item = cellItem(params, c, minY, maxY);
-        return item != null ? BlockColorCache.colorOf(item) : BLOCK_COLOR;
+        int color = item != null ? BlockColorCache.colorOf(item) : BLOCK_COLOR;
+        Integer label = labels.get(c);
+        if (label != null && label == highlight) color = mix(color, 0x3FA9FF, 0.55f); // the part being edited
+        return color;
+    }
+
+    private static int mix(int a, int b, float t) {
+        int r = (int) (((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
+        int g = (int) (((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
+        int bl = (int) ((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
+        return r << 16 | g << 8 | bl;
+    }
+
+    /**
+     * Where a screen drag of (dx, dy) pixels moves a part, in blocks along x, y and z (not rounded).
+     * Slice views move in their plane. In 3D the drag moves across the ground, or up and down when
+     * {@code vertical}; the camera angle decides which world directions screen right and up are.
+     */
+    public double[] dragToBlocks(double dx, double dy, boolean vertical) {
+        double[] out = new double[3];
+        switch (view) {
+            case TOP -> { out[0] = dx / lastSliceScale; out[2] = dy / lastSliceScale; }
+            case FRONT -> { out[0] = dx / lastSliceScale; out[1] = -dy / lastSliceScale; }
+            case SIDE -> { out[2] = dx / lastSliceScale; out[1] = -dy / lastSliceScale; }
+            case THREE_D -> {
+                // How one block along each world axis shows on screen (same turns as the drawing)
+                org.joml.Matrix3f turn = new org.joml.Matrix3f().rotateX((float) Math.toRadians(pitch)).rotateY((float) Math.toRadians(yaw));
+                org.joml.Vector3f ax = turn.transform(new org.joml.Vector3f(1, 0, 0));
+                org.joml.Vector3f ay = turn.transform(new org.joml.Vector3f(0, 1, 0));
+                org.joml.Vector3f az = turn.transform(new org.joml.Vector3f(0, 0, 1));
+                float s = lastScale;
+                if (vertical) {
+                    double perBlock = -ay.y * s; // screen y grows downward
+                    if (Math.abs(perBlock) > 1e-3) out[1] = dy / perBlock;
+                } else {
+                    // Solve dx = x*ax.x*s + z*az.x*s, dy = -(x*ax.y + z*az.y)*s for the ground move (x, z)
+                    double a = ax.x * s, b = az.x * s, c = -ax.y * s, d = -az.y * s;
+                    double det = a * d - b * c;
+                    if (Math.abs(det) > 1e-3) {
+                        out[0] = (dx * d - b * dy) / det;
+                        out[2] = (a * dy - c * dx) / det;
+                    } else if (Math.abs(a) > 1e-3) {
+                        out[0] = dx / a;
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     private static float sq(float v) { return v * v; }

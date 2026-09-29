@@ -41,6 +41,8 @@ neoForge {
             systemProperty('effortlessbuilding.uitest.menu', project.findProperty('uimenu') ?: 'false')
             systemProperty('effortlessbuilding.uitest.scroll', project.findProperty('uiscroll') ?: 'false')
             systemProperty('effortlessbuilding.uitest.addpart', project.findProperty('uiaddpart') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.drag', project.findProperty('uidrag') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.undo', project.findProperty('uiundo') ?: 'false')
             def size = (project.findProperty('uisize') ?: '2000x1107').split('x')
             programArguments.addAll('--width', size[0], '--height', size[1])
         }
