@@ -50,11 +50,13 @@ public class ServerConfigScreen extends Screen {
     private static final String[] GENERAL_TOOLTIP_KEYS = {
         "effortlessbuilding.config.show_welcome_message.tooltip",
         "effortlessbuilding.config.show_build_mode_hint.tooltip",
+        "effortlessbuilding.config.blocks_per_tick.tooltip",
     };
 
     private final ServerConfig scratch;
 
     // Survival
+    private EditBox blocksPerTickField;
     private EditBox survReachField;
     private EditBox survMaxPlacedField;
     private EditBox survAxisField;
@@ -189,6 +191,8 @@ public class ServerConfigScreen extends Screen {
         widgetOrder.add(btnBuildModeHint);
         y += ROW_H;
 
+        blocksPerTickField = addIntField(fieldX, fieldW, scratch.blocksPerTick); y += ROW_H;
+
         y += SECTION_GAP;
         contentHeight = y;
 
@@ -236,8 +240,8 @@ public class ServerConfigScreen extends Screen {
 
         y += SECTION_GAP;
 
-        // 2 general toggles
-        for (int n = 0; n < 2; n++) { setPos(i++, fieldX, y); y += ROW_H; }
+        // 2 general toggles and blocks per tick
+        for (int n = 0; n < 3; n++) { setPos(i++, fieldX, y); y += ROW_H; }
     }
 
     private void setPos(int index, int x, int y) {
@@ -269,6 +273,7 @@ public class ServerConfigScreen extends Screen {
 
         scratch.showWelcomeMessage = showWelcomeMessage;
         scratch.showBuildModeHint = showBuildModeHint;
+        scratch.blocksPerTick = parseOrDefault(blocksPerTickField.getValue(), 1000);
 
         scratch.clampAll();
         PacketHandler.sendToServer(new UpdateServerConfigC2SPacket(scratch.toJson()));
@@ -335,6 +340,7 @@ public class ServerConfigScreen extends Screen {
 
         drawLabel(graphics, labelX + 8, y, "effortlessbuilding.config.show_welcome_message"); y += ROW_H;
         drawLabel(graphics, labelX + 8, y, "effortlessbuilding.config.show_build_mode_hint"); y += ROW_H;
+        drawLabel(graphics, labelX + 8, y, "effortlessbuilding.config.blocks_per_tick"); y += ROW_H;
 
         graphics.disableScissor();
 

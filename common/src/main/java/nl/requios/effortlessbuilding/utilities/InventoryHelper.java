@@ -77,14 +77,21 @@ public class InventoryHelper {
         int remaining = count;
         while (remaining > 0) {
             int batchSize = Math.min(remaining, item.getDefaultMaxStackSize());
-            ItemStack stack = new ItemStack(item, batchSize);
-            if (!player.getInventory().add(stack)) {
-                // Inventory full — drop remainder at feet
-                ItemEntity drop = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), stack);
-                drop.setNoPickUpDelay();
-                player.level().addFreshEntity(drop);
-            }
+            giveOrDropItems(player, new ItemStack(item, batchSize));
             remaining -= batchSize;
+        }
+    }
+
+    /**
+     * Gives the exact stack (components included, e.g. a filled shulker box) to the player.
+     * Adds to inventory first; any overflow is dropped at the player's feet.
+     */
+    public static void giveOrDropItems(Player player, ItemStack stack) {
+        if (stack.isEmpty()) return;
+        if (!player.getInventory().add(stack) && !stack.isEmpty()) {
+            ItemEntity drop = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), stack);
+            drop.setNoPickUpDelay();
+            player.level().addFreshEntity(drop);
         }
     }
 
@@ -174,12 +181,52 @@ public class InventoryHelper {
     }
 
     /**
-     * Attempts to refill the player's main-hand stack from the AE2 network.
-     * Only works if the held item is a block/item that exists on the network.
+     * Attempts to refill the player's main-hand stack of {@code item} from the AE2 network,
+     * including when the build used up the whole stack.
      *
      * @return number of items restocked
      */
-    public static int restockFromNetwork(Player player) {
-        return AE2Integration.restockMainHand(player);
+    public static int restockFromNetwork(Player player, Item item) {
+        return AE2Integration.restockMainHand(player, item);
+    }
+
+    /** Result of {@link #takeItems}: how many were taken in total and how many of those came from AE2. */
+    public record Taken(int total, int fromNetwork) {}
+
+    /**
+     * Takes up to {@code count} items: player inventory first, then the AE2 network.
+     */
+    public static Taken takeItems(Player player, Item item, int count) {
+        if (count <= 0) return new Taken(0, 0);
+        int fromInventory = consumeItems(player, item, count);
+        int fromNetwork = supplementFromNetwork(player, item, count - fromInventory);
+        return new Taken(fromInventory + fromNetwork, fromNetwork);
+    }
+
+    /**
+     * Returns {@code count} items to the player. Up to {@code toNetwork} of them go back into
+     * the AE2 network they were taken from; whatever the network does not accept, plus the rest,
+     * goes to the inventory, and overflow drops at the player's feet.
+     */
+    public static void returnItems(Player player, Item item, int count, int toNetwork) {
+        if (count <= 0) return;
+        int inserted = AE2Integration.insertIntoNetwork(player, item, Math.min(count, toNetwork));
+        giveOrDropItems(player, item, count - inserted);
+    }
+
+    /**
+     * Pays for a finished build. Before placing, {@code inventoryCount} items were counted in the
+     * inventory and {@code networkExtracted} were pre-extracted from AE2; {@code used} were actually
+     * placed. The inventory pays first, and network items that were not needed go back to the
+     * network, so nothing is lost when placement fell short.
+     *
+     * @return how many of the used items came from the network
+     */
+    public static int settleBuild(Player player, Item item, int inventoryCount, int networkExtracted, int used) {
+        int fromInventory = consumeItems(player, item, Math.min(used, inventoryCount));
+        int fromNetwork = Math.min(networkExtracted, used - fromInventory);
+        int unused = networkExtracted - fromNetwork;
+        returnItems(player, item, unused, unused);
+        return fromNetwork;
     }
 }

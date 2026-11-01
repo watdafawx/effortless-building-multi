@@ -33,6 +33,21 @@ neoForge {
         server {
             server()
         }
+        // Opens one of the mod's screens, saves a screenshot to run/screenshots and quits:
+        // ./gradlew :neoforge:runUiTest -Puitest=shape -Puisize=1280x720   (shape, palette, undo)
+        uiTest {
+            client()
+            systemProperty('effortlessbuilding.uitest', project.findProperty('uitest') ?: 'shape')
+            systemProperty('effortlessbuilding.uitest.menu', project.findProperty('uimenu') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.scroll', project.findProperty('uiscroll') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.addpart', project.findProperty('uiaddpart') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.drag', project.findProperty('uidrag') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.undo', project.findProperty('uiundo') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.save', project.findProperty('uisave') ?: 'false')
+            systemProperty('effortlessbuilding.uitest.type', project.findProperty('uitype') ?: '')
+            def size = (project.findProperty('uisize') ?: '2000x1107').split('x')
+            programArguments.addAll('--width', size[0], '--height', size[1])
+        }
     }
     mods {
         "${mod_id}" {
@@ -44,8 +59,13 @@ neoForge {
 dependencies {
     // Required for compilation because common module source files are compiled here too.
     compileOnly("org.appliedenergistics:appliedenergistics2:${ae2_version}")
+    compileOnly("io.wispforest:owo-lib-neoforge:${owo_neoforge_version}") { transitive = false }
     // Requires NeoForge 21.1.169
 //    runtimeOnly("org.appliedenergistics:appliedenergistics2:${ae2_version}")
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+base {
+    archivesName = "${mod_id}-${project.name}-${minecraft_version}-fork"
+}

@@ -33,6 +33,7 @@
     "depends": {
         "fabricloader": ">=${fabric_loader_version}",
         "fabric-api": "*",
+        "owo-lib": ">=0.12.15",
         "minecraft": "${minecraft_version}",
         "java": ">=${java_version}"
     },

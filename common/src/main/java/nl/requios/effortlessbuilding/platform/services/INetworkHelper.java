@@ -37,4 +37,10 @@ public interface INetworkHelper {
 
     void sendToClient(ServerPlayer player, SyncAE2CountS2CPacket packet);
 
+    /** Sends any registered mod payload to the server (newer packets use this instead of an overload each). */
+    void sendPayloadToServer(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload);
+
+    /** Sends any registered mod payload to a player. */
+    void sendPayloadToClient(ServerPlayer player, net.minecraft.network.protocol.common.custom.CustomPacketPayload payload);
+
 }

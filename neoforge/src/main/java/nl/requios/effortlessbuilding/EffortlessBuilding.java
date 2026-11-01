@@ -80,12 +80,27 @@ public class EffortlessBuilding {
                     UndoPacket.TYPE,
                     UndoPacket.STREAM_CODEC,
                     (payload, context) -> context.enqueueWork(() ->
-                            PacketHandler.handleUndo((ServerPlayer) context.player())));
+                            PacketHandler.handleUndo((ServerPlayer) context.player(), payload.steps())));
             registrar.playToServer(
                     RedoPacket.TYPE,
                     RedoPacket.STREAM_CODEC,
                     (payload, context) -> context.enqueueWork(() ->
-                            PacketHandler.handleRedo((ServerPlayer) context.player())));
+                            PacketHandler.handleRedo((ServerPlayer) context.player(), payload.steps())));
+            registrar.playToServer(
+                    nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.TYPE,
+                    nl.requios.effortlessbuilding.network.SchematicUploadC2SPacket.STREAM_CODEC,
+                    (payload, context) -> context.enqueueWork(() ->
+                            PacketHandler.handleSchematicUpload(payload, (ServerPlayer) context.player())));
+            registrar.playToServer(
+                    nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.TYPE,
+                    nl.requios.effortlessbuilding.network.UndoHistoryC2SPacket.STREAM_CODEC,
+                    (payload, context) -> context.enqueueWork(() ->
+                            PacketHandler.handleUndoHistory((ServerPlayer) context.player())));
+            registrar.playToClient(
+                    nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.TYPE,
+                    nl.requios.effortlessbuilding.network.UndoHistoryS2CPacket.STREAM_CODEC,
+                    (payload, context) -> context.enqueueWork(() ->
+                            PacketHandler.handleUndoHistoryList(payload)));
             registrar.playToServer(
                     UpdateModifiersC2SPacket.TYPE,
                     UpdateModifiersC2SPacket.STREAM_CODEC,
@@ -142,9 +157,15 @@ public class EffortlessBuilding {
                 ModifierServerStorage.savePlayer(serverPlayer.server, serverPlayer.getUUID());
                 ModifierServerStorage.removePlayer(serverPlayer.getUUID());
             }
+            nl.requios.effortlessbuilding.utilities.BuildQueue.finish(event.getEntity().getUUID());
+            nl.requios.effortlessbuilding.shape.SchematicUploads.clear(event.getEntity().getUUID());
             UndoManager.clearPlayer(event.getEntity().getUUID());
             PlacedBlockTracker.clearPlayer(event.getEntity().getUUID());
         });
+
+        // Gradual building: place queued blocks a batch per tick
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) ->
+                nl.requios.effortlessbuilding.utilities.BuildQueue.tick(event.getServer()));
 
         // Clear all cached data when the server stops (singleplayer world changes)
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> {

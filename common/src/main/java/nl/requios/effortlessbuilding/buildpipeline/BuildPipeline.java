@@ -1,6 +1,9 @@
 package nl.requios.effortlessbuilding.buildpipeline;
 
 import net.minecraft.core.BlockPos;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
+import nl.requios.effortlessbuilding.palette.BlockPalette;
+import nl.requios.effortlessbuilding.palette.PaletteSystem;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BucketItem;
@@ -57,6 +60,7 @@ public class BuildPipeline {
         pipeline.addSystem(BuildModeSystem.INSTANCE);
         pipeline.addSystem(ModifierSystemServer.INSTANCE);
         pipeline.addSystem(RandomizerSystem.INSTANCE);
+        pipeline.addSystem(PaletteSystem.SERVER);
         pipeline.addSystem(ConstraintSystem.INSTANCE);
         return pipeline;
     }
@@ -140,10 +144,13 @@ public class BuildPipeline {
                                                 Player player, BuildState action,
                                                 ModeOptions.ActionEnum fill, ModeOptions.ActionEnum cubeFill,
                                                 ModeOptions.ActionEnum raisedEdge, ModeOptions.ActionEnum circleStart,
+                                                @Nullable ShapeParams shape,
+                                                @Nullable BlockPalette palette,
                                                 boolean protectTileEntities) {
         BuildModeSystem.setContext(new BuildModeSystem.Context(
-                mode, firstPos, secondPos, thirdPos, fill, cubeFill, raisedEdge, circleStart));
+                mode, firstPos, secondPos, thirdPos, fill, cubeFill, raisedEdge, circleStart, shape));
         ConstraintSystem.setPlacementContext(new ConstraintSystem.PlacementContext(protectTileEntities));
+        PaletteSystem.setServerPalette(palette);
         try {
             BlockSet blockSet = new BlockSet();
             processBlocks(blockSet, player, action);
@@ -152,6 +159,7 @@ public class BuildPipeline {
         } finally {
             BuildModeSystem.clearContext();
             ConstraintSystem.clearPlacementContext();
+            PaletteSystem.setServerPalette(null);
         }
     }
 

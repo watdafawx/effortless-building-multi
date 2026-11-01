@@ -70,10 +70,15 @@ public class ItemUsageTracker {
 
     /** Computes per-item availability for block sets populated by the randomizer pipeline stage. */
     public void compute(Player player, BlockSet blocks, boolean isCreative) {
+        compute(player, blocks, null, isCreative);
+    }
+
+    /** Per-block items, with {@code fallback} (e.g. the held block) for positions without their own. */
+    public void compute(Player player, BlockSet blocks, @org.jetbrains.annotations.Nullable Item fallback, boolean isCreative) {
         initialize();
         Map<Item, List<BlockPos>> requirements = new LinkedHashMap<>();
         for (var mapEntry : blocks.validEntries()) {
-            Item item = mapEntry.getValue().item;
+            Item item = mapEntry.getValue().item != null ? mapEntry.getValue().item : fallback;
             if (item != null) {
                 requirements.computeIfAbsent(item, ignored -> new ArrayList<>()).add(mapEntry.getKey());
             }
@@ -109,24 +114,19 @@ public class ItemUsageTracker {
         boolean isClient = player.level().isClientSide();
 
         if (networkCount > 0) {
-            // Server-side: real count from getLinkedGrid()
             fromNetwork.put(heldItem, networkCount);
         } else if (hasLinkedTerminal && isClient) {
-            // Client-side: getLinkedGrid() doesn't work (needs ServerLevel).
-            // Check if we have a server-synced cached count.
-            int cached = AE2Integration.getCachedCount(heldItem);
-            if (cached >= 0) {
-                fromNetwork.put(heldItem, cached);
-            } else {
-                // No cached count yet — send a query packet to the server.
-                // Use optimistic assumption for this frame; next frame will have real data.
+            if (AE2Integration.shouldQueryCount(heldItem)) {
                 PacketHandler.sendToServer(new QueryAE2CountC2SPacket(heldItem));
-                fromNetwork.put(heldItem, Math.max(0, count - have));
             }
+            int cached = AE2Integration.getCachedCount(heldItem);
+            // Until the first answer arrives, assume the network can cover the rest
+            fromNetwork.put(heldItem, cached >= 0 ? cached : Math.max(0, count - have));
         }
 
-        // Total available = inventory + AE2
-        int totalAvailable = have + fromNetwork.getOrDefault(heldItem, 0);
+        // Total available = inventory + AE2 (use long to avoid overflow with huge AE2 cells)
+        long totalAvailableLong = (long) have + fromNetwork.getOrDefault(heldItem, 0);
+        int totalAvailable = (int) Math.min(totalAvailableLong, Integer.MAX_VALUE);
 
         int canPlace = Math.min(count, totalAvailable);
         placed.put(heldItem, canPlace);

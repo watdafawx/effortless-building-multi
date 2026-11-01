@@ -35,6 +35,9 @@ public class ServerConfig {
     /** Show each player the build-mode usage hint once for this world. */
     public boolean showBuildModeHint = true;
 
+    /** Blocks placed per server tick; bigger builds finish over several ticks. 0 = all at once. */
+    public int blocksPerTick = 1000;
+
     // --- Creative settings ---
     public int creativeReach = 200;
     public int creativeMaxBlocksPlaced = 50000;
@@ -81,6 +84,7 @@ public class ServerConfig {
 
         creativeReach = Math.clamp(creativeReach, 1, 1000);
         creativeMaxBlocksPlaced = Math.clamp(creativeMaxBlocksPlaced, 1, 100000);
+        blocksPerTick = Math.clamp(blocksPerTick, 0, 100000);
         creativeMaxBlocksPerAxis = Math.clamp(creativeMaxBlocksPerAxis, 1, 1000);
         creativeMaxMirrorSize = Math.clamp(creativeMaxMirrorSize, 1, 1000);
         creativeMaxArrayCount = Math.clamp(creativeMaxArrayCount, 1, 1000);
@@ -101,6 +105,7 @@ public class ServerConfig {
         this.survivalUseDurability = other.survivalUseDurability;
         this.showWelcomeMessage = other.showWelcomeMessage;
         this.showBuildModeHint = other.showBuildModeHint;
+        this.blocksPerTick = other.blocksPerTick;
 
         this.creativeReach = other.creativeReach;
         this.creativeMaxBlocksPlaced = other.creativeMaxBlocksPlaced;
@@ -131,6 +136,7 @@ public class ServerConfig {
         obj.addProperty("survivalUseDurability", survivalUseDurability);
         obj.addProperty("showWelcomeMessage", showWelcomeMessage);
         obj.addProperty("showBuildModeHint", showBuildModeHint);
+        obj.addProperty("blocksPerTick", blocksPerTick);
 
         obj.addProperty("creativeReach", creativeReach);
         obj.addProperty("creativeMaxBlocksPlaced", creativeMaxBlocksPlaced);
@@ -158,6 +164,7 @@ public class ServerConfig {
             if (obj.has("survivalUseDurability")) config.survivalUseDurability = obj.get("survivalUseDurability").getAsBoolean();
             if (obj.has("showWelcomeMessage")) config.showWelcomeMessage = obj.get("showWelcomeMessage").getAsBoolean();
             if (obj.has("showBuildModeHint")) config.showBuildModeHint = obj.get("showBuildModeHint").getAsBoolean();
+            if (obj.has("blocksPerTick")) config.blocksPerTick = obj.get("blocksPerTick").getAsInt();
 
             if (obj.has("creativeReach")) config.creativeReach = obj.get("creativeReach").getAsInt();
             if (obj.has("creativeMaxBlocksPlaced")) config.creativeMaxBlocksPlaced = obj.get("creativeMaxBlocksPlaced").getAsInt();

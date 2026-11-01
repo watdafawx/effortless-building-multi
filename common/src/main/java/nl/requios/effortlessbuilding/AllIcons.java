@@ -32,7 +32,12 @@ public class AllIcons {
     I_REPLACE_OFFHAND_FILTERED = next(),
     I_PROTECT_TILE_ENTITIES = next(),
     I_CLIENT_SETTINGS = next(),
-    I_SERVER_SETTINGS = next();
+    I_SERVER_SETTINGS = next(),
+    I_SHAPE_GENERATOR = next(),
+    I_PREVIOUS = next(),
+    I_NEXT = next(),
+    I_SHAPE_SIZE_SCREEN = next(),
+    I_SHAPE_SIZE_CLICKS = next();
 
 
     public static final AllIcons
@@ -50,7 +55,8 @@ public class AllIcons {
     I_SPHERE = next(),
     I_PYRAMID = next(),
     I_CONE = next(),
-    I_DOME = next();
+    I_DOME = next(),
+    I_SHAPE = next();
 
     public static final AllIcons
     I_NORMAL_SPEED = newRow(),
@@ -66,7 +72,8 @@ public class AllIcons {
     I_CIRCLE_START_CENTER = next(),
     I_THICKNESS_1 = next(),
     I_THICKNESS_3 = next(),
-    I_THICKNESS_5 = next();
+    I_THICKNESS_5 = next(),
+    I_PALETTE = next();
 
     public static final AllIcons
     I_PLAYER = newRow(),
@@ -83,7 +90,9 @@ public class AllIcons {
     I_Z_OFF = next(),
     I_Z_ON = next(),
     I_ALTERNATE_OFF = next(),
-    I_ALTERNATE_ON = next();
+    I_ALTERNATE_ON = next(),
+    I_LOCK = next(),
+    I_LOCKED = next();
 
 
     public AllIcons(int x, int y) {

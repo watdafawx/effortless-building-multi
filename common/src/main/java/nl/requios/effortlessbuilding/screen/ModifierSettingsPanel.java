@@ -9,6 +9,7 @@ import nl.requios.effortlessbuilding.modifier.IModifier;
 import nl.requios.effortlessbuilding.modifier.MirrorModifier;
 import nl.requios.effortlessbuilding.modifier.RadialMirrorModifier;
 
+
 import static nl.requios.effortlessbuilding.screen.ScreenWidgets.*;
 
 /**
@@ -127,5 +128,7 @@ public class ModifierSettingsPanel {
         var player = Minecraft.getInstance().player;
         return player != null ? player.blockPosition() : BlockPos.ZERO;
     }
+
+
 }
 

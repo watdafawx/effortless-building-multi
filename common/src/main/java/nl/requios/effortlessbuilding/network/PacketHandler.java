@@ -1,6 +1,9 @@
 package nl.requios.effortlessbuilding.network;
 
 import net.minecraft.core.BlockPos;
+import nl.requios.effortlessbuilding.shape.SchematicLibrary;
+import nl.requios.effortlessbuilding.shape.SchematicUploader;
+import nl.requios.effortlessbuilding.shape.SchematicUploads;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -36,23 +39,37 @@ import nl.requios.effortlessbuilding.utilities.BlockEntry;
 import nl.requios.effortlessbuilding.utilities.BlockSet;
 import nl.requios.effortlessbuilding.utilities.InventoryHelper;
 import nl.requios.effortlessbuilding.compat.ae2.AE2Integration;
+import nl.requios.effortlessbuilding.compat.create.CreateGlue;
+import nl.requios.effortlessbuilding.utilities.BuildQueue;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
+import nl.requios.effortlessbuilding.shape.ShapeType;
+import nl.requios.effortlessbuilding.shape.TerrainBlender;
 import nl.requios.effortlessbuilding.utilities.PlacedBlockTracker;
 import nl.requios.effortlessbuilding.utilities.UndoManager;
 import nl.requios.effortlessbuilding.item.RandomizerToolItem;
 
 import java.util.LinkedHashMap;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 
 public class PacketHandler {
 
     public static void sendToServer(PlaceBuildModePacket packet) {
+        if (packet.shape() != null) SchematicUploader.ensure(packet.shape());
         Services.NETWORK.sendToServer(packet);
     }
 
     public static void sendToServer(BreakBuildModePacket packet) {
+        if (packet.shape() != null) SchematicUploader.ensure(packet.shape());
         Services.NETWORK.sendToServer(packet);
+    }
+
+    /** Called on the server for each piece of a schematic a player sends. */
+    public static void handleSchematicUpload(SchematicUploadC2SPacket packet, ServerPlayer player) {
+        SchematicUploads.receive(player.getUUID(), packet.name(), packet.hash(), packet.index(), packet.total(), packet.data());
     }
 
     public static void sendToServer(UndoPacket packet) {
@@ -91,6 +108,21 @@ public class PacketHandler {
         Services.NETWORK.sendToClient(player, packet);
     }
 
+    public static void sendToServer(UndoHistoryC2SPacket packet) {
+        Services.NETWORK.sendPayloadToServer(packet);
+    }
+
+    /** Called on the server when the history screen asks for the undo/redo lists. */
+    public static void handleUndoHistory(ServerPlayer player) {
+        Services.NETWORK.sendPayloadToClient(player,
+                new UndoHistoryS2CPacket(UndoManager.history(player, false), UndoManager.history(player, true)));
+    }
+
+    /** Called on the client when the undo/redo lists arrive. */
+    public static void handleUndoHistoryList(UndoHistoryS2CPacket packet) {
+        nl.requios.effortlessbuilding.screen.UndoHistoryScreen.receive(packet);
+    }
+
     /**
      * Called on the server when a {@link QueryAE2CountC2SPacket} is received.
      * Queries the AE2 network and sends the count back to the client.
@@ -117,6 +149,10 @@ public class PacketHandler {
      * Called on the server when a {@link PlaceBuildModePacket} is received.
      */
     public static void handlePlaceBuildMode(PlaceBuildModePacket packet, ServerPlayer player) {
+        SchematicLibrary.runAs(player.getUUID(), () -> placeBuildMode(packet, player));
+    }
+
+    private static void placeBuildMode(PlaceBuildModePacket packet, ServerPlayer player) {
         ServerLevel level = player.serverLevel();
 
         // Run the full server pipeline: BuildMode → Modifiers → Constraints
@@ -124,7 +160,7 @@ public class PacketHandler {
                 packet.buildMode(), packet.firstPos(), packet.secondPos(), packet.thirdPos(),
                 player, BuildPipeline.BuildState.PLACING,
                 packet.fill(), packet.cubeFill(), packet.raisedEdge(), packet.circleStart(), 
-                packet.protectTileEntities());
+                packet.shape(), packet.palette(), packet.protectTileEntities());
 
         if (blockSet == null) {
             Constants.LOG.warn("[EffortlessBuilding] Received PlaceBuildModePacket but mode {} returned no blocks", packet.buildMode());
@@ -141,17 +177,35 @@ public class PacketHandler {
         BuildSettings.ReplaceMode replaceMode = packet.replaceMode();
 
         Map<BlockPos, UndoManager.BlockChange> undoChanges = new LinkedHashMap<>();
+        // Per item, how many placed blocks were paid from the AE2 network (refunded there on undo)
+        Map<Item, Integer> networkDebit = new HashMap<>();
+        // Tool interactions and fluids are undone without moving block items
+        boolean paidWithItems = true;
+
+        // Shape the ground around a schematic first, so the build stands on natural-looking terrain
+        ShapeParams shape = packet.shape();
+        if (shape != null && shape.type() == ShapeType.SCHEMATIC && shape.getInt(TerrainBlender.ENABLED) == 1) {
+            TerrainBlender.blend(player, level, blockSet.validPositions(), packet.firstPos().getY() - 1,
+                    shape.getInt(TerrainBlender.MARGIN), undoChanges);
+        }
 
         int placed = 0;
-        if (held.getItem() instanceof RandomizerToolItem) {
+        // Per-block items: from the Randomizer tool, the palette, or a shape's center block.
+        // Blocks without their own item use the held block.
+        boolean perBlockItems = held.getItem() instanceof RandomizerToolItem
+                || blockSet.values().stream().anyMatch(e -> e.item instanceof BlockItem);
+        if (perBlockItems) {
+            Item fallback = held.getItem() instanceof BlockItem && BuildPipeline.isBuildTriggerItem(held) ? held.getItem() : null;
             Map<Item, Integer> required = new LinkedHashMap<>();
             for (var mapEntry : blockSet.validEntries()) {
                 if (!BuildSettings.canPlaceAt(level, mapEntry.getKey(), replaceMode, offHand)) continue;
-                Item item = mapEntry.getValue().item;
+                Item item = mapEntry.getValue().item != null ? mapEntry.getValue().item : fallback;
                 if (item instanceof BlockItem) required.merge(item, 1, Integer::sum);
             }
 
             Map<Item, Integer> available = new HashMap<>();
+            Map<Item, Integer> inventoryCounts = new HashMap<>();
+            Map<Item, Integer> networkExtracted = new HashMap<>();
             for (var requirement : required.entrySet()) {
                 if (creative) {
                     available.put(requirement.getKey(), Integer.MAX_VALUE);
@@ -160,6 +214,8 @@ public class PacketHandler {
                     int networkNeeded = Math.max(0, requirement.getValue() - inventoryCount);
                     int fromNetwork = InventoryHelper.supplementFromNetwork(
                             player, requirement.getKey(), networkNeeded);
+                    inventoryCounts.put(requirement.getKey(), inventoryCount);
+                    networkExtracted.put(requirement.getKey(), fromNetwork);
                     available.put(requirement.getKey(), inventoryCount + fromNetwork);
                 }
             }
@@ -169,8 +225,9 @@ public class PacketHandler {
             for (var mapEntry : blockSet.validEntries()) {
                 BlockPos pos = mapEntry.getKey();
                 BlockEntry entry = mapEntry.getValue();
-                if (!(entry.item instanceof BlockItem blockItem)) continue;
-                if (!creative && used.getOrDefault(entry.item, 0) >= available.getOrDefault(entry.item, 0)) continue;
+                Item item = entry.item != null ? entry.item : fallback;
+                if (!(item instanceof BlockItem blockItem)) continue;
+                if (!creative && used.getOrDefault(item, 0) >= available.getOrDefault(item, 0)) continue;
                 if (!BuildSettings.canPlaceAt(level, pos, replaceMode, offHand)) continue;
 
                 BlockState oldState = level.getBlockState(pos);
@@ -180,30 +237,37 @@ public class PacketHandler {
                             : player.getMainHandItem();
                     var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos), player, toolForDrops);
                     for (ItemStack drop : drops) {
-                        InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                        InventoryHelper.giveOrDropItems(player, drop);
                     }
                     if (ServerConfig.INSTANCE.survivalUseDurability) {
                         InventoryHelper.damageCorrectTool(player, oldState);
                     }
                 }
 
-                ItemStack placementStack = new ItemStack(entry.item);
+                ItemStack placementStack = new ItemStack(item);
                 Vec3 localHit = new Vec3(packet.hitLocation().x, pos.getY() + yFrac, packet.hitLocation().z);
                 BlockHitResult serverHit = new BlockHitResult(localHit, packet.hitFace(), pos, false);
                 BlockPlaceContext ctx = new OpenBlockPlaceContext(
                         level, player, InteractionHand.MAIN_HAND, placementStack, serverHit);
-                BlockState state = blockItem.getBlock().getStateForPlacement(ctx);
+                BlockState state = entry.exactState && entry.blockState != null
+                        ? entry.blockState // e.g. a schematic's saved block, facing included
+                        : blockItem.getBlock().getStateForPlacement(ctx);
                 if (state == null) state = blockItem.getBlock().defaultBlockState();
                 state = entry.applyTransforms(state);
-                level.setBlock(pos, state, 3);
-                undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, state));
-                used.merge(entry.item, 1, Integer::sum);
+                BlockState placedState = state;
+                BuildQueue.submit(player, () -> level.setBlock(pos, placedState, 3));
+                recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
+                used.merge(item, 1, Integer::sum);
                 placed++;
             }
 
             if (!creative) {
-                for (var usage : used.entrySet()) {
-                    InventoryHelper.consumeItems(player, usage.getKey(), usage.getValue());
+                // Every requirement is settled, including ones that ended up unused, so
+                // unneeded network items go back to the network
+                for (Item item : required.keySet()) {
+                    int fromNetwork = InventoryHelper.settleBuild(player, item, inventoryCounts.get(item),
+                            networkExtracted.get(item), used.getOrDefault(item, 0));
+                    if (fromNetwork > 0) networkDebit.put(item, fromNetwork);
                 }
             }
         } else if (held.getItem() instanceof BlockItem blockItem) {
@@ -215,17 +279,19 @@ public class PacketHandler {
 
             // Determine how many blocks we can afford BEFORE placing any
             int available;
+            int inventoryCount = 0;
+            int ae2Extracted = 0;
             if (creative) {
                 available = Integer.MAX_VALUE;
             } else if (hasStackData) {
                 available = held.getCount();
             } else {
-                int inventoryCount = InventoryHelper.findTotalItemsInInventory(player, heldItem);
+                inventoryCount = InventoryHelper.findTotalItemsInInventory(player, heldItem);
                 int validCount = blockSet.validEntries().size();
 
-                // Pre-extract from AE2 what exceeds inventory (digital — no ItemStack created)
+                // Pre-extract from AE2 what exceeds inventory (digital — no ItemStack created).
+                // settleBuild below returns whatever placement did not use.
                 int neededFromNetwork = Math.max(0, validCount - inventoryCount);
-                int ae2Extracted = 0;
                 if (neededFromNetwork > 0) {
                     ae2Extracted = InventoryHelper.supplementFromNetwork(player, heldItem, neededFromNetwork);
                 }
@@ -248,7 +314,7 @@ public class PacketHandler {
                         var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos),
                                 player, toolForDrops);
                         for (ItemStack drop : drops) {
-                            InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                            InventoryHelper.giveOrDropItems(player, drop);
                         }
                         if (ServerConfig.INSTANCE.survivalUseDurability) {
                             InventoryHelper.damageCorrectTool(player, oldState);
@@ -264,24 +330,30 @@ public class PacketHandler {
                     if (entry != null) {
                         state = entry.applyTransforms(state);
                     }
-                    level.setBlock(pos, state, 3);
-                    transferBlockItemData(level, player, pos, held);
-                    undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, state));
+                    BlockState placedState = state;
+                    ItemStack placedFrom = held.copyWithCount(1); // the held stack shrinks before a queued step runs
+                    BuildQueue.submit(player, () -> {
+                        level.setBlock(pos, placedState, 3);
+                        transferBlockItemData(level, player, pos, placedFrom);
+                    });
+                    recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
                     placed++;
                 }
             }
 
-            if (!creative && placed > 0) {
+            if (!creative) {
                 if (hasStackData) {
                     held.shrink(placed);
                 } else {
-                    // Consume from player inventory (AE2 was already debited before placement)
-                    InventoryHelper.consumeItems(player, heldItem, placed);
-                    // Restock held stack from AE2 network (e.g. top-up from 4 → 64)
-                    InventoryHelper.restockFromNetwork(player);
+                    // Pay from inventory first; unused network items go back to the network
+                    int fromNetwork = InventoryHelper.settleBuild(player, heldItem, inventoryCount, ae2Extracted, placed);
+                    if (fromNetwork > 0) networkDebit.put(heldItem, fromNetwork);
+                    // Restock held stack from AE2 network (e.g. top-up from 4 → 64, or refill an emptied hand)
+                    if (placed > 0) InventoryHelper.restockFromNetwork(player, heldItem);
                 }
             }
         } else if (held.getItem() instanceof BucketItem bucketItem) {
+            paidWithItems = false;
             var fluid = ((BucketItemAccessor) bucketItem).effortlessbuilding$getFluid();
             if (!fluid.isSame(Fluids.EMPTY)) {
                 BlockState fluidState = fluid.defaultFluidState().createLegacyBlock();
@@ -300,15 +372,15 @@ public class PacketHandler {
                             var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos),
                                     player, toolForDrops);
                             for (ItemStack drop : drops) {
-                                InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                                InventoryHelper.giveOrDropItems(player, drop);
                             }
                             if (ServerConfig.INSTANCE.survivalUseDurability) {
                                 InventoryHelper.damageCorrectTool(player, oldState);
                             }
                         }
 
-                        level.setBlock(pos, fluidState, 3);
-                        undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, fluidState));
+                        BuildQueue.submit(player, () -> level.setBlock(pos, fluidState, 3));
+                        recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, fluidState));
                         placed++;
                     }
                 }
@@ -318,6 +390,7 @@ public class PacketHandler {
                 }
             }
         } else if (held.getItem() instanceof DiggerItem) {
+            paidWithItems = false;
             // Tool interactions: axe strips logs, shovel makes paths, hoe tills dirt, etc.
             // Calls useOn for each position — works for vanilla and modded tools.
             net.minecraft.world.level.Level worldLevel = level;
@@ -332,7 +405,7 @@ public class PacketHandler {
                 if (result.consumesAction()) {
                     BlockState newState = level.getBlockState(pos);
                     if (!oldState.equals(newState)) {
-                        undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, newState));
+                        recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, newState));
                         placed++;
                     }
                 }
@@ -344,9 +417,33 @@ public class PacketHandler {
         }
 
         if (!undoChanges.isEmpty()) {
-            UndoManager.recordOperation(player, level.dimension(), undoChanges);
+            // Glue exactly the blocks that were placed, when the shape asks for it
+            if (paidWithItems && packet.shape() != null && packet.shape().getInt(ShapeType.SUPER_GLUE) == 1) {
+                // Queued last, so it runs once every block of a gradual build is in place
+                Set<BlockPos> toGlue = new HashSet<>(undoChanges.keySet());
+                // The bearing stays outside the glue, or it would turn with the shape
+                toGlue.removeIf(pos -> CreateGlue.isBearing(undoChanges.get(pos).newState()));
+                BuildQueue.submit(player, () -> CreateGlue.glue(player, level, toGlue));
+            }
+            if (paidWithItems) {
+                UndoManager.recordOperation(player, level.dimension(), undoChanges, networkDebit);
+            } else {
+                UndoManager.recordFreeOperation(player, level.dimension(), undoChanges);
+            }
             PlacedBlockTracker.trackAll(player.getUUID(), level.dimension(), undoChanges.keySet());
         }
+        networkDebit.keySet().forEach(item -> pushAE2Count(player, item));
+    }
+
+    /** Sends the player's current network count for {@code item}, so the preview does not show a stale number. */
+    private static void pushAE2Count(ServerPlayer player, Item item) {
+        if (item == net.minecraft.world.item.Items.AIR || !AE2Integration.hasLinkedTerminal(player)) return;
+        sendToClient(player, new SyncAE2CountS2CPacket(item, AE2Integration.countOnNetwork(player, item)));
+    }
+
+    /** Records a change, keeping an earlier "before" for the same block (terrain blending ran first). */
+    private static void recordChange(Map<BlockPos, UndoManager.BlockChange> changes, BlockPos pos, UndoManager.BlockChange change) {
+        changes.merge(pos.immutable(), change, (first, next) -> new UndoManager.BlockChange(first.oldState(), next.newState()));
     }
 
     /**
@@ -377,6 +474,10 @@ public class PacketHandler {
      * Called on the server when a {@link BreakBuildModePacket} is received.
      */
     public static void handleBreakBuildMode(BreakBuildModePacket packet, ServerPlayer player) {
+        SchematicLibrary.runAs(player.getUUID(), () -> breakBuildMode(packet, player));
+    }
+
+    private static void breakBuildMode(BreakBuildModePacket packet, ServerPlayer player) {
         boolean creative = player.isCreative();
 
         // Enforce survivalAllowBreaking (early exit before running pipeline)
@@ -393,7 +494,7 @@ public class PacketHandler {
                 packet.buildMode(), packet.firstPos(), packet.secondPos(), packet.thirdPos(),
                 player, BuildPipeline.BuildState.BREAKING,
                 packet.fill(), packet.cubeFill(), packet.raisedEdge(), packet.circleStart(),
-                packet.protectTileEntities());
+                packet.shape(), null, packet.protectTileEntities());
 
         if (blockSet == null) {
             Constants.LOG.warn("[EffortlessBuilding] Received BreakBuildModePacket but mode {} returned no blocks", packet.buildMode());
@@ -418,22 +519,22 @@ public class PacketHandler {
                 var drops = Block.getDrops(oldState, level, pos, level.getBlockEntity(pos),
                         player, toolForDrops);
                 for (ItemStack drop : drops) {
-                    InventoryHelper.giveOrDropItems(player, drop.getItem(), drop.getCount());
+                    InventoryHelper.giveOrDropItems(player, drop);
                 }
                 // Use tool durability if enabled
                 if (ServerConfig.INSTANCE.survivalUseDurability) {
                     InventoryHelper.damageCorrectTool(player, oldState);
                 }
-                level.setBlock(pos, airState, 3);
+                BuildQueue.submit(player, () -> level.setBlock(pos, airState, 3));
             } else {
-                level.destroyBlock(pos, false, player);
+                BuildQueue.submit(player, () -> level.destroyBlock(pos, false, player));
             }
-            undoChanges.put(pos.immutable(), new UndoManager.BlockChange(oldState, airState));
+            recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, airState));
             broken++;
         }
 
         if (!undoChanges.isEmpty()) {
-            UndoManager.recordOperation(player, level.dimension(), undoChanges);
+            UndoManager.recordOperation(player, level.dimension(), undoChanges, Map.of());
         }
     }
 
@@ -441,7 +542,19 @@ public class PacketHandler {
      * Called on the server when an {@link UndoPacket} is received.
      */
     public static void handleUndo(ServerPlayer player) {
-        int count = UndoManager.undo(player);
+        handleUndo(player, 1);
+    }
+
+    /** Undoes the last {@code steps} operations (the history screen can go back several at once). */
+    public static void handleUndo(ServerPlayer player, int steps) {
+        BuildQueue.finish(player.getUUID()); // a gradual build finishes before it can be undone
+        int count = -1;
+        for (int i = 0; i < Math.clamp(steps, 1, 64); i++) {
+            int restored = UndoManager.undo(player);
+            if (restored < 0) break;
+            count = Math.max(count, 0) + restored;
+        }
+        pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
             player.displayClientMessage(
                     Component.translatable("effortlessbuilding.message.undo", count), true);
@@ -455,7 +568,19 @@ public class PacketHandler {
      * Called on the server when a {@link RedoPacket} is received.
      */
     public static void handleRedo(ServerPlayer player) {
-        int count = UndoManager.redo(player);
+        handleRedo(player, 1);
+    }
+
+    /** Redoes the next {@code steps} undone operations. */
+    public static void handleRedo(ServerPlayer player, int steps) {
+        BuildQueue.finish(player.getUUID());
+        int count = -1;
+        for (int i = 0; i < Math.clamp(steps, 1, 64); i++) {
+            int restored = UndoManager.redo(player);
+            if (restored < 0) break;
+            count = Math.max(count, 0) + restored;
+        }
+        pushAE2Count(player, player.getMainHandItem().getItem());
         if (count >= 0) {
             player.displayClientMessage(
                     Component.translatable("effortlessbuilding.message.redo", count), true);

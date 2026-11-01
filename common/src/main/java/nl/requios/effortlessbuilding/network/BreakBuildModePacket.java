@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import nl.requios.effortlessbuilding.Constants;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.buildmode.ModeOptions;
+import nl.requios.effortlessbuilding.shape.ShapeParams;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -23,7 +24,8 @@ public record BreakBuildModePacket(
         ModeOptions.ActionEnum cubeFill,
         ModeOptions.ActionEnum raisedEdge,
         ModeOptions.ActionEnum circleStart,
-        boolean protectTileEntities
+        boolean protectTileEntities,
+        @Nullable ShapeParams shape
 ) implements CustomPacketPayload {
 
     public static final Type<BreakBuildModePacket> TYPE =
@@ -45,6 +47,7 @@ public record BreakBuildModePacket(
         buf.writeVarInt(p.raisedEdge.ordinal());
         buf.writeVarInt(p.circleStart.ordinal());
         buf.writeBoolean(p.protectTileEntities);
+        ShapeParamsCodec.write(buf, p.shape);
     }
 
     private static BreakBuildModePacket decode(FriendlyByteBuf buf) {
@@ -57,7 +60,9 @@ public record BreakBuildModePacket(
         ModeOptions.ActionEnum raisedEdge = ModeOptions.ActionEnum.values()[buf.readVarInt()];
         ModeOptions.ActionEnum circleStart = ModeOptions.ActionEnum.values()[buf.readVarInt()];
         boolean protectTileEntities = buf.readBoolean();
-        return new BreakBuildModePacket(buildMode, firstPos, secondPos, thirdPos, fill, cubeFill, raisedEdge, circleStart, protectTileEntities);
+        ShapeParams shape = ShapeParamsCodec.read(buf);
+        return new BreakBuildModePacket(buildMode, firstPos, secondPos, thirdPos, fill, cubeFill, raisedEdge, circleStart,
+                protectTileEntities, shape);
     }
 
     @Override
