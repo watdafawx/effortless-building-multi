@@ -7,6 +7,11 @@ plugins {
     id 'io.github.pacifistmc.forgix' version '1.2.9'
 }
 
+// Fork: mod version is <fork_base>.<fork_revision> from fork.properties (gradle.properties 'version' stays upstream's)
+def forkProps = new Properties()
+file('fork.properties').withInputStream { forkProps.load(it) }
+allprojects { version = "${forkProps.fork_base}.${forkProps.fork_revision}" }
+
 forgix {
     group = 'nl.requios.effortlessbuilding'
     mergedJarName = "effortlessbuilding-${version}+${project.property('minecraft_version')}.jar"

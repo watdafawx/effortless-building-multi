@@ -2,6 +2,10 @@ plugins {
     id 'multiloader-common'
 }
 
+// Fork: Hopper jar naming <modid>-<version>+<loader>-<mc>.jar
+base { archivesName = mod_id }
+tasks.withType(AbstractArchiveTask).configureEach { archiveVersion = "${project.version}+${project.name}-${minecraft_version}" } // incl. Loom remapJar
+
 configurations {
     commonJava{
         canBeResolved = true

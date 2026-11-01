@@ -1,0 +1,109 @@
+# Builds the mod and publishes a GitHub Release that Hopper can install from.
+# Triggered by pushing a tag like v1.4.2 (or v4.2.37 on forks), or run by hand / by fork-sync.yml.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v1.4.2"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  # Loader subprojects whose build/libs hold shippable jars. "." = single-project build.
+  JAR_DIRS: ${{ vars.JAR_DIRS || '.' }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Skip if release already exists
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; published releases are never replaced."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.exists.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.exists.outputs.skip != 'true'
+
+      - name: Build
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --no-daemon
+
+      - name: Collect jars and verify names + metadata
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          VERSION="${TAG#v}"
+          mkdir -p dist
+          for dir in $JAR_DIRS; do
+            for jar in "$dir"/build/libs/*.jar; do
+              [ -e "$jar" ] || continue
+              case "$(basename "$jar")" in
+                *-sources.jar|*-dev.jar|*-dev-*.jar|*-javadoc.jar|*-api.jar|*-slim.jar) continue ;;
+              esac
+              cp "$jar" dist/
+            done
+          done
+          ls -l dist
+          [ -n "$(ls dist)" ] || { echo "::error::No jars found in: $JAR_DIRS"; exit 1; }
+          for jar in dist/*.jar; do
+            name="$(basename "$jar")"
+            if ! [[ "$name" =~ ^[a-z0-9_]+-${VERSION//./\\.}\+(neoforge|fabric|forge)-[0-9.]+\.jar$ ]]; then
+              echo "::error::$name does not match <modid>-$VERSION+<loader>-<mc>.jar"; exit 1
+            fi
+            meta="$(unzip -p "$jar" META-INF/neoforge.mods.toml 2>/dev/null || unzip -p "$jar" fabric.mod.json 2>/dev/null || unzip -p "$jar" META-INF/mods.toml 2>/dev/null)"
+            if ! grep -Eq "version\"?[[:space:]]*[=:][[:space:]]*\"$VERSION\"" <<<"$meta"; then
+              echo "::error::$name metadata version is not $VERSION"; exit 1
+            fi
+          done
+
+      - name: Release notes
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          VERSION="${TAG#v}"
+          if [ -s CHANGELOG-latest.md ]; then
+            cp CHANGELOG-latest.md notes.md
+          elif [ -f CHANGELOG.md ] && awk -v v="$VERSION" '
+                /^## / { p = index($0, v) > 0; next } p' CHANGELOG.md | grep -q .; then
+            awk -v v="$VERSION" '/^## / { p = index($0, v) > 0; next } p' CHANGELOG.md > notes.md
+          else
+            prev="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+            { echo "## Changes"; git log --no-merges --pretty='- %s' ${prev:+$prev..}"$TAG"; } > notes.md
+          fi
+          cat notes.md
+
+      - name: Publish
+        if: steps.exists.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""
+          if [[ "$TAG" =~ (alpha|beta|rc|pre) ]]; then pre="--prerelease"; fi
+          gh release create "$TAG" dist/*.jar --title "$TAG" --notes-file notes.md --verify-tag $pre

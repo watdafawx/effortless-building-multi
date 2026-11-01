@@ -1,0 +1,125 @@
+# Keeps a fork in step with its upstream and releases each upstream update.
+#
+# Daily (or by hand): fetch upstream, merge into this branch. If upstream changed,
+# bump fork.properties, tag v<upstream digits>.<fork revision>, and run release.yml.
+# Merge conflicts open an issue instead and change nothing.
+#
+# Repo variables (Settings > Secrets and variables > Actions > Variables):
+#   UPSTREAM_REPO         owner/name of the upstream, e.g. MUKSC/TACZ-1.21.1
+#   UPSTREAM_BRANCH       upstream branch to follow, e.g. neoforge/1.21.1
+#   UPSTREAM_VERSION_KEY  key in upstream gradle.properties, e.g. mod_version
+# Secret (optional but recommended):
+#   SYNC_TOKEN  fine-grained PAT with contents + workflows write on this repo.
+#               Needed when upstream changes files under .github/workflows, which
+#               the default GITHUB_TOKEN is not allowed to push.
+name: Fork sync
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO }}
+      UPSTREAM_BRANCH: ${{ vars.UPSTREAM_BRANCH }}
+      UPSTREAM_VERSION_KEY: ${{ vars.UPSTREAM_VERSION_KEY || 'version' }}
+      GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Fetch upstream
+        id: fetch
+        run: |
+          git config user.name "fork-sync[bot]"
+          git config user.email "fork-sync@users.noreply.github.com"
+          git remote add upstream "https://github.com/$UPSTREAM_REPO.git"
+          git fetch upstream "$UPSTREAM_BRANCH"
+          if git merge-base --is-ancestor "upstream/$UPSTREAM_BRANCH" HEAD; then
+            echo "Already up to date with upstream."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream
+        id: merge
+        if: steps.fetch.outputs.changed == 'true'
+        run: |
+          before="$(git rev-parse HEAD)"
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          if ! git merge --no-edit "upstream/$UPSTREAM_BRANCH" -m "Merge upstream $UPSTREAM_REPO@$UPSTREAM_BRANCH"; then
+            files="$(git diff --name-only --diff-filter=U)"
+            git merge --abort
+            title="Upstream merge conflict ($UPSTREAM_BRANCH)"
+            body="$(printf 'Fork sync could not merge `%s@%s` (%s).\n\nConflicting files:\n```\n%s\n```\nMerge by hand, then re-run **Fork sync**.' \
+              "$UPSTREAM_REPO" "$UPSTREAM_BRANCH" "$(git rev-parse --short upstream/$UPSTREAM_BRANCH)" "$files")"
+            existing="$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[0].number')"
+            if [ -n "$existing" ]; then gh issue comment "$existing" --body "$body"; else gh issue create --title "$title" --body "$body"; fi
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+      - name: Bump fork version
+        id: bump
+        if: steps.fetch.outputs.changed == 'true' && steps.merge.outputs.conflict != 'true'
+        run: |
+          upstream_raw="$(git show "upstream/$UPSTREAM_BRANCH:gradle.properties" | sed -n "s/^$UPSTREAM_VERSION_KEY[[:space:]]*=[[:space:]]*//p" | tr -d '\r')"
+          # Upstream digits only: 1.1.8-hotfix-r7 -> 1.1.8.7, 2.0.3.5 -> 2.0.3.5, 4.2 -> 4.2
+          base="$(grep -oE '[0-9]+' <<<"$upstream_raw" | paste -sd. -)"
+          [ -n "$base" ] || { echo "::error::No version under $UPSTREAM_VERSION_KEY upstream"; exit 1; }
+          old_base="$(sed -n 's/^fork_base=//p' fork.properties | tr -d '\r')"
+          old_rev="$(sed -n 's/^fork_revision=//p' fork.properties | tr -d '\r')"
+          if [ "$base" = "$old_base" ]; then rev=$((old_rev + 1)); else rev=1; fi
+          printf 'fork_base=%s\nfork_revision=%s\n' "$base" "$rev" > fork.properties
+          version="$base.$rev"
+          {
+            echo "## Synced with upstream $upstream_raw"
+            echo
+            echo "Upstream changes merged from \`$UPSTREAM_REPO@$UPSTREAM_BRANCH\`:"
+            echo
+            git log --no-merges --pretty='- %s' "${{ steps.merge.outputs.before }}..upstream/$UPSTREAM_BRANCH" | head -60
+          } > CHANGELOG-latest.md
+          git add fork.properties CHANGELOG-latest.md
+          git commit -m "Release v$version (upstream $upstream_raw)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        if: steps.bump.outputs.version
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.bump.outputs.version
+
+      - name: Build check before pushing
+        if: steps.bump.outputs.version
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --no-daemon
+
+      - name: Push, tag, release
+        if: steps.bump.outputs.version
+        run: |
+          tag="v${{ steps.bump.outputs.version }}"
+          git push origin HEAD
+          git tag "$tag"
+          git push origin "$tag"
+          # Tags pushed with GITHUB_TOKEN don't start other workflows, so start the release directly.
+          # release.yml skips the run if a SYNC_TOKEN tag push already released it.
+          gh workflow run release.yml -f tag="$tag"
