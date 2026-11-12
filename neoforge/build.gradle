@@ -33,6 +33,13 @@ neoForge {
         server {
             server()
         }
+        // Unattended in-game regression run (SelfTest): scratch world, drives the FLOOR shape and the
+        // anchor toolbar, diffs client preview vs server world, writes run/eb-selftest.txt and quits.
+        selftest {
+            client()
+            gameDirectory = file('run')
+            systemProperty 'eb.selftest', 'auto'
+        }
         // Opens one of the mod's screens, saves a screenshot to run/screenshots and quits:
         // ./gradlew :neoforge:runUiTest -Puitest=shape -Puisize=1280x720   (shape, palette, undo)
         uiTest {

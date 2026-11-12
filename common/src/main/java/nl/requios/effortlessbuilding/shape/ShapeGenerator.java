@@ -309,6 +309,7 @@ public final class ShapeGenerator {
             case TOWER -> tower(p, local);
             case SPIRAL -> spiral(p, local);
             case TEXT -> text(p, local);
+            case FLOOR -> floor(p, local);
             case SCHEMATIC -> { }
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
@@ -540,6 +541,55 @@ public final class ShapeGenerator {
                 int top = height + (merlon ? battlement : 0);
                 for (int w = 0; w < top; w++) out.add(new Cell(u, v, w));
             }
+    }
+
+    /** Rectangle-ish floor: an outline picks the footprint, a tile pattern picks which blocks of it stay. */
+    private static void floor(ShapeParams p, Set<Cell> out) {
+        int rx = p.size(), ry = p.getInt("length"), thickness = p.getInt("thickness");
+        int outline = p.getInt("outline"), pattern = p.getInt("pattern"), tile = p.getInt("tile");
+        boolean invert = p.getInt("invert") == 1;
+        for (int u = -rx; u <= rx; u++)
+            for (int v = -ry; v <= ry; v++) {
+                if (!inOutline(outline, u, v, rx, ry)) continue;
+                if (floorPattern(pattern, outline, u, v, rx, ry, tile) == invert) continue;
+                for (int w = 0; w < thickness; w++) out.add(new Cell(u, v, w));
+            }
+    }
+
+    /** Whether (u, v) is inside the outline of half-extents rx, ry (outline index as in {@code ShapeType.FLOOR}). */
+    private static boolean inOutline(int outline, int u, int v, double rx, double ry) {
+        if (rx < 0 || ry < 0 || Math.abs(u) > rx || Math.abs(v) > ry) return false;
+        double nu = Math.abs(u) / (rx + 0.5), nv = Math.abs(v) / (ry + 0.5);
+        return switch (outline) {
+            case 1 -> Math.pow(nu, 4) + Math.pow(nv, 4) <= 1;        // rounded
+            case 2 -> nu * nu + nv * nv <= 1;                         // ellipse
+            case 3 -> nu + nv <= 1;                                   // diamond
+            case 4 -> nu + nv <= 1.5;                                 // octagon
+            case 5 -> nv <= 1 && nu + nv * 0.5 <= 1;                  // hexagon
+            case 6 -> nu <= 0.34 || nv <= 0.34;                       // plus
+            default -> true;                                          // rectangle
+        };
+    }
+
+    /** True for the blocks the pattern keeps. Tiles are counted from the floor's corner so both sides match. */
+    private static boolean floorPattern(int pattern, int outline, int u, int v, int rx, int ry, int tile) {
+        int a = u + rx, b = v + ry; // from the corner, never negative
+        return switch (pattern) {
+            case 1 -> (Math.floorDiv(a, tile) + Math.floorDiv(b, tile)) % 2 == 0;           // checker
+            case 2 -> Math.floorDiv(a, tile) % 2 == 0;                                       // stripes
+            case 3 -> Math.floorDiv(b, tile) % 2 == 0;                                       // rows
+            case 4 -> Math.floorDiv(a + b, tile) % 2 == 0;                                   // diagonal
+            case 5 -> !inOutline(outline, u, v, rx - tile, ry - tile);                       // border
+            case 6 -> a % (tile + 1) == 0 || b % (tile + 1) == 0;                            // grid lines
+            case 7 -> {                                                                      // bricks, running bond
+                int row = Math.floorDiv(b, tile);
+                yield (Math.floorDiv(a + (row % 2) * tile, tile * 2) + row) % 2 == 0;
+            }
+            case 8 -> (Math.floorDiv(a + b, tile) + Math.floorDiv(a - b, tile)) % 2 == 0;    // diamonds
+            case 9 -> a % (tile * 2) < tile && b % (tile * 2) < tile;                        // dots
+            case 10 -> (int) Math.floor(Math.hypot(u, v) / tile) % 2 == 0;                   // rings
+            default -> true;                                                                 // solid
+        };
     }
 
     /** Archimedean spiral arms from the center out to the size, traced so each arm is unbroken. */

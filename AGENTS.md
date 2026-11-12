@@ -35,6 +35,9 @@ While the player is mid-sequence (between clicks), `BuildPipelineClient.getPrevi
 - `ModifierSystem` / `ModifierSystemServer` — mirrors/arrays/radials the block set
 - `ConstraintSystem` — marks entries with `BlockStatus` rejection reasons (not removal). Checks: max blocks, only-placed-blocks, max-hardness, require-tools, breaking-disabled. Runs for both breaking and replacing existing blocks during placement.
 
+## Anchor toolbar (preview lock)
+While a preview is locked, `RenderHandler.renderAnchorBar` draws a Create-style tool bar in the world (no screen). `MixinMouseHandler`: Ctrl+scroll picks a tool, Shift+scroll uses it (Shift+Ctrl = 5 blocks). Tools (`BuildPipelineClient.AnchorTool`): forward/back, left/right, up/down, rotate 90° (generator shapes only, via `ROTATE_Y`), overview screen. Moves go through `reanchor`, which recomputes the preview like the server.
+
 ## BlockEntry Status
 - `BlockEntry.status` (default `VALID`) carries rejection reasons from `ConstraintSystem`.
 - `BlockSet.validEntries()` / `validPositions()` filter to valid entries.
@@ -47,3 +50,6 @@ While the player is mid-sequence (between clicks), `BuildPipelineClient.getPrevi
 .\gradlew.bat :fabric:runClient
 .\gradlew.bat :neoforge:runClient
 ```
+
+## In-game selftest (NeoForge)
+`neoforge/.../SelfTest.java` (copied from the `neoforge-ingame-selftest` skill, same as hungry-loop) runs unattended in a scratch world: `.\gradlew.bat :neoforge:runSelftest` (JDK 21 `JAVA_HOME`), then read `neoforge/run/eb-selftest.txt` and `neoforge/run/screenshots/eb-selftest-*.png`. Scenario `floor-anchor` locks a checkerboard FLOOR, uses the lift/move/rotate tools, builds it and checks the server world equals the client preview. Prove new scenarios by breaking the fix first (`MUTATION-TEST`).
