@@ -1,8 +1,5 @@
-## 4.2.37
+## 4.2.38
 
-Fork of upstream Effortless Building 4.2 (Requios/effortless-building-multi).
-
-- Release automation: GitHub Releases for the Hopper mod manager (`release.yml`) and daily upstream sync (`fork-sync.yml`).
-- Version scheme `<upstream>.<fork revision>` from `fork.properties`.
-- Jars named `effortlessbuilding-<version>+<loader>-1.21.1.jar`.
-- Fork icon.
+What's new:
+- Locked previews now have a tool bar in the world, like Create's schematic tools. Ctrl+scroll picks a tool, Shift+scroll uses it (Shift+Ctrl moves 5 blocks). Tools: forward/back, left/right, up/down, rotate 90 degrees (Shape Generator shapes) and the overview screen. You can see the preview while you move it.
+- New Floor shape in the Shape Generator: rectangle, rounded, ellipse, diamond, octagon, hexagon or plus outlines, with checkerboard, stripes, rows, diagonal, border, grid, bricks, diamonds, dots and rings patterns. Turn on Invert and add the floor as a part with another block for a two-tone floor.
