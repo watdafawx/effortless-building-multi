@@ -505,6 +505,7 @@
   "effortlessbuilding.shape.param.invert.off": "Off",
   "effortlessbuilding.shape.param.invert.on": "On",
   "effortlessbuilding.shape.param.pattern.description": "Which blocks of the floor stay. For two blocks, add the same floor as a part with Invert on and its own block.",
+  "effortlessbuilding.shape.param.length.description": "Half the floor's length: the floor is 2 × length + 1 blocks long. Radius sets the width the same way.",
   "effortlessbuilding.shape.param.tile.description": "Blocks per tile, stripe, border width or ring.",
   "effortlessbuilding.anchor_tool.move": "Forward / Back",
   "effortlessbuilding.anchor_tool.slide": "Left / Right",

@@ -16,14 +16,7 @@ public class MixinMouseHandler {
     @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     private void effortlessbuilding$anchorScroll(long window, double xOffset, double yOffset, CallbackInfo ci) {
         Minecraft mc = Minecraft.getInstance();
-        if (!BuildPipelineClient.previewLocked || mc.screen != null || mc.player == null || yOffset == 0) return;
-        int direction = yOffset > 0 ? 1 : -1;
-        if (Screen.hasControlDown() && !Screen.hasShiftDown()) {
-            BuildPipelineClient.cycleAnchorTool(direction);
-            ci.cancel();
-        } else if (Screen.hasShiftDown()) {
-            BuildPipelineClient.useAnchorTool(direction, Screen.hasControlDown());
-            ci.cancel();
-        }
+        if (mc.screen != null || mc.player == null) return;
+        if (BuildPipelineClient.handleAnchorScroll(Screen.hasControlDown(), Screen.hasShiftDown(), yOffset)) ci.cancel();
     }
 }

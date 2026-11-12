@@ -103,6 +103,7 @@ public final class SelfTest {
     /** Runs in the throwaway scratch world: free to wipe and provision the player. */
     private static void suite(List<Seq> out) {
         out.add(floorAnchorScenario());
+        out.add(scrollGestureScenario());
     }
 
     /** Runs in the player's real world via the command: never destroy anything here. */
@@ -126,6 +127,55 @@ public final class SelfTest {
     private static String spans(BlockSet set) {
         int[] b = bounds(set);
         return (b[3] - b[0] + 1) + "x" + (b[4] - b[1] + 1) + "x" + (b[5] - b[2] + 1);
+    }
+
+    /** The mouse-wheel gestures (the mixin only forwards the held keys and the wheel to this). */
+    private static Seq scrollGestureScenario() {
+        ShapeParams floor = ShapeParams.defaults(ShapeType.FLOOR).withSize(2).with("length", 2);
+        boolean[] taken = new boolean[3];
+        return new Seq("scroll-gestures")
+                .onServerRun(p -> p.teleportTo(40.5, -60, 40.5))
+                .waitTicks(20)
+                .run(() -> {
+                    Minecraft.getInstance().player.setXRot(90);
+                    holdStone();
+                    BuildModes.CLIENT.setBuildMode(BuildModeEnum.SHAPE);
+                    ShapeClientState.setActive(floor);
+                })
+                .waitTicks(SETTLE)
+                .run(BuildPipelineClient::togglePreviewLock)
+                .run(() -> {
+                    anchorBefore = BuildPipelineClient.getAnchorBlocks();
+                    taken[0] = BuildPipelineClient.handleAnchorScroll(false, false, 1);   // plain scroll: hotbar's
+                    taken[1] = BuildPipelineClient.handleAnchorScroll(true, false, -1);   // Ctrl: next tool (SLIDE)
+                })
+                .check("plain-scroll-left-alone-ctrl-picks-tool", () -> {
+                    List<String> f = new ArrayList<>();
+                    if (taken[0]) f.add("a plain scroll was taken");
+                    if (!taken[1]) f.add("Ctrl+scroll was not taken");
+                    if (BuildPipelineClient.getAnchorTool() != BuildPipelineClient.AnchorTool.SLIDE) f.add("tool is " + BuildPipelineClient.getAnchorTool());
+                    if (BuildPipelineClient.getAnchorBlocks() != anchorBefore) f.add("a tool pick moved the anchor");
+                    return f;
+                })
+                .run(() -> taken[2] = BuildPipelineClient.handleAnchorScroll(false, true, 1)) // Shift: use SLIDE one block
+                .check("shift-scroll-uses-tool", () -> {
+                    List<String> f = new ArrayList<>();
+                    int[] a = bounds(anchorBefore), b = bounds(BuildPipelineClient.getAnchorBlocks());
+                    int shifted = Math.abs(b[0] - a[0]) + Math.abs(b[2] - a[2]);
+                    if (!taken[2]) f.add("Shift+scroll was not taken");
+                    if (shifted != 1) f.add("moved " + shifted + " blocks, expected 1");
+                    return f;
+                })
+                .run(() -> {
+                    anchorBefore = BuildPipelineClient.getAnchorBlocks();
+                    BuildPipelineClient.handleAnchorScroll(true, true, 1);                // Shift+Ctrl: 5 blocks
+                })
+                .check("shift-ctrl-scroll-moves-five", () -> {
+                    int[] a = bounds(anchorBefore), b = bounds(BuildPipelineClient.getAnchorBlocks());
+                    int shifted = Math.abs(b[0] - a[0]) + Math.abs(b[2] - a[2]);
+                    return shifted == 5 ? List.of() : List.of("moved " + shifted + " blocks, expected 5");
+                })
+                .run(BuildPipelineClient::clearAnchor);
     }
 
     private static void holdStone() {

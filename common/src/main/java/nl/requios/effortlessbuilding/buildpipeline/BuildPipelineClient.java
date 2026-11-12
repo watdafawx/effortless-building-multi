@@ -247,6 +247,19 @@ public class BuildPipelineClient {
         anchorTool = tools.get(Math.floorMod(i + (direction > 0 ? -1 : 1), tools.size())); // scroll up = previous
     }
 
+    /**
+     * Mouse-wheel gestures for the anchored preview: Ctrl picks a tool, Shift uses it (Shift+Ctrl, 5 blocks).
+     *
+     * @return true when the scroll was taken (the hotbar must not scroll)
+     */
+    public static boolean handleAnchorScroll(boolean ctrl, boolean shift, double scrollY) {
+        if (!previewLocked || anchor == null || scrollY == 0 || (!ctrl && !shift)) return false;
+        int direction = scrollY > 0 ? 1 : -1;
+        if (shift) useAnchorTool(direction, ctrl);
+        else cycleAnchorTool(direction);
+        return true;
+    }
+
     /** Uses the selected tool once; {@code direction} is +1 or -1, {@code big} moves 5 blocks. */
     public static void useAnchorTool(int direction, boolean big) {
         if (anchor == null) return;
