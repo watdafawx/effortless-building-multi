@@ -12,6 +12,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.SoundType;
 import nl.requios.effortlessbuilding.buildpipeline.BuildPipeline;
@@ -69,6 +70,7 @@ public class RenderHandler {
 
     public static void onRenderGui(GuiGraphics graphics) {
         renderSubtitle(graphics);
+        renderAnchorBar(graphics);
         drawStacks(graphics);
     }
 
@@ -273,6 +275,53 @@ public class RenderHandler {
     // =========================================================================
     // Subtitle
     // =========================================================================
+
+    // =========================================================================
+    // Anchor toolbar (Create schematic style), shown in the world while a preview is locked
+    // =========================================================================
+
+    private static ItemStack toolIcon(BuildPipelineClient.AnchorTool tool) {
+        return new ItemStack(switch (tool) {
+            case MOVE -> Items.COMPASS;
+            case SLIDE -> Items.PISTON;
+            case LIFT -> Items.LADDER;
+            case ROTATE -> Items.REPEATER;
+            case VIEW -> Items.SPYGLASS;
+        });
+    }
+
+    private static void renderAnchorBar(GuiGraphics graphics) {
+        if (!BuildPipelineClient.previewLocked) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen != null || mc.options.hideGui) return;
+        var tools = BuildPipelineClient.availableAnchorTools();
+        BuildPipelineClient.AnchorTool selected = BuildPipelineClient.getAnchorTool();
+        var font = mc.font;
+
+        int slot = 24, gap = 2;
+        int width = tools.size() * slot + (tools.size() - 1) * gap;
+        int x0 = mc.getWindow().getGuiScaledWidth() / 2 - width / 2;
+        int y0 = mc.getWindow().getGuiScaledHeight() - 112;
+
+        // Backing panel
+        graphics.fill(x0 - 4, y0 - 4, x0 + width + 4, y0 + slot + 4, 0xA0101010);
+        for (int i = 0; i < tools.size(); i++) {
+            var tool = tools.get(i);
+            int x = x0 + i * (slot + gap);
+            boolean on = tool == selected;
+            graphics.fill(x, y0, x + slot, y0 + slot, on ? 0xC0806A10 : 0x80404040);
+            if (on) {
+                graphics.renderOutline(x - 1, y0 - 1, slot + 2, slot + 2, 0xFFFFD700);
+            }
+            graphics.renderItem(toolIcon(tool), x + 4, y0 + 4);
+        }
+
+        // Selected tool name above, key hint below
+        Component name = Component.translatable(selected.getNameKey());
+        graphics.drawString(font, name, x0 + width / 2 - font.width(name) / 2, y0 - 16, 0xFFFFD700, true);
+        Component hint = Component.translatable("effortlessbuilding.anchor_tool.hint");
+        graphics.drawString(font, hint, x0 + width / 2 - font.width(hint) / 2, y0 + slot + 8, 0xFFFFFFFF, true);
+    }
 
     private static void renderSubtitle(GuiGraphics graphics) {
         boolean locked = BuildPipelineClient.previewLocked;

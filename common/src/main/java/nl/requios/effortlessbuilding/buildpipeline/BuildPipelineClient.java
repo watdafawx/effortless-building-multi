@@ -28,6 +28,7 @@ import nl.requios.effortlessbuilding.palette.BlockPalette;
 import nl.requios.effortlessbuilding.palette.PaletteClientState;
 import nl.requios.effortlessbuilding.palette.PaletteSystem;
 import nl.requios.effortlessbuilding.shape.ShapeParams;
+import nl.requios.effortlessbuilding.shape.ShapeType;
 import nl.requios.effortlessbuilding.config.ClientConfig;
 import nl.requios.effortlessbuilding.config.ServerConfig;
 import nl.requios.effortlessbuilding.modifier.ModifierSystem;
@@ -153,6 +154,7 @@ public class BuildPipelineClient {
     public static void clearAnchor() {
         previewLocked = false;
         anchor = null;
+        anchorTool = AnchorTool.MOVE;
     }
 
     /** The anchored preview's blocks, or null when nothing is anchored. */
@@ -166,10 +168,31 @@ public class BuildPipelineClient {
      */
     public static void nudgeAnchor(int dx, int dy, int dz) {
         Anchor a = anchor;
-        Player player = Minecraft.getInstance().player;
-        if (a == null || player == null || (dx == 0 && dy == 0 && dz == 0)) return;
+        if (a == null || (dx == 0 && dy == 0 && dz == 0)) return;
         BlockPos first = a.firstPos().offset(dx, dy, dz), second = a.secondPos().offset(dx, dy, dz);
         BlockPos third = a.thirdPos() != null ? a.thirdPos().offset(dx, dy, dz) : null;
+        reanchor(a, first, second, third, a.hitLocation().add(dx, dy, dz), a.shape());
+    }
+
+    /** Whether the anchored preview can be turned (only shapes from the generator can). */
+    public static boolean canRotateAnchor() {
+        return anchor != null && anchor.shape() != null;
+    }
+
+    /** Turns an anchored generator shape a quarter turn around its vertical axis. */
+    public static void rotateAnchor(int quarterTurns) {
+        Anchor a = anchor;
+        if (a == null || a.shape() == null || quarterTurns == 0) return;
+        double turned = a.shape().get(ShapeType.ROTATE_Y) + 90.0 * quarterTurns;
+        double wrapped = Math.floorMod((long) turned + 180, 360L) - 180; // the angle is kept in -180..179
+        reanchor(a, a.firstPos(), a.secondPos(), a.thirdPos(), a.hitLocation(), a.shape().with(ShapeType.ROTATE_Y, wrapped));
+    }
+
+    /** Works the anchor out again for new clicks/shape, the way the server will (modifiers included). */
+    private static void reanchor(Anchor a, BlockPos first, BlockPos second, @Nullable BlockPos third,
+                                 Vec3 hitLocation, @Nullable ShapeParams shape) {
+        Player player = Minecraft.getInstance().player;
+        if (player == null) return;
 
         // Work it out with the options captured at lock time, then put the current ones back
         ModeOptions.ActionEnum fill = ModeOptions.getFill(), cubeFill = ModeOptions.getCubeFill();
@@ -177,20 +200,64 @@ public class BuildPipelineClient {
         BlockSet blocks = new BlockSet();
         try {
             ModeOptions.applyForCalculation(a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart());
-            for (BlockPos pos : a.mode().instance.getServerBlocks(player, first, second, third, a.shape())) {
+            for (BlockPos pos : a.mode().instance.getServerBlocks(player, first, second, third, shape)) {
                 blocks.add(new BlockEntry(pos));
             }
             blocks.firstPos = first;
             blocks.lastPos = third != null ? third : second;
-            a.mode().instance.assignItems(blocks, player, first, second, a.shape());
+            a.mode().instance.assignItems(blocks, player, first, second, shape);
             CLIENT.processBlocks(blocks, player, BuildPipeline.BuildState.PLACING);
         } finally {
             ModeOptions.applyForCalculation(fill, cubeFill, raisedEdge, circleStart);
         }
         if (blocks.isEmpty()) return;
         anchor = new Anchor(blocks, a.dimension(), a.mode(), first, second, third, a.hitFace(),
-                a.hitLocation().add(dx, dy, dz), a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(),
-                a.shape(), a.palette());
+                hitLocation, a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(), shape, a.palette());
+    }
+
+    // -------------------------------------------------------------------------
+    // Anchor toolbar (Create schematic style): Ctrl+scroll picks a tool, Shift+scroll uses it
+    // -------------------------------------------------------------------------
+
+    /** What scrolling does to the anchored preview. */
+    public enum AnchorTool {
+        MOVE("move"), SLIDE("slide"), LIFT("lift"), ROTATE("rotate"), VIEW("view");
+
+        public final String key;
+        AnchorTool(String key) { this.key = key; }
+
+        public String getNameKey() { return "effortlessbuilding.anchor_tool." + key; }
+    }
+
+    private static AnchorTool anchorTool = AnchorTool.MOVE;
+
+    public static AnchorTool getAnchorTool() { return anchorTool; }
+
+    /** Tools on offer for the current anchor (rotating needs a generator shape). */
+    public static java.util.List<AnchorTool> availableAnchorTools() {
+        java.util.List<AnchorTool> tools = new java.util.ArrayList<>(java.util.List.of(AnchorTool.values()));
+        if (!canRotateAnchor()) tools.remove(AnchorTool.ROTATE);
+        return tools;
+    }
+
+    /** Selects the next/previous tool. */
+    public static void cycleAnchorTool(int direction) {
+        java.util.List<AnchorTool> tools = availableAnchorTools();
+        int i = Math.max(0, tools.indexOf(anchorTool));
+        anchorTool = tools.get(Math.floorMod(i + (direction > 0 ? -1 : 1), tools.size())); // scroll up = previous
+    }
+
+    /** Uses the selected tool once; {@code direction} is +1 or -1, {@code big} moves 5 blocks. */
+    public static void useAnchorTool(int direction, boolean big) {
+        if (anchor == null) return;
+        int n = direction * (big ? 5 : 1);
+        switch (anchorTool) {
+            case MOVE -> nudgeAnchorRelative(n, 0, 0);
+            case SLIDE -> nudgeAnchorRelative(0, n, 0);
+            case LIFT -> nudgeAnchorRelative(0, 0, n);
+            case ROTATE -> rotateAnchor(direction);
+            case VIEW -> Minecraft.getInstance().setScreen(new nl.requios.effortlessbuilding.screen.AnchorViewScreen());
+        }
     }
 
     /** Moves the anchored preview relative to where the player looks: forward/right in blocks, up in blocks. */

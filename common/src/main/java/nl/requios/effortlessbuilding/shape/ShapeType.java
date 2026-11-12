@@ -95,7 +95,19 @@ public enum ShapeType {
             ParamSpec.count("scale", 1, 1, 8),
             ParamSpec.count("depth", 1, 1, 16),
             ParamSpec.count("letter_spacing", 1, 0, 4),
-            ParamSpec.choice("bold", 0, "off", "on")));
+            ParamSpec.choice("bold", 0, "off", "on"))),
+    /**
+     * Flat floor with a footprint outline and a tile pattern. The pattern keeps some blocks and leaves the rest
+     * open; add the same floor as a part with "invert" on and its own block for the other half.
+     */
+    FLOOR(10, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("length", 10, 1),
+            ParamSpec.choice("outline", 0, "rectangle", "rounded", "ellipse", "diamond", "octagon", "hexagon", "plus"),
+            ParamSpec.choice("pattern", 0, "solid", "checker", "stripes", "rows", "diagonal", "border", "grid",
+                    "bricks", "diamonds", "dots", "rings"),
+            ParamSpec.count("tile", 2, 1, 16),
+            ParamSpec.choice("invert", 0, "off", "on"),
+            ParamSpec.length("thickness", 1, 1)));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;

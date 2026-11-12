@@ -438,4 +438,33 @@ class ShapeGeneratorTest {
         assertEquals(3 * 28, gen(hi.with("depth", 3)).size());
         assertEquals(2 * 28, gen(ShapeParams.defaults(ShapeType.TEXT).withSchematic("HI|HI")).size(), "two lines");
     }
+
+    @Test
+    void floorPatternAndInvertSplitTheFootprintExactly() {
+        ShapeParams solid = ShapeParams.defaults(ShapeType.FLOOR);
+        int total = gen(solid).size();
+        assertEquals(21 * 21, total, "default is a solid 21 x 21 rectangle, one layer");
+        for (int pattern = 1; pattern <= 10; pattern++) {
+            ShapeParams on = solid.with("pattern", pattern);
+            Set<Cell> a = new HashSet<>(gen(on)), b = new HashSet<>(gen(on.with("invert", 1)));
+            assertFalse(a.isEmpty(), "pattern " + pattern);
+            assertFalse(b.isEmpty(), "inverse of pattern " + pattern);
+            Set<Cell> both = new HashSet<>(a);
+            both.retainAll(b);
+            assertTrue(both.isEmpty(), "pattern " + pattern + " and its inverse overlap");
+            assertEquals(total, a.size() + b.size(), "pattern " + pattern + " must cover the footprint");
+        }
+    }
+
+    @Test
+    void floorOutlinesStayInsideTheRectangleAndShrink() {
+        ShapeParams solid = ShapeParams.defaults(ShapeType.FLOOR);
+        int rect = gen(solid).size();
+        for (int outline = 1; outline <= 6; outline++) {
+            List<Cell> cells = gen(solid.with("outline", outline));
+            assertFalse(cells.isEmpty(), "outline " + outline);
+            assertTrue(cells.size() < rect, "outline " + outline);
+        }
+        assertEquals(3, gen(solid.with("thickness", 3).withSize(1).with("length", 1)).stream().map(Cell::y).distinct().count());
+    }
 }
