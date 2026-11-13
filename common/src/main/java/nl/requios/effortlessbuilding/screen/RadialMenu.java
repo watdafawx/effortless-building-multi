@@ -27,6 +27,7 @@ import nl.requios.effortlessbuilding.buildmode.ModeOptions;
 import nl.requios.effortlessbuilding.buildmode.ModeOptions.*;
 import nl.requios.effortlessbuilding.network.BuildModeHintC2SPacket;
 import nl.requios.effortlessbuilding.network.PacketHandler;
+import nl.requios.effortlessbuilding.shape.ShapeClientState;
 import nl.requios.effortlessbuilding.utilities.KeyBindings;
 import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
@@ -70,6 +71,9 @@ public class RadialMenu extends Screen {
 
 	private float visibility;
 
+	/** For automated tests only: stay open without the menu key held. */
+	public static boolean keepOpen = false;
+
 	public RadialMenu() {
 		super(Component.translatable("effortlessbuilding.screen.radial_menu"));
 	}
@@ -89,7 +93,7 @@ public class RadialMenu extends Screen {
 	public void tick() {
 		super.tick();
 
-		if (!KeyBindings.isKeyDown(KeyBindings.openRadialMenu)) {
+		if (!keepOpen && !KeyBindings.isKeyDown(KeyBindings.openRadialMenu)) {
 			onClose();
 		}
 	}
@@ -348,6 +352,25 @@ public class RadialMenu extends Screen {
 		graphics.pose().popPose();
 	}
 
+	private final ShapePreview shapePreview = new ShapePreview();
+
+	/** In Shape mode: the selected shape's name and a slowly turning 3D preview next to its options. */
+	private void drawSelectedShape(GuiGraphics graphics, BuildModeEnum mode, double middleX, double middleY, double scale) {
+		if (mode != BuildModeEnum.SHAPE) return;
+		var params = ShapeClientState.getActive();
+		String templateName = ShapeClientState.getActiveTemplateName();
+		String name = templateName != null ? templateName : I18n.get(params.type().getNameKey());
+		int boxW = 100, boxH = 56;
+		int boxX = (int) (middleX + buttonDistance * scale - 9);
+		int boxY = (int) middleY + 54; // under the Size buttons, above the hotbar
+		if (font.width(name) > boxW) name = font.plainSubstrByWidth(name, boxW - 6) + "…";
+		graphics.drawString(font, name, boxX, boxY - 11, whiteTextColor, true);
+		shapePreview.view = ShapePreview.View.THREE_D;
+		shapePreview.layer = -1;
+		shapePreview.yaw = (System.currentTimeMillis() % 20000L) * (360f / 20000f);
+		shapePreview.render(graphics, font, boxX, boxY, boxW, boxH, params);
+	}
+
 	private void drawTexts(GuiGraphics graphics, BuildModeEnum currentBuildMode, double middleX, double middleY, ArrayList<MenuRegion> modes, ArrayList<MenuButton> buttons, OptionEnum[] options, int mouseX, int mouseY, double scale) {
 		//font.drawStringWithShadow("Actions", (int) (middleX - buttonDistance - 13) - font.getStringWidth("Actions") * 0.5f, (int) middleY - 38, 0xffffffff);
 
@@ -356,6 +379,8 @@ public class RadialMenu extends Screen {
 			OptionEnum option = options[i];
 			graphics.drawString(font, I18n.get(option.name), (int) (middleX + buttonDistance * scale - 9), (int) middleY - 37 + i * 39, optionTextColor, true);
 		}
+
+		drawSelectedShape(graphics, currentBuildMode, middleX, middleY, scale);
 
 		String credits = "Effortless Building";
 		graphics.drawString(font, credits, width - font.width(credits) - 4, height - 10, watermarkTextColor, true);

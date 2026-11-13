@@ -108,6 +108,10 @@ public final class SelfTest {
             out.add(framedCamoScenario());
             out.add(framedSlopeScenario());
         }
+        out.add(ShapeUiShots.scenario());
+        // EB_SELFTEST_ONLY=shape-ui (comma separated) runs just those scenarios, for quick iteration
+        String only = System.getenv("EB_SELFTEST_ONLY");
+        if (only != null && !only.isBlank()) out.removeIf(s -> !List.of(only.split(",")).contains(s.name));
     }
 
     /** Runs in the player's real world via the command: never destroy anything here. */

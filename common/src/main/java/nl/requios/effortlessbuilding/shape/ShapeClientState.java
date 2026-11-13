@@ -26,6 +26,11 @@ public final class ShapeClientState {
         return active;
     }
 
+    /** Name of the template the active shape came from, or null when it was not picked from a template. */
+    public static @Nullable String getActiveTemplateName() {
+        return templateIndex >= 0 && templateIndex < templates.size() ? templates.get(templateIndex).name() : null;
+    }
+
     /** Sets the active shape directly (not from a template). */
     public static void setActive(ShapeParams params) {
         active = params;

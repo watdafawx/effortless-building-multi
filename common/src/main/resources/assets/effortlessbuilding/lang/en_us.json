@@ -647,5 +647,17 @@
   "effortlessbuilding.anchor_tool.lift": "Up / Down",
   "effortlessbuilding.anchor_tool.rotate": "Rotate 90°",
   "effortlessbuilding.anchor_tool.view": "Overview",
-  "effortlessbuilding.anchor_tool.hint": "§7Ctrl+scroll tool · Shift+scroll use (Shift+Ctrl ×5) · §aRight-click§7 build · §cLeft-click§7 release"
+  "effortlessbuilding.anchor_tool.hint": "§7Ctrl+scroll tool · Shift+scroll use (Shift+Ctrl ×5) · §aRight-click§7 build · §cLeft-click§7 release",
+  "effortlessbuilding.screen.library": "Library",
+  "effortlessbuilding.screen.settings": "Settings",
+  "effortlessbuilding.screen.export": "Export",
+  "effortlessbuilding.screen.export_nbt": "Export .nbt",
+  "effortlessbuilding.screen.part_count": "%s parts",
+  "effortlessbuilding.screen.save_template.description": "Save this design as a template under the name on the left (Ctrl+S, or Enter in the name box).",
+  "effortlessbuilding.screen.section.parts": "Parts",
+  "effortlessbuilding.screen.section.part": "Part %s: %s",
+  "effortlessbuilding.screen.section.heights": "Heights",
+  "effortlessbuilding.screen.add_part_button": "+ Add part",
+  "effortlessbuilding.screen.changed_count": "%s changed",
+  "effortlessbuilding.screen.part_count.one": "%s part"
 }
