@@ -36,6 +36,7 @@ public final class ShapeParamsCodec {
             buf.writeVarInt(part.z());
             buf.writeUtf(part.block(), 256);
             buf.writeVarInt(part.repeat());
+            buf.writeUtf(part.camo(), 256);
         }
         buf.writeVarInt(p.path().size());
         for (ShapeGenerator.Cell c : p.path()) {
@@ -55,7 +56,7 @@ public final class ShapeParamsCodec {
             ShapeParams partShape = readShape(buf);
             ShapeParams.Operation op = byOrdinal(ShapeParams.Operation.values(), buf.readVarInt());
             parts.add(new ShapeParams.Part(partShape, op, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-                    buf.readUtf(256), buf.readVarInt()));
+                    buf.readUtf(256), buf.readVarInt(), buf.readUtf(256)));
         }
         int points = buf.readVarInt();
         if (points < 0 || points > ShapeParams.MAX_PATH_POINTS) throw new IllegalArgumentException("Too many path points: " + points);

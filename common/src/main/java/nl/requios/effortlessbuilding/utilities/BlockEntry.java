@@ -16,6 +16,8 @@ public class BlockEntry {
     public Item item;
     /** Place {@link #blockState} exactly as it is (e.g. a schematic's saved block with its facing). */
     public boolean exactState;
+    /** Item id of a block to apply as a Framed Blocks camo once this entry is placed, or null. */
+    public String camo;
     private BlockStatus status = BlockStatus.VALID;
 
     public BlockEntry(BlockPos blockPos) {
@@ -33,6 +35,7 @@ public class BlockEntry {
         item = blockEntry.item;
         blockState = blockEntry.blockState;
         exactState = blockEntry.exactState;
+        camo = blockEntry.camo;
         mirrorX = blockEntry.mirrorX;
         mirrorY = blockEntry.mirrorY;
         mirrorZ = blockEntry.mirrorZ;

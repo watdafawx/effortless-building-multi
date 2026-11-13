@@ -20,6 +20,7 @@ import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.registries.BuiltInRegistries;
+import nl.requios.effortlessbuilding.compat.FramedCompat;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.state.BlockState;
@@ -473,6 +474,16 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                                 item -> params = params.withPart(index, params.parts().get(index)
                                         .withBlock(item == null ? "" : BuiltInRegistries.ITEM.getKey(item).toString()))));
                     })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
+            if (FramedCompat.isAvailable()) {
+                list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.part_camo"), "effortlessbuilding.screen.part_camo.description", () ->
+                        w(Components.button(Component.literal(blockLabel(currentPart().camo())), b -> {
+                            if (minecraft == null) return;
+                            int index = editing;
+                            minecraft.setScreen(new BlockPickerScreen(this, Component.translatable("effortlessbuilding.screen.pick_part_camo"),
+                                    item -> params = params.withPart(index, params.parts().get(index)
+                                            .withCamo(item == null ? "" : BuiltInRegistries.ITEM.getKey(item).toString()))));
+                        })).sizing(Sizing.fixed(fieldW), Sizing.fixed(CONTROL_H))));
+            }
             list.add(new Row(Section.DESIGN, I18n.get("effortlessbuilding.screen.part_repeat"), "effortlessbuilding.screen.part_repeat.description",
                     () -> number(currentPart().repeat(), 1, true, v -> setCurrentPart(currentPart().withRepeat((int) v)))));
         }

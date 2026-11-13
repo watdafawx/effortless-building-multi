@@ -156,7 +156,7 @@ public enum ShapeType {
         all.add(ParamSpec.choice(BEARING, 0, "off", "start", "end"));
         // Main shape only: follow the terrain, and path settings (shown when sizing is Path)
         all.add(ParamSpec.choice(FOLLOW_GROUND, 0, "off", "on"));
-        all.add(ParamSpec.choice(SMOOTH, 0, "off", "stairs", "slabs"));
+        all.add(ParamSpec.choice(SMOOTH, 0, "off", "stairs", "slabs", "slopes"));
         all.add(ParamSpec.count(PATH_SPACING, 8, 1, 64));
         all.add(ParamSpec.choice(PATH_ALIGN, 1, "off", "on"));
         this.params = List.copyOf(all);
@@ -164,7 +164,7 @@ public enum ShapeType {
 
     /** Move every column onto the terrain below it (1) or keep the shape level (0). */
     public static final String FOLLOW_GROUND = "follow_ground";
-    /** Soften one-block steps on the top of the shape: 0 off, 1 stairs (slabs at corners), 2 slabs only. */
+    /** Soften one-block steps on the top of the shape: 0 off, 1 stairs (slabs at corners), 2 slabs only, 3 Framed Blocks slopes (slabs at corners). */
     public static final String SMOOTH = "smooth";
     /** Path sizing: blocks between copies, and whether copies turn to face along the path. */
     public static final String PATH_SPACING = "path_spacing", PATH_ALIGN = "path_align";

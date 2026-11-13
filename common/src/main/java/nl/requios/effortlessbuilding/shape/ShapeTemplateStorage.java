@@ -88,6 +88,7 @@ public final class ShapeTemplateStorage {
                 po.addProperty("z", part.z());
                 if (!part.block().isEmpty()) po.addProperty("block", part.block());
                 if (part.repeat() > 1) po.addProperty("repeat", part.repeat());
+                if (!part.camo().isEmpty()) po.addProperty("camo", part.camo());
                 parts.add(po);
             }
             o.add("parts", parts);
@@ -111,7 +112,8 @@ public final class ShapeTemplateStorage {
                     parts.add(new ShapeParams.Part(shape, ShapeParams.Operation.valueOf(po.get("operation").getAsString()),
                             po.get("x").getAsInt(), po.get("y").getAsInt(), po.get("z").getAsInt(),
                             po.has("block") ? po.get("block").getAsString() : "",
-                            po.has("repeat") ? po.get("repeat").getAsInt() : 1));
+                            po.has("repeat") ? po.get("repeat").getAsInt() : 1,
+                            po.has("camo") ? po.get("camo").getAsString() : ""));
                 }
             }
             return new ShapeParams(

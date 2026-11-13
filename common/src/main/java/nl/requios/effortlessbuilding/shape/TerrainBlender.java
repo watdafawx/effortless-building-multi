@@ -157,7 +157,7 @@ public final class TerrainBlender {
         level.setBlock(pos, after, Block.UPDATE_ALL);
         // Keep the first "before" so one undo restores the original ground
         undoChanges.merge(pos.immutable(), new UndoManager.BlockChange(before, after),
-                (first, next) -> new UndoManager.BlockChange(first.oldState(), next.newState()));
+                (first, next) -> new UndoManager.BlockChange(first.oldState(), next.newState(), first.oldData(), next.newData()));
     }
 
     private static void giveDrops(ServerPlayer player, ServerLevel level, BlockPos pos, BlockState state) {

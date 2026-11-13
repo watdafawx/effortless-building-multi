@@ -104,6 +104,10 @@ public final class SelfTest {
     private static void suite(List<Seq> out) {
         out.add(floorAnchorScenario());
         out.add(scrollGestureScenario());
+        if (nl.requios.effortlessbuilding.compat.FramedCompat.isAvailable()) {
+            out.add(framedCamoScenario());
+            out.add(framedSlopeScenario());
+        }
     }
 
     /** Runs in the player's real world via the command: never destroy anything here. */
@@ -176,6 +180,169 @@ public final class SelfTest {
                     return shifted == 5 ? List.of() : List.of("moved " + shifted + " blocks, expected 5");
                 })
                 .run(BuildPipelineClient::clearAnchor);
+    }
+
+    // ---- Framed Blocks camo (needs the FramedBlocks mod in run/mods) ---------------------------------
+
+    private static final net.minecraft.core.BlockPos CAMO_POS = new net.minecraft.core.BlockPos(60, -60, 60);
+
+    private static net.minecraft.server.level.ServerLevel serverLevel() {
+        return Minecraft.getInstance().getSingleplayerServer().overworld();
+    }
+
+    /** The camo block ids stored in the framed block at {@code pos}, read from its saved data. */
+    private static String camoOf(net.minecraft.core.BlockPos pos) {
+        // Block entities can only be read on the server thread
+        return Minecraft.getInstance().getSingleplayerServer().submit(() -> camoOnServer(pos)).join();
+    }
+
+    private static String camoOnServer(net.minecraft.core.BlockPos pos) {
+        var level = serverLevel();
+        var be = level.getBlockEntity(pos);
+        if (be == null) return "no block entity; state=" + level.getBlockState(pos) + " loaded=" + level.hasChunkAt(pos);
+        return be.saveWithFullMetadata(level.registryAccess()).toString();
+    }
+
+    /**
+     * A framed cube gets a camo through the compat helper, the undo snapshot keeps it, and restoring brings
+     * it back after the block was wiped. Oracle: the block entity's own saved data names the camo block.
+     */
+    private static Seq framedCamoScenario() {
+        var cube = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                net.minecraft.resources.ResourceLocation.parse("framedblocks:framed_cube"));
+        net.minecraft.nbt.CompoundTag[] saved = new net.minecraft.nbt.CompoundTag[1];
+        return new Seq("framed-camo")
+                .onServerRun(p -> {
+                    p.setGameMode(GameType.CREATIVE);
+                    p.teleportTo(58.5, -60, 58.5);
+                })
+                .waitTicks(SETTLE) // the chunk has to load before a block can go there
+                .onServerRun(p -> serverLevel().setBlock(CAMO_POS, cube.defaultBlockState(), 3))
+                .waitTicks(10)
+                .onServerRun(p -> nl.requios.effortlessbuilding.compat.FramedCompat.applyCamo(serverLevel(), CAMO_POS, "minecraft:oak_planks"))
+                .waitTicks(10)
+                .check("camo-applied", () -> camoOf(CAMO_POS).contains("minecraft:oak_planks")
+                        ? List.of() : List.of("block entity data has no oak camo: " + camoOf(CAMO_POS)))
+                .waitTicks(5)
+                .onServerRun(p -> saved[0] = nl.requios.effortlessbuilding.utilities.UndoManager.snapshot(serverLevel(), CAMO_POS))
+                .onServerRun(p -> serverLevel().setBlock(CAMO_POS, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3))
+                .waitTicks(5)
+                .onServerRun(p -> {
+                    serverLevel().setBlock(CAMO_POS, cube.defaultBlockState(), 3);
+                    var be = serverLevel().getBlockEntity(CAMO_POS);
+                    if (be != null && saved[0] != null) be.loadWithComponents(saved[0], serverLevel().registryAccess());
+                })
+                .waitTicks(10)
+                .check("camo-restored-from-snapshot", () -> {
+                    List<String> f = new ArrayList<>();
+                    if (saved[0] == null) f.add("snapshot was null");
+                    if (!camoOf(CAMO_POS).contains("minecraft:oak_planks")) f.add("camo lost: " + camoOf(CAMO_POS));
+                    return f;
+                })
+                .onServerRun(p -> nl.requios.effortlessbuilding.compat.FramedCompat.applyCamo(serverLevel(), CAMO_POS, "minecraft:chest"))
+                .waitTicks(10)
+                .check("block-entity-camo-refused", () -> camoOf(CAMO_POS).contains("minecraft:chest")
+                        ? List.of("a chest was accepted as camo") : List.of())
+                .onServerRun(p -> serverLevel().setBlock(CAMO_POS, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3));
+    }
+
+    private static BlockSet slopeBlocks;
+
+    /** How tall a shape is in the 0.1 thick strip along its side facing {@code side}. */
+    private static double edgeTop(net.minecraft.world.phys.shapes.VoxelShape shape, net.minecraft.core.Direction side) {
+        double t = 0.1;
+        double x0 = side.getAxis() == net.minecraft.core.Direction.Axis.X ? (side.getStepX() > 0 ? 1 - t : 0) : 0;
+        double x1 = side.getAxis() == net.minecraft.core.Direction.Axis.X ? (side.getStepX() > 0 ? 1 : t) : 1;
+        double z0 = side.getAxis() == net.minecraft.core.Direction.Axis.Z ? (side.getStepZ() > 0 ? 1 - t : 0) : 0;
+        double z1 = side.getAxis() == net.minecraft.core.Direction.Axis.Z ? (side.getStepZ() > 0 ? 1 : t) : 1;
+        var strip = net.minecraft.world.phys.shapes.Shapes.join(shape, net.minecraft.world.phys.shapes.Shapes.box(x0, 0, z0, x1, 1, z1),
+                net.minecraft.world.phys.shapes.BooleanOp.AND);
+        return strip.isEmpty() ? 0 : strip.max(net.minecraft.core.Direction.Axis.Y);
+    }
+
+    /**
+     * A dome with "Smooth top: Framed slopes": the preview must hold framed slopes camouflaged as stone, and
+     * the built world must match it: same blocks, same facing, the camo in the block entity, and every slope's
+     * low side must face the way the state says (checked on the collision shape).
+     */
+    private static Seq framedSlopeScenario() {
+        ShapeParams dome = ShapeParams.defaults(ShapeType.DOME).withSize(4).with(ShapeType.SMOOTH, 3);
+        return new Seq("framed-slope-smoothing")
+                .onServerRun(p -> {
+                    clearPlayer(p);
+                    p.setGameMode(GameType.CREATIVE);
+                    p.getInventory().setItem(0, new ItemStack(Items.STONE, 64));
+                    p.teleportTo(120.5, -60, 120.5);
+                })
+                .waitTicks(SETTLE)
+                .run(() -> {
+                    Minecraft.getInstance().player.setXRot(90);
+                    holdStone();
+                    BuildModes.CLIENT.setBuildMode(BuildModeEnum.SHAPE);
+                    ShapeClientState.setActive(dome);
+                })
+                .waitTicks(SETTLE)
+                .run(BuildPipelineClient::togglePreviewLock)
+                .check("preview-has-framed-slopes", () -> {
+                    List<String> f = new ArrayList<>();
+                    BlockSet blocks = BuildPipelineClient.getAnchorBlocks();
+                    if (blocks == null) return List.of("preview did not lock");
+                    slopeBlocks = blocks;
+                    int slopes = 0, slabs = 0, plain = 0, noCamo = 0;
+                    for (var e : blocks.validEntries()) {
+                        var entry = e.getValue();
+                        String id = entry.blockState == null ? "" : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(entry.blockState.getBlock()).toString();
+                        if (id.equals("framedblocks:framed_slope")) slopes++;
+                        else if (id.equals("framedblocks:framed_slab")) slabs++;
+                        else plain++;
+                        if (id.startsWith("framedblocks:") && !"minecraft:stone".equals(entry.camo)) noCamo++;
+                    }
+                    log("framed-slope-smoothing: " + slopes + " slopes, " + slabs + " slabs, " + plain + " other");
+                    if (slopes == 0) f.add("no framed slopes in the preview");
+                    if (noCamo > 0) f.add(noCamo + " framed blocks without the stone camo");
+                    return f;
+                })
+                .run(BuildPipelineClient::buildAnchor)
+                .waitTicks(SETTLE)
+                .check("server-has-slopes-with-camo", () -> {
+                    List<String> f = new ArrayList<>();
+                    int[] checked = {0};
+                    onServer(p -> {
+                        var level = p.serverLevel();
+                        for (var e : slopeBlocks.validEntries()) {
+                            var entry = e.getValue();
+                            if (entry.blockState == null) continue;
+                            var want = entry.blockState;
+                            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(want.getBlock()).toString();
+                            if (!id.equals("framedblocks:framed_slope")) continue;
+                            BlockPos pos = e.getKey();
+                            var got = level.getBlockState(pos);
+                            // "solid" is set by the block entity once a camo is applied, so it differs from the preview
+                            boolean same = got.getBlock() == want.getBlock();
+                            for (var prop : want.getProperties()) {
+                                if (prop.getName().equals("solid")) continue;
+                                if (!got.getValue(prop).equals(want.getValue(prop))) same = false;
+                            }
+                            if (!same) { f.add(pos + " is " + got + ", preview said " + want); continue; }
+                            var be = level.getBlockEntity(pos);
+                            if (be == null || !be.saveWithFullMetadata(level.registryAccess()).toString().contains("minecraft:stone")) {
+                                f.add(pos + " has no stone camo"); continue;
+                            }
+                            // The slope's facing is its high side; the low side must be lower, and open to the air:
+                            // that is where the dome drops away
+                            net.minecraft.core.Direction high = got.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING);
+                            var shape = got.getShape(level, pos);
+                            double highTop = edgeTop(shape, high), lowTop = edgeTop(shape, high.getOpposite());
+                            if (!(lowTop < highTop)) f.add(pos + " facing " + high + " but low=" + lowTop + " high=" + highTop);
+                            BlockPos beyond = pos.relative(high.getOpposite());
+                            if (!level.getBlockState(beyond).canBeReplaced()) f.add(pos + ": the low side leads into " + level.getBlockState(beyond));
+                            checked[0]++;
+                        }
+                        return null;
+                    });
+                    if (checked[0] == 0) f.add("no slope was checked on the server");
+                    return f;
+                });
     }
 
     private static void holdStone() {

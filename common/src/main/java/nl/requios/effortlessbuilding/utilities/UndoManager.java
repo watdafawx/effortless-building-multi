@@ -1,6 +1,7 @@
 package nl.requios.effortlessbuilding.utilities;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -8,9 +9,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import nl.requios.effortlessbuilding.Constants;
+import nl.requios.effortlessbuilding.compat.FramedCompat;
 import nl.requios.effortlessbuilding.compat.create.CreateGlue;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
@@ -30,7 +34,43 @@ public class UndoManager {
     private static final Map<UUID, Deque<UndoEntry>> undoStacks = new HashMap<>();
     private static final Map<UUID, Deque<UndoEntry>> redoStacks = new HashMap<>();
 
-    public record BlockChange(BlockState oldState, BlockState newState) {}
+    /**
+     * @param oldData the block entity data to restore with {@code oldState}, only kept for Framed Blocks (so a camo
+     *                survives undo); null otherwise
+     * @param newData the same for {@code newState}, captured when the change is undone so redo can bring it back
+     */
+    public record BlockChange(BlockState oldState, BlockState newState, @Nullable CompoundTag oldData,
+                              @Nullable CompoundTag newData) {
+        public BlockChange(BlockState oldState, BlockState newState) {
+            this(oldState, newState, null, null);
+        }
+
+        /** A change that also remembers the framed block being replaced, camo and all. */
+        public static BlockChange of(Level level, BlockPos pos, BlockState oldState, BlockState newState) {
+            return new BlockChange(oldState, newState, snapshot(level, pos), null);
+        }
+
+        BlockChange withNewData(@Nullable CompoundTag data) {
+            return new BlockChange(oldState, newState, oldData, data);
+        }
+    }
+
+    /** The block entity data of a framed block at {@code pos} (null for anything else: chests and the like are not copied). */
+    public static @Nullable CompoundTag snapshot(Level level, BlockPos pos) {
+        if (!FramedCompat.isFramed(level.getBlockState(pos))) return null;
+        BlockEntity be = level.getBlockEntity(pos);
+        return be == null ? null : be.saveWithFullMetadata(level.registryAccess());
+    }
+
+    private static void restore(Level level, BlockPos pos, BlockState state, @Nullable CompoundTag data) {
+        level.setBlock(pos, state, 3);
+        if (data == null || !FramedCompat.isFramed(state)) return;
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be == null) return;
+        be.loadWithComponents(data, level.registryAccess());
+        be.setChanged();
+        level.sendBlockUpdated(pos, state, state, 3);
+    }
 
     /**
      * A single undo-able operation: a set of block changes in a specific dimension.
@@ -158,10 +198,16 @@ public class UndoManager {
             }
         }
 
+        // What stands there now (a camo, say) is what redo has to bring back
+        for (var e : todo) {
+            CompoundTag now = snapshot(level, e.getKey());
+            if (now != null) e.setValue(e.getValue().withNewData(now));
+        }
+
         int restored = 0;
         if (entry.free()) {
             for (var e : todo) {
-                level.setBlock(e.getKey(), e.getValue().oldState(), 3);
+                restore(level, e.getKey(), e.getValue().oldState(), e.getValue().oldData());
                 restored++;
             }
         } else {
@@ -176,21 +222,21 @@ public class UndoManager {
                 BlockChange change = e.getValue();
                 switch (Kind.of(change)) {
                     case PLACE -> {
-                        level.setBlock(pos, change.oldState(), 3);
+                        restore(level, pos, change.oldState(), change.oldData());
                         refunds.merge(itemOf(change.newState()), 1, Integer::sum);
                     }
                     case BREAK -> {
                         if (!budget.spend(itemOf(change.oldState()))) continue;
-                        level.setBlock(pos, change.oldState(), 3);
+                        restore(level, pos, change.oldState(), change.oldData());
                         restoredPlacements.add(pos);
                     }
                     case REPLACE -> {
                         refunds.merge(itemOf(change.newState()), 1, Integer::sum);
                         boolean paid = budget.spend(itemOf(change.oldState()));
-                        level.setBlock(pos, paid ? change.oldState() : Blocks.AIR.defaultBlockState(), 3);
+                        restore(level, pos, paid ? change.oldState() : Blocks.AIR.defaultBlockState(), paid ? change.oldData() : null);
                         if (paid) restoredPlacements.add(pos);
                     }
-                    case OTHER -> level.setBlock(pos, change.oldState(), 3);
+                    case OTHER -> restore(level, pos, change.oldState(), change.oldData());
                 }
                 restored++;
             }
@@ -235,7 +281,7 @@ public class UndoManager {
         int reapplied = 0;
         if (entry.free()) {
             for (var e : todo) {
-                level.setBlock(e.getKey(), e.getValue().newState(), 3);
+                restore(level, e.getKey(), e.getValue().newState(), e.getValue().newData());
                 reapplied++;
             }
         } else {
@@ -252,7 +298,7 @@ public class UndoManager {
                 if ((kind == Kind.PLACE || kind == Kind.REPLACE) && !budget.spend(itemOf(change.newState()))) continue;
                 if (kind == Kind.BREAK || kind == Kind.REPLACE) returned.merge(itemOf(change.oldState()), 1, Integer::sum);
                 if (kind == Kind.PLACE || kind == Kind.REPLACE) placedAgain.add(pos);
-                level.setBlock(pos, change.newState(), 3);
+                restore(level, pos, change.newState(), change.newData());
                 reapplied++;
             }
             for (var r : returned.entrySet()) {

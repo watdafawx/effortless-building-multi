@@ -13,7 +13,9 @@ import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.DiggerItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import nl.requios.effortlessbuilding.compat.FramedCompat;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -255,8 +257,13 @@ public class PacketHandler {
                 if (state == null) state = blockItem.getBlock().defaultBlockState();
                 state = entry.applyTransforms(state);
                 BlockState placedState = state;
-                BuildQueue.submit(player, () -> level.setBlock(pos, placedState, 3));
-                recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
+                String camo = payCamo(player, creative, entry, placedState);
+                CompoundTag oldData = UndoManager.snapshot(level, pos); // before the queue may run the change
+                BuildQueue.submit(player, () -> {
+                    level.setBlock(pos, placedState, 3);
+                    if (camo != null) FramedCompat.applyCamo(level, pos, camo);
+                });
+                recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state, oldData, null));
                 used.merge(item, 1, Integer::sum);
                 placed++;
             }
@@ -332,11 +339,14 @@ public class PacketHandler {
                     }
                     BlockState placedState = state;
                     ItemStack placedFrom = held.copyWithCount(1); // the held stack shrinks before a queued step runs
+                    String camo = entry != null ? payCamo(player, creative, entry, placedState) : null;
+                    CompoundTag oldData = UndoManager.snapshot(level, pos); // before the queue may run the change
                     BuildQueue.submit(player, () -> {
                         level.setBlock(pos, placedState, 3);
                         transferBlockItemData(level, player, pos, placedFrom);
+                        if (camo != null) FramedCompat.applyCamo(level, pos, camo);
                     });
-                    recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state));
+                    recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, state, oldData, null));
                     placed++;
                 }
             }
@@ -379,8 +389,9 @@ public class PacketHandler {
                             }
                         }
 
+                        UndoManager.BlockChange fluidChange = UndoManager.BlockChange.of(level, pos, oldState, fluidState);
                         BuildQueue.submit(player, () -> level.setBlock(pos, fluidState, 3));
-                        recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, fluidState));
+                        recordChange(undoChanges, pos, fluidChange);
                         placed++;
                     }
                 }
@@ -441,9 +452,22 @@ public class PacketHandler {
         sendToClient(player, new SyncAE2CountS2CPacket(item, AE2Integration.countOnNetwork(player, item)));
     }
 
+    /**
+     * The camo to apply to the framed block this entry places, or null for none. In survival the camo block
+     * is taken from the inventory, one per framed block; without one, the block goes down plain.
+     */
+    private static String payCamo(ServerPlayer player, boolean creative, BlockEntry entry, BlockState placed) {
+        String camo = entry.camo;
+        if (camo == null || camo.isEmpty() || !FramedCompat.isFramed(placed)) return null;
+        Item camoItem = FramedCompat.camoItem(camo);
+        if (camoItem == null) return null;
+        if (!creative && InventoryHelper.consumeItems(player, camoItem, 1) < 1) return null;
+        return camo;
+    }
+
     /** Records a change, keeping an earlier "before" for the same block (terrain blending ran first). */
     private static void recordChange(Map<BlockPos, UndoManager.BlockChange> changes, BlockPos pos, UndoManager.BlockChange change) {
-        changes.merge(pos.immutable(), change, (first, next) -> new UndoManager.BlockChange(first.oldState(), next.newState()));
+        changes.merge(pos.immutable(), change, (first, next) -> new UndoManager.BlockChange(first.oldState(), next.newState(), first.oldData(), next.newData()));
     }
 
     /**
@@ -509,6 +533,7 @@ public class PacketHandler {
             BlockPos pos = mapEntry.getKey();
             BlockState oldState = level.getBlockState(pos);
             if (oldState.isAir()) continue;
+            UndoManager.BlockChange breakChange = UndoManager.BlockChange.of(level, pos, oldState, airState);
 
             if (!creative) {
 
@@ -529,7 +554,7 @@ public class PacketHandler {
             } else {
                 BuildQueue.submit(player, () -> level.destroyBlock(pos, false, player));
             }
-            recordChange(undoChanges, pos, new UndoManager.BlockChange(oldState, airState));
+            recordChange(undoChanges, pos, breakChange);
             broken++;
         }
 

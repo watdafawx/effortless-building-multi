@@ -2,6 +2,7 @@ package nl.requios.effortlessbuilding.buildmode.buildmodes;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import nl.requios.effortlessbuilding.compat.FramedCompat;
 import nl.requios.effortlessbuilding.compat.create.CreateGlue;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -125,10 +126,12 @@ public class ShapeMode extends BaseBuildMode {
     @Override
     public void assignItems(BlockSet blocks, Player player, BlockPos firstPos, BlockPos secondPos, @Nullable ShapeParams shape) {
         if (shape == null) return;
-        layout(player, firstPos, secondPos, shape).forEach((pos, own) -> {
-            if (own == null) return;
+        Map<BlockPos, String> camos = new HashMap<>();
+        layout(player, firstPos, secondPos, shape, camos).forEach((pos, own) -> {
             BlockEntry entry = blocks.get(pos);
             if (entry == null) return;
+            entry.camo = camos.get(pos);
+            if (own == null) return;
             entry.item = own.getBlock().asItem();
             entry.blockState = own;
             entry.exactState = true;
@@ -144,6 +147,12 @@ public class ShapeMode extends BaseBuildMode {
 
     /** World position → the block it must be (null: the held block or palette decides). */
     private Map<BlockPos, BlockState> layout(Player player, BlockPos first, BlockPos second, ShapeParams params) {
+        return layout(player, first, second, params, null);
+    }
+
+    /** As above; {@code camoOut} also receives, per position, the camo item id of the part that block belongs to. */
+    private Map<BlockPos, BlockState> layout(Player player, BlockPos first, BlockPos second, ShapeParams params,
+                                             @Nullable Map<BlockPos, String> camoOut) {
         int maxAxis = ServerConfig.INSTANCE.getMaxBlocksPerAxis(player);
         BlockState centerState = null;
         ResourceLocation centerId = params.centerBlock().isEmpty() ? null : ResourceLocation.tryParse(params.centerBlock());
@@ -173,10 +182,15 @@ public class ShapeMode extends BaseBuildMode {
                     if (!(own.getBlock().asItem() instanceof BlockItem)) continue; // water, portals: left out
                 }
                 out.put(pos, own);
+                Integer label = built.labels().get(c);
+                if (camoOut != null && label != null && label >= 0 && label < placement.params().parts().size()) {
+                    String camo = placement.params().parts().get(label).camo();
+                    if (!camo.isEmpty()) camoOut.put(pos, camo);
+                }
             }
         }
-        if (params.getInt(ShapeType.FOLLOW_GROUND) == 1) out = followGround(player.level(), out);
-        if (params.getInt(ShapeType.SMOOTH) != 0) smooth(player, out, params.getInt(ShapeType.SMOOTH) == 1);
+        if (params.getInt(ShapeType.FOLLOW_GROUND) == 1) out = followGround(player.level(), out, camoOut);
+        if (params.getInt(ShapeType.SMOOTH) != 0) smooth(player, out, params.getInt(ShapeType.SMOOTH), camoOut);
         return out;
     }
 
@@ -185,7 +199,9 @@ public class ShapeMode extends BaseBuildMode {
      * bottom slabs, using the stair/slab version of the block that would be placed there. Blocks
      * without such a version stay full.
      */
-    private static void smooth(Player player, Map<BlockPos, BlockState> layout, boolean stairs) {
+    private static void smooth(Player player, Map<BlockPos, BlockState> layout, int mode, @Nullable Map<BlockPos, String> camos) {
+        boolean stairs = mode == 1;
+        Map<BlockPos, String> newCamos = new HashMap<>();
         BlockState held = player.getMainHandItem().getItem() instanceof BlockItem item ? item.getBlock().defaultBlockState() : null;
         Map<BlockPos, BlockState> changes = new HashMap<>();
         for (var e : layout.entrySet()) {
@@ -200,6 +216,17 @@ public class ShapeMode extends BaseBuildMode {
             BlockState base = e.getValue() != null ? e.getValue() : held;
             if (base == null) continue;
             BlockState smoothed = null;
+            if (mode == SMOOTH_FRAMED_SLOPES) {
+                // A framed slope (framed slab at corners) camouflaged as the block it replaces
+                String camo = camos != null ? camos.get(pos) : null;
+                if (camo == null) camo = FramedCompat.camoIdFor(base);
+                BlockState framed = drops.size() == 1 ? FramedCompat.slopeState(drops.get(0)) : FramedCompat.slabState();
+                if (camo != null && framed != null) {
+                    changes.put(pos, framed);
+                    newCamos.put(pos, camo);
+                }
+                continue;
+            }
             if (stairs && drops.size() == 1) {
                 Block stair = variant(base.getBlock(), "_stairs");
                 if (stair instanceof StairBlock) {
@@ -213,7 +240,11 @@ public class ShapeMode extends BaseBuildMode {
             if (smoothed != null) changes.put(pos, smoothed);
         }
         layout.putAll(changes);
+        if (camos != null) camos.putAll(newCamos);
     }
+
+    /** {@link ShapeType#SMOOTH} choice index for Framed Blocks slopes. */
+    private static final int SMOOTH_FRAMED_SLOPES = 3;
 
     /**
      * The stairs or slab made from a block, found by name: stone → stone_stairs, stone_bricks →
@@ -285,7 +316,8 @@ public class ShapeMode extends BaseBuildMode {
      * Moves every column up or down so its lowest block sits on the ground right below it
      * (the first free block above the terrain, ignoring leaves). Columns in unloaded chunks stay put.
      */
-    private static Map<BlockPos, BlockState> followGround(Level level, Map<BlockPos, BlockState> layout) {
+    private static Map<BlockPos, BlockState> followGround(Level level, Map<BlockPos, BlockState> layout,
+                                                         @Nullable Map<BlockPos, String> camos) {
         Map<Long, Integer> lowest = new HashMap<>();
         for (BlockPos p : layout.keySet()) lowest.merge(column(p), p.getY(), Math::min);
         Map<Long, Integer> shift = new HashMap<>();
@@ -296,6 +328,12 @@ public class ShapeMode extends BaseBuildMode {
         }
         Map<BlockPos, BlockState> out = new LinkedHashMap<>();
         layout.forEach((p, own) -> out.put(p.above(shift.get(column(p))), own));
+        if (camos != null) {
+            Map<BlockPos, String> moved = new HashMap<>();
+            camos.forEach((p, camo) -> moved.put(p.above(shift.getOrDefault(column(p), 0)), camo));
+            camos.clear();
+            camos.putAll(moved);
+        }
         return out;
     }
 

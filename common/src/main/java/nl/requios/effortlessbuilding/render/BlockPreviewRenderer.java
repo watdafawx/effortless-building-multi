@@ -15,6 +15,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import nl.requios.effortlessbuilding.compat.FramedCompat;
 import net.minecraft.world.level.material.Fluids;
 import nl.requios.effortlessbuilding.buildmode.BuildModeEnum;
 import nl.requios.effortlessbuilding.config.ClientConfig;
@@ -144,6 +145,7 @@ public class BlockPreviewRenderer {
                         if (state == null) continue;
                         if (entry != null) {
                             state = entry.applyTransforms(state);
+                            if (entry.camo != null) state = FramedCompat.ghostState(state, entry.camo);
                         }
                         boolean isMissing = missingPositions.contains(pos);
                         poseStack.pushPose();

@@ -82,8 +82,9 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
      * @param x      offset of the part's anchor from the main anchor, in blocks (likewise y, z)
      * @param block  item id of the block this part's blocks use, or "" for the held block / palette
      * @param repeat copies spread evenly around the main shape's axis (1: just this one)
+     * @param camo   item id of a block to apply as the camo of Framed Blocks placed for this part, or "" for none
      */
-    public record Part(ShapeParams shape, Operation operation, int x, int y, int z, String block, int repeat) {
+    public record Part(ShapeParams shape, Operation operation, int x, int y, int z, String block, int repeat, String camo) {
         public Part {
             // Parts are flat: drop any nested parts
             if (!shape.parts().isEmpty()) shape = shape.withParts(List.of());
@@ -92,18 +93,24 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
             y = Math.max(-limit, Math.min(limit, y));
             z = Math.max(-limit, Math.min(limit, z));
             block = block == null ? "" : block;
+            camo = camo == null ? "" : camo;
             repeat = Math.max(1, Math.min(MAX_REPEAT, repeat));
         }
 
-        public Part(ShapeParams shape, Operation operation, int x, int y, int z) {
-            this(shape, operation, x, y, z, "", 1);
+        public Part(ShapeParams shape, Operation operation, int x, int y, int z, String block, int repeat) {
+            this(shape, operation, x, y, z, block, repeat, "");
         }
 
-        public Part withShape(ShapeParams shape) { return new Part(shape, operation, x, y, z, block, repeat); }
-        public Part withOperation(Operation operation) { return new Part(shape, operation, x, y, z, block, repeat); }
-        public Part withOffset(int x, int y, int z) { return new Part(shape, operation, x, y, z, block, repeat); }
-        public Part withBlock(String block) { return new Part(shape, operation, x, y, z, block, repeat); }
-        public Part withRepeat(int repeat) { return new Part(shape, operation, x, y, z, block, repeat); }
+        public Part(ShapeParams shape, Operation operation, int x, int y, int z) {
+            this(shape, operation, x, y, z, "", 1, "");
+        }
+
+        public Part withShape(ShapeParams shape) { return new Part(shape, operation, x, y, z, block, repeat, camo); }
+        public Part withOperation(Operation operation) { return new Part(shape, operation, x, y, z, block, repeat, camo); }
+        public Part withOffset(int x, int y, int z) { return new Part(shape, operation, x, y, z, block, repeat, camo); }
+        public Part withBlock(String block) { return new Part(shape, operation, x, y, z, block, repeat, camo); }
+        public Part withRepeat(int repeat) { return new Part(shape, operation, x, y, z, block, repeat, camo); }
+        public Part withCamo(String camo) { return new Part(shape, operation, x, y, z, block, repeat, camo); }
     }
 
     public ShapeParams {
@@ -222,7 +229,7 @@ public record ShapeParams(ShapeType type, int size, Map<String, Double> values, 
             ShapeParams s = part.shape();
             scaledParts.add(new Part(s.scaleBy(factor), part.operation(),
                     (int) Math.round(part.x() * factor), (int) Math.round(part.y() * factor),
-                    (int) Math.round(part.z() * factor)));
+                    (int) Math.round(part.z() * factor), part.block(), part.repeat(), part.camo()));
         }
         return scaleBy(factor).withSize(newSize).withParts(scaledParts);
     }
