@@ -300,8 +300,9 @@ public final class ShapeGenerator {
             case ARCH -> arch(p, local);
             case HELIX -> helix(p, local);
             case ELLIPSOID -> ellipsoid(p, local);
-            case PRISM -> extrudedPolygon(regularPolygon(p.getInt("sides"), p.size(), p.get("rotation")), p.getInt("height"), p.hollow(), local);
-            case STAR -> extrudedPolygon(star(p), p.getInt("height"), p.hollow(), local);
+            case PRISM -> extrudedPolygon(regularPolygon(p.getInt("sides"), p.size(), p.get("rotation")), p.getInt("height"), p.hollow(),
+                    p.getInt("caps") == 1, local);
+            case STAR -> extrudedPolygon(star(p), p.getInt("height"), p.hollow(), p.getInt("caps") == 1, local);
             case CONE -> cone(p, local);
             case PYRAMID -> pyramid(p, local);
             case BOWL -> bowl(p, local);
@@ -310,6 +311,9 @@ public final class ShapeGenerator {
             case SPIRAL -> spiral(p, local);
             case TEXT -> text(p, local);
             case FLOOR -> floor(p, local);
+            case DOME -> dome(p, local);
+            case STAIRS -> stairs(p, local);
+            case PIPE -> pipe(p, local);
             case SCHEMATIC -> { }
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
@@ -405,14 +409,28 @@ public final class ShapeGenerator {
     private static void arch(ShapeParams p, Set<Cell> out) {
         double rx = p.size() + 0.5, ry = p.size() * p.get("height_ratio") + 0.5;
         int thickness = p.getInt("thickness"), depth = p.getInt("depth");
+        boolean pointed = p.getInt("style") == 1;
+        double ratio = p.get("height_ratio");
         double ix = rx - thickness, iy = ry - thickness;
-        int height = (int) Math.ceil(ry);
+        // A pointed arch is two circular arcs, each centered on the opposite springing point
+        int height = (int) Math.ceil(pointed ? Math.sqrt(3) * rx * ratio + 1 : ry);
         for (int u = -p.size(); u <= p.size(); u++)
             for (int v = 0; v <= height; v++) {
-                if (!inEllipse(u, v, rx, ry)) continue;
-                if (ix > 0 && iy > 0 && inEllipse(u, v, ix, iy)) continue;
+                if (pointed) {
+                    if (!inPointedArch(u, v, rx, ratio)) continue;
+                    if (ix > 0 && inPointedArch(u, v, ix, ratio)) continue;
+                } else {
+                    if (!inEllipse(u, v, rx, ry)) continue;
+                    if (ix > 0 && iy > 0 && inEllipse(u, v, ix, iy)) continue;
+                }
                 for (int w = 0; w < depth; w++) out.add(new Cell(u, v, w));
             }
+    }
+
+    /** Inside both circles of radius 2a centered on (+a, 0) and (-a, 0): the equilateral pointed arch, stretched by {@code ratio}. */
+    private static boolean inPointedArch(double u, double v, double a, double ratio) {
+        double vv = v / ratio, r2 = 4 * a * a;
+        return (u - a) * (u - a) + vv * vv <= r2 && (u + a) * (u + a) + vv * vv <= r2;
     }
 
     private static boolean inEllipse(double u, double v, double rx, double ry) {
@@ -522,25 +540,70 @@ public final class ShapeGenerator {
             }
     }
 
-    /** Tower wall with alternating merlons on top; round when sides = 0. */
+    /**
+     * Tower wall with alternating merlons on top, or a cone roof; round when sides = 0. Optionally a door
+     * on the -v side, windows spread around the wall and interior floors.
+     */
     private static void tower(ShapeParams p, Set<Cell> out) {
         int r = p.size(), height = p.getInt("height"), sides = p.getInt("sides");
         int wall = p.getInt("wall"), battlement = p.getInt("battlement");
+        boolean door = p.getInt("door") == 1, roof = p.getInt("roof") == 1;
+        int windows = p.getInt("windows"), floors = p.getInt("floors");
         double[][] outer = sides >= 3 ? regularPolygon(sides, r, 0.5) : null;
         double[][] inner = sides >= 3 && r - wall >= 0 ? regularPolygon(sides, r - wall, 0.5) : null;
         // Merlon + gap about two blocks each along the outside, an even count so it stays symmetric
         int merlons = Math.max(4, 2 * (int) Math.round(Math.PI * r / 2));
+        int doorHalf = r >= 5 ? 1 : 0, doorHeight = height >= 5 ? 3 : 2;
+        int windowBase = Math.max(2, height / 2);
+        boolean hasWindows = windows > 0 && windowBase + 2 <= height - 1;
+        int[] floorLayers = new int[floors];
+        for (int f = 0; f < floors; f++) floorLayers[f] = Math.max(1, Math.round((f + 1) * height / (float) (floors + 1)));
+
         for (int u = -r - 1; u <= r + 1; u++)
             for (int v = -r - 1; v <= r + 1; v++) {
+                boolean inOuter = sides >= 3 ? inPolygon(u, v, outer) : Math.hypot(u, v) < r + 0.5;
                 boolean inWall = sides >= 3
-                        ? inPolygon(u, v, outer) && (inner == null || !inPolygon(u, v, inner))
-                        : Math.hypot(u, v) < r + 0.5 && Math.hypot(u, v) >= r + 0.5 - wall;
-                if (!inWall) continue;
+                        ? inOuter && (inner == null || !inPolygon(u, v, inner))
+                        : inOuter && Math.hypot(u, v) >= r + 0.5 - wall;
+                if (!inOuter) continue;
+                if (!inWall) {
+                    for (int layer : floorLayers) out.add(new Cell(u, v, layer));
+                    continue;
+                }
                 double turn = (Math.atan2(v, u) + Math.PI) / (2 * Math.PI);
                 boolean merlon = ((int) Math.floor(turn * merlons)) % 2 == 0;
-                int top = height + (merlon ? battlement : 0);
-                for (int w = 0; w < top; w++) out.add(new Cell(u, v, w));
+                int top = height + (!roof && merlon ? battlement : 0);
+                boolean doorColumn = door && v < 0 && Math.abs(u) <= doorHalf;
+                boolean windowColumn = false;
+                if (hasWindows) {
+                    // Windows sit between the door (at a quarter turn) and each other
+                    for (int k = 0; k < windows && !windowColumn; k++) {
+                        double centre = 0.25 + (k + 0.5) / windows;
+                        double apart = Math.abs(((turn - centre) % 1 + 1.5) % 1 - 0.5);
+                        // Within three quarters of a block of the window's centre line: one column, or two on a diagonal
+                        windowColumn = Math.hypot(u, v) * Math.sin(apart * 2 * Math.PI) <= 0.75 && apart < 0.25;
+                    }
+                }
+                for (int w = 0; w < top; w++) {
+                    if (doorColumn && w < doorHeight) continue;
+                    if (windowColumn && w >= windowBase && w < windowBase + 2) continue;
+                    out.add(new Cell(u, v, w));
+                }
             }
+
+        if (roof) {
+            // Cone cap, one block wider than the wall all round so it overhangs
+            int roofHeight = Math.max(2, r + 1);
+            for (int k = 0; k < roofHeight; k++) {
+                double radius = (r + 1) * (roofHeight - k) / (double) roofHeight;
+                double[][] poly = sides >= 3 ? regularPolygon(sides, radius, 0.5) : null;
+                for (int u = -r - 1; u <= r + 1; u++)
+                    for (int v = -r - 1; v <= r + 1; v++) {
+                        boolean in = poly != null ? inPolygon(u, v, poly) : Math.hypot(u, v) < radius + 0.5;
+                        if (in) out.add(new Cell(u, v, height + k));
+                    }
+            }
+        }
     }
 
     /** Rectangle-ish floor: an outline picks the footprint, a tile pattern picks which blocks of it stay. */
@@ -567,6 +630,17 @@ public final class ShapeGenerator {
             case 4 -> nu + nv <= 1.5;                                 // octagon
             case 5 -> nv <= 1 && nu + nv * 0.5 <= 1;                  // hexagon
             case 6 -> nu <= 0.34 || nv <= 0.34;                       // plus
+            case 7 -> {                                               // star, five tips
+                double rho = Math.hypot(u / (rx + 0.5), v / (ry + 0.5)), phi = Math.atan2(v / (ry + 0.5), u / (rx + 0.5));
+                double tip = (1 + Math.cos(5 * (phi - Math.PI / 2))) / 2; // 1 at the five tips, 0 between them
+                yield rho <= 0.4 + 0.6 * Math.pow(tip, 1.5);
+            }
+            case 8 -> {                                               // heart, point down
+                double hx = u / (rx + 0.5) * 1.14, hy = v / (ry + 0.5) * 1.135 + 0.135;
+                double t = hx * hx + hy * hy - 1;
+                yield t * t * t - hx * hx * hy * hy * hy <= 0;
+            }
+            case 9 -> nu <= (1 - v / (ry + 0.5)) / 2 + 0.02;          // triangle, point up
             default -> true;                                          // rectangle
         };
     }
@@ -588,8 +662,105 @@ public final class ShapeGenerator {
             case 8 -> (Math.floorDiv(a + b, tile) + Math.floorDiv(a - b, tile)) % 2 == 0;    // diamonds
             case 9 -> a % (tile * 2) < tile && b % (tile * 2) < tile;                        // dots
             case 10 -> (int) Math.floor(Math.hypot(u, v) / tile) % 2 == 0;                   // rings
+            case 11 -> {                                                                     // chevron: diagonal bands that flip every two rows
+                int ca = Math.floorDiv(a, tile), cb = Math.floorDiv(b, tile);
+                int lean = Math.floorMod(Math.floorDiv(cb, 2), 2) == 0 ? cb : -cb;
+                yield Math.floorMod(ca + lean, 4) < 2;
+            }
+            case 12 -> {                                                                     // basketweave: 2 x 2 groups of alternating direction
+                int ca = Math.floorDiv(a, tile), cb = Math.floorDiv(b, tile);
+                boolean horizontal = Math.floorMod(Math.floorDiv(ca, 2) + Math.floorDiv(cb, 2), 2) == 0;
+                yield horizontal ? Math.floorMod(cb, 2) == 0 : Math.floorMod(ca, 2) == 0;
+            }
+            case 13 -> Math.floorMod(Math.floorDiv(b + (int) Math.round(Math.sin(a / (tile * 2.0)) * tile), tile), 2) == 0; // wave
+            case 14 -> Math.floorMod((int) Math.floor(Math.hypot(u, v) / tile - Math.atan2(v, u) / (2 * Math.PI)), 2) == 0; // spiral
+            case 15 -> {                                                                     // scatter: about three tiles in four, hashed so it never changes
+                int h = Math.floorDiv(a, tile) * 374761393 + Math.floorDiv(b, tile) * 668265263;
+                h = (h ^ (h >>> 13)) * 1274126177;
+                h ^= h >>> 16;
+                yield ((h >>> 4) & 3) != 0;
+            }
             default -> true;                                                                 // solid
         };
+    }
+
+    /** Half an ellipsoid: base radius {@code size}, height {@code size * height_ratio}; hollow is a shell {@code wall} thick with an open base. */
+    private static void dome(ShapeParams p, Set<Cell> out) {
+        int r = p.size(), wall = p.getInt("wall");
+        double rx = r + 0.5, rh = r * p.get("height_ratio") + 0.5;
+        boolean flip = p.getInt("flip") == 1;
+        double ix = rx - wall, ih = rh - wall;
+        for (int u = -r; u <= r; u++)
+            for (int v = -r; v <= r; v++)
+                for (int w = 0; w <= (int) rh; w++) {
+                    double d2 = u * u + v * v;
+                    if (d2 / (rx * rx) + w * w / (rh * rh) > 1) continue;
+                    if (p.hollow() && ix > 0 && ih > 0 && d2 / (ix * ix) + w * w / (ih * ih) <= 1) continue;
+                    out.add(new Cell(u, v, flip ? -w : w));
+                }
+    }
+
+    /**
+     * A flight of steps climbing along +v, {@code rise} up and {@code run} forward per step, as wide as the
+     * shape. Turning flights split the steps in two around a landing and leave it left, right or back beside
+     * the first flight. Solid steps fill down to the ground; the other kind is a single block per step.
+     */
+    private static void stairs(ShapeParams p, Set<Cell> out) {
+        int a = p.size(), width = 2 * a + 1;
+        int steps = p.getInt("steps"), rise = p.getInt("rise"), run = p.getInt("run");
+        int turn = p.getInt("turn");
+        boolean solid = p.getInt("fill") == 0;
+        int first = turn == 0 ? steps : Math.max(1, steps / 2);
+        for (int i = 0; i < first; i++) stairBox(out, -a, a, i * run, (i + 1) * run - 1, (i + 1) * rise, solid);
+        if (turn == 0) return;
+
+        int landV0 = first * run, landV1 = landV0 + width - 1;
+        stairBox(out, -a, turn == 3 ? a + width : a, landV0, landV1, first * rise, solid);
+        for (int j = 0; j < steps - first; j++) {
+            int top = (first + 1 + j) * rise;
+            switch (turn) {
+                case 1 -> stairBox(out, -a - (j + 1) * run, -a - 1 - j * run, landV0, landV1, top, solid);
+                case 2 -> stairBox(out, a + 1 + j * run, a + (j + 1) * run, landV0, landV1, top, solid);
+                default -> stairBox(out, a + 1, a + width, landV0 - (j + 1) * run, landV0 - 1 - j * run, top, solid);
+            }
+        }
+    }
+
+    private static void stairBox(Set<Cell> out, int u0, int u1, int v0, int v1, int top, boolean solid) {
+        for (int u = u0; u <= u1; u++)
+            for (int v = v0; v <= v1; v++)
+                for (int w = solid ? 0 : top - 1; w < top; w++) out.add(new Cell(u, v, w));
+    }
+
+    /**
+     * A tube of outer radius {@code size} with a wall, {@code pipe_length} long along w. The elbow turns it
+     * 90 degrees toward +u on a bend of {@code bend_radius} (at least the tube radius + 1) into an arm
+     * {@code pipe_arm} long. Both ends are open.
+     */
+    private static void pipe(ShapeParams p, Set<Cell> out) {
+        int r = p.size(), wall = p.getInt("wall"), length = p.getInt("pipe_length");
+        boolean elbow = p.getInt("bend") == 1;
+        int bend = Math.max(p.getInt("bend_radius"), r + 1), arm = p.getInt("pipe_arm");
+        double outer = r + 0.5, inner = r + 0.5 - wall;
+        int maxU = elbow ? bend + arm : 0, maxW = length + (elbow ? bend : 0);
+        for (int u = -r - 1; u <= maxU + r + 1; u++)
+            for (int v = -r - 1; v <= r + 1; v++)
+                for (int w = 0; w <= maxW + r + 1; w++) {
+                    double t;
+                    if (w < length) {
+                        t = Math.hypot(u, v);                                   // first leg, up the w axis
+                    } else if (!elbow) {
+                        continue;
+                    } else if (u < bend) {
+                        double ring = Math.hypot(u - bend, w - length) - bend;  // quarter turn around (bend, length)
+                        t = Math.hypot(ring, v);
+                    } else if (u < bend + arm) {
+                        t = Math.hypot(v, w - length - bend);                   // arm, along +u
+                    } else {
+                        continue;
+                    }
+                    if (t < outer && t >= inner) out.add(new Cell(u, v, w));
+                }
     }
 
     /** Archimedean spiral arms from the center out to the size, traced so each arm is unbroken. */
@@ -610,8 +781,8 @@ public final class ShapeGenerator {
         for (Cell c : face) for (int w = 0; w < height; w++) out.add(new Cell(c.x(), c.y(), w));
     }
 
-    /** A polygon extruded {@code height} blocks; hollow keeps only its outline (open top and bottom). */
-    private static void extrudedPolygon(double[][] poly, int height, boolean hollow, Set<Cell> out) {
+    /** A polygon extruded {@code height} blocks; hollow keeps only its outline (open top and bottom unless {@code closedCaps}). */
+    private static void extrudedPolygon(double[][] poly, int height, boolean hollow, boolean closedCaps, Set<Cell> out) {
         int reach = 1;
         for (double[] pt : poly) reach = Math.max(reach, (int) Math.ceil(Math.max(Math.abs(pt[0]), Math.abs(pt[1]))) + 1);
         Set<Cell> face = new HashSet<>();
@@ -619,9 +790,13 @@ public final class ShapeGenerator {
             for (int v = -reach; v <= reach; v++)
                 if (inPolygon(u, v, poly)) face.add(new Cell(u, v, 0));
         for (Cell c : face) {
-            if (hollow && face.contains(new Cell(c.x() + 1, c.y(), 0)) && face.contains(new Cell(c.x() - 1, c.y(), 0))
-                    && face.contains(new Cell(c.x(), c.y() + 1, 0)) && face.contains(new Cell(c.x(), c.y() - 1, 0))) continue;
-            for (int w = 0; w < height; w++) out.add(new Cell(c.x(), c.y(), w));
+            boolean interior = hollow && face.contains(new Cell(c.x() + 1, c.y(), 0)) && face.contains(new Cell(c.x() - 1, c.y(), 0))
+                    && face.contains(new Cell(c.x(), c.y() + 1, 0)) && face.contains(new Cell(c.x(), c.y() - 1, 0));
+            for (int w = 0; w < height; w++) {
+                // The inside of a hollow prism stays empty except for the floor and ceiling of a closed one
+                if (interior && !(closedCaps && (w == 0 || w == height - 1))) continue;
+                out.add(new Cell(c.x(), c.y(), w));
+            }
         }
     }
 

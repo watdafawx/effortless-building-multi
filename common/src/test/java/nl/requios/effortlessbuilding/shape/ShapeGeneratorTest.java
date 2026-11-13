@@ -444,7 +444,7 @@ class ShapeGeneratorTest {
         ShapeParams solid = ShapeParams.defaults(ShapeType.FLOOR);
         int total = gen(solid).size();
         assertEquals(21 * 21, total, "default is a solid 21 x 21 rectangle, one layer");
-        for (int pattern = 1; pattern <= 10; pattern++) {
+        for (int pattern = 1; pattern <= 15; pattern++) {
             ShapeParams on = solid.with("pattern", pattern);
             Set<Cell> a = new HashSet<>(gen(on)), b = new HashSet<>(gen(on.with("invert", 1)));
             assertFalse(a.isEmpty(), "pattern " + pattern);
@@ -460,7 +460,7 @@ class ShapeGeneratorTest {
     void floorOutlinesStayInsideTheRectangleAndShrink() {
         ShapeParams solid = ShapeParams.defaults(ShapeType.FLOOR);
         int rect = gen(solid).size();
-        for (int outline = 1; outline <= 6; outline++) {
+        for (int outline = 1; outline <= 9; outline++) {
             List<Cell> cells = gen(solid.with("outline", outline));
             assertFalse(cells.isEmpty(), "outline " + outline);
             assertTrue(cells.size() < rect, "outline " + outline);

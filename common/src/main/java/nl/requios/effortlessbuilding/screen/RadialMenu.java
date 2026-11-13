@@ -470,7 +470,10 @@ public class RadialMenu extends Screen {
 		if (switchTo != null) {
 			playRadialMenuSound();
 
-			if (switchTo != BuildModes.CLIENT.getBuildMode()) BuildPipelineClient.clearAnchor();
+			// Disabling keeps the anchor; re-enabling into a different shape drops it
+			if (switchTo != BuildModeEnum.DISABLED && switchTo != BuildPipelineClient.getAnchorMode()) {
+				BuildPipelineClient.clearAnchor();
+			}
 			BuildModes.CLIENT.setBuildMode(switchTo);
 			if (switchTo != BuildModeEnum.DISABLED) {
 				PacketHandler.sendToServer(new BuildModeHintC2SPacket());

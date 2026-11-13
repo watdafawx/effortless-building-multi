@@ -38,7 +38,8 @@ public enum ShapeType {
     ARCH(8, false, ShapeParams.Orientation.UPRIGHT_NS, List.of(
             ParamSpec.ratio("height_ratio", 1, 0.2, 4),
             ParamSpec.length("thickness", 2, 1),
-            ParamSpec.length("depth", 3, 1))),
+            ParamSpec.length("depth", 3, 1),
+            ParamSpec.choice("style", 0, "round", "pointed"))),
     HELIX(6, false, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.length("pole_radius", 1, 0),
             ParamSpec.length("inner_radius", 2, 0),
@@ -51,12 +52,14 @@ public enum ShapeType {
     PRISM(8, true, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.count("sides", 6, 3, 64),
             ParamSpec.length("height", 10, 1),
-            ParamSpec.ratio("rotation", 0, 0, 1))),
+            ParamSpec.ratio("rotation", 0, 0, 1),
+            ParamSpec.choice("caps", 0, "open", "closed"))),
     STAR(10, true, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.count("points", 5, 3, 64),
             ParamSpec.ratio("inner_ratio", 0.45, 0.1, 0.95),
             ParamSpec.length("height", 2, 1),
-            ParamSpec.ratio("rotation", 0, 0, 1))),
+            ParamSpec.ratio("rotation", 0, 0, 1),
+            ParamSpec.choice("caps", 0, "open", "closed"))),
     CONE(8, true, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.length("height", 12, 1),
             ParamSpec.count("sides", 0, 0, 64))),
@@ -78,7 +81,11 @@ public enum ShapeType {
             ParamSpec.length("height", 14, 1),
             ParamSpec.count("sides", 0, 0, 64),
             ParamSpec.length("wall", 1, 1),
-            ParamSpec.length("battlement", 1, 0))),
+            ParamSpec.length("battlement", 1, 0),
+            ParamSpec.choice("door", 0, "off", "on"),
+            ParamSpec.count("windows", 0, 0, 16),
+            ParamSpec.count("floors", 0, 0, 16),
+            ParamSpec.choice("roof", 0, "off", "cone"))),
     /** Flat spiral with one or more arms, like a galaxy or a maze path. */
     SPIRAL(10, false, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.ratio("turns", 2, 0.25, 16),
@@ -102,12 +109,32 @@ public enum ShapeType {
      */
     FLOOR(10, false, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.length("length", 10, 1),
-            ParamSpec.choice("outline", 0, "rectangle", "rounded", "ellipse", "diamond", "octagon", "hexagon", "plus"),
+            ParamSpec.choice("outline", 0, "rectangle", "rounded", "ellipse", "diamond", "octagon", "hexagon", "plus",
+                    "star", "heart", "triangle"),
             ParamSpec.choice("pattern", 0, "solid", "checker", "stripes", "rows", "diagonal", "border", "grid",
-                    "bricks", "diamonds", "dots", "rings"),
+                    "bricks", "diamonds", "dots", "rings", "chevron", "basketweave", "wave", "spiral", "scatter"),
             ParamSpec.count("tile", 2, 1, 16),
             ParamSpec.choice("invert", 0, "off", "on"),
-            ParamSpec.length("thickness", 1, 1)));
+            ParamSpec.length("thickness", 1, 1))),
+    /** Half an ellipsoid standing on its flat base (or hanging, flipped); hollow keeps a shell with an open base. */
+    DOME(8, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.ratio("height_ratio", 1, 0.2, 4),
+            ParamSpec.length("wall", 1, 1),
+            ParamSpec.choice("flip", 0, "up", "down"))),
+    /** Flight of steps, straight or turning at a landing. */
+    STAIRS(3, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("steps", 8, 1),
+            ParamSpec.count("rise", 1, 1, 4),
+            ParamSpec.count("run", 1, 1, 4),
+            ParamSpec.choice("turn", 0, "straight", "left", "right", "u_turn"),
+            ParamSpec.choice("fill", 0, "solid", "steps"))),
+    /** Tube with a wall, straight or with a 90 degree elbow. Stands upright by default. */
+    PIPE(3, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("pipe_length", 10, 1),
+            ParamSpec.length("wall", 1, 1),
+            ParamSpec.choice("bend", 0, "straight", "elbow"),
+            ParamSpec.length("bend_radius", 4, 1),
+            ParamSpec.length("pipe_arm", 6, 1)));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;

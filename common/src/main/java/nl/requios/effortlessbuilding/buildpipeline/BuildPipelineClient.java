@@ -157,6 +157,11 @@ public class BuildPipelineClient {
         anchorTool = AnchorTool.MOVE;
     }
 
+    /** The build mode the anchor was locked in, or null when nothing is anchored. */
+    public static @Nullable BuildModeEnum getAnchorMode() {
+        return anchor != null ? anchor.mode() : null;
+    }
+
     /** The anchored preview's blocks, or null when nothing is anchored. */
     public static @Nullable BlockSet getAnchorBlocks() {
         return anchor != null ? anchor.blocks() : null;
@@ -610,7 +615,8 @@ public class BuildPipelineClient {
         BuildModes.CLIENT.getBuildMode().instance.initialize();
         buildState = null;
         firstClickHit = null;
-        clearAnchor();
+        // The anchor is deliberately kept: it stays locked until built or unlocked,
+        // even when building is disabled and enabled again.
     }
 
     // -------------------------------------------------------------------------

@@ -282,6 +282,16 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             boolean selected = (editing >= 0 || templateName == null) && current().type() == type;
             sidebarList.child(listRow(name, TEXT, selected, () -> selectType(type), null, null));
         }
+        if (editing < 0) {
+            List<ShapePresets.Preset> designs = ShapePresets.get().stream()
+                    .filter(d -> query.isEmpty() || I18n.get(d.getNameKey()).toLowerCase(java.util.Locale.ROOT).contains(query)).toList();
+            if (!designs.isEmpty()) {
+                sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.designs")).margins(Insets.top(6)));
+                for (ShapePresets.Preset design : designs) {
+                    sidebarList.child(listRow(I18n.get(design.getNameKey()), 0x9FD7FF, false, () -> selectPreset(design), null, design.params()));
+                }
+            }
+        }
         sidebarList.child(sectionLabel(I18n.get("effortlessbuilding.screen.templates")).margins(Insets.top(6)));
         List<ShapeClientState.Template> templates = ShapeClientState.getTemplates().stream()
                 .filter(t -> query.isEmpty() || t.name().toLowerCase(java.util.Locale.ROOT).contains(query)).toList();
@@ -774,6 +784,16 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         templateName = template.name();
         editing = -1;
         setName(template.name());
+        preview.layer = -1;
+        refresh();
+    }
+
+    /** Loads a built-in design for editing; it is saved as a template only when the player saves it. */
+    private void selectPreset(ShapePresets.Preset design) {
+        params = design.params();
+        templateName = null;
+        editing = -1;
+        setName(I18n.get(design.getNameKey()));
         preview.layer = -1;
         refresh();
     }

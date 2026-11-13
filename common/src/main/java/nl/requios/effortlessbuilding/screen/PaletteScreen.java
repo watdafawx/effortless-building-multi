@@ -33,6 +33,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import nl.requios.effortlessbuilding.palette.*;
+import nl.requios.effortlessbuilding.shape.ShapeClientState;
 import nl.requios.effortlessbuilding.palette.PaletteSuggester.Mode;
 import nl.requios.effortlessbuilding.palette.PaletteSuggester.Swatch;
 import nl.requios.effortlessbuilding.utilities.ShareCode;
@@ -74,6 +75,9 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
 
     // ---- 3D preview camera ----
     private float yaw = -35, pitch = 25, zoom = 1;
+    /** Show the Shape Generator's selected shape (built with the palette) instead of the test room. */
+    private boolean showShape = false;
+    private final ShapePreview shapePreview = new ShapePreview();
 
     // ---- containers refreshed on change ----
     private FlowLayout root, left, suggestionRow, tabs, content;
@@ -236,6 +240,11 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
                 .tooltip(Component.translatable("effortlessbuilding.screen.palette_save_favorite.description")));
 
         left.child(label(Component.translatable("effortlessbuilding.screen.palette_preview"), 0xAAAAAA).maxWidth(LEFT_W - 12).margins(Insets.top(4)));
+        left.child(w(Components.button(Component.translatable(showShape
+                        ? "effortlessbuilding.screen.palette_scene_shape" : "effortlessbuilding.screen.palette_scene_room"),
+                b -> { showShape = !showShape; fillLeft(); }))
+                .horizontalSizing(Sizing.fill(100))
+                .tooltip(Component.translatable("effortlessbuilding.screen.palette_scene.description")));
         left.child(new PreviewComponent().sizing(Sizing.fill(100), Sizing.expand()));
         if (!enabled) left.child(label(Component.translatable("effortlessbuilding.screen.palette_off_hint"), 0xFFAA66).maxWidth(LEFT_W - 12));
     }
@@ -637,7 +646,11 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
         public void draw(OwoUIDrawContext g, int mouseX, int mouseY, float partialTicks, float delta) {
             g.fill(x, y, x + width, y + height, 0xFF1B1D22);
             List<Item> blocks = currentBlocks();
-            if (blocks.isEmpty()) {
+            if (showShape) {
+                shapePreview.render(g, font, x, y, width, height, ShapeClientState.getActive());
+                // Menus and tooltips drawn later must not hide behind the blocks
+                com.mojang.blaze3d.systems.RenderSystem.clear(256, net.minecraft.client.Minecraft.ON_OSX);
+            } else if (blocks.isEmpty()) {
                 // Wrapped to the preview's width, centered
                 var lines = font.split(Component.translatable("effortlessbuilding.screen.palette_empty"), width - 8);
                 int ty = y + height / 2 - lines.size() * 5;
@@ -718,6 +731,7 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
 
         @Override
         public boolean onMouseDrag(double mouseX, double mouseY, double deltaX, double deltaY, int button) {
+            if (showShape) { shapePreview.drag(deltaX, deltaY); return true; }
             yaw += (float) deltaX * 0.9f;
             pitch = Math.max(-89, Math.min(89, pitch + (float) deltaY * 0.9f));
             return true;
@@ -725,6 +739,7 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
 
         @Override
         public boolean onMouseScroll(double mouseX, double mouseY, double amount) {
+            if (showShape) { shapePreview.scroll(ShapeClientState.getActive(), amount); return true; }
             zoom = Math.max(0.4f, Math.min(4f, zoom * (amount > 0 ? 1.15f : 1 / 1.15f)));
             return true;
         }
