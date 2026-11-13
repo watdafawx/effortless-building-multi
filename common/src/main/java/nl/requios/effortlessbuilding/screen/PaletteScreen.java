@@ -647,7 +647,13 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
             g.fill(x, y, x + width, y + height, 0xFF1B1D22);
             List<Item> blocks = currentBlocks();
             if (showShape) {
-                shapePreview.render(g, font, x, y, width, height, ShapeClientState.getActive());
+                // Follow the palette being edited here, even while it is switched off
+                shapePreview.useOverride(palette, blocks.isEmpty() ? null : blocks);
+                try {
+                    shapePreview.render(g, font, x, y, width, height, ShapeClientState.getActive());
+                } finally {
+                    shapePreview.useOverride(null, null);
+                }
                 // Menus and tooltips drawn later must not hide behind the blocks
                 com.mojang.blaze3d.systems.RenderSystem.clear(256, net.minecraft.client.Minecraft.ON_OSX);
             } else if (blocks.isEmpty()) {

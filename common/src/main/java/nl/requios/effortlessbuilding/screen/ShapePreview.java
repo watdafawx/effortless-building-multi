@@ -107,7 +107,7 @@ public final class ShapePreview {
         }
         List<Item> blocks = paletteBlocks();
         if (blocks.isEmpty()) return null;
-        BlockPalette palette = PaletteClientState.getPalette();
+        BlockPalette palette = overridePalette != null ? overridePalette : PaletteClientState.getPalette();
         int index = palette.pattern().index(blocks.size(), palette.band(), c.x(), c.y(), c.z(), minY, maxY,
                 BlockPos.asLong(c.x(), c.y(), c.z()));
         return blocks.get(index);
@@ -150,7 +150,20 @@ public final class ShapePreview {
         return mc.player != null && mc.player.getMainHandItem().getItem() instanceof BlockItem b ? b : null;
     }
 
-    private static List<Item> paletteBlocks() {
+    /**
+     * Shows this palette (and its blocks) instead of the active one, even when the palette is switched off.
+     * The Block Palette screen uses it so its preview follows what is being edited. Pass nulls to stop.
+     */
+    public void useOverride(@Nullable BlockPalette palette, @Nullable List<Item> blocks) {
+        overridePalette = palette;
+        overrideBlocks = blocks;
+    }
+
+    private BlockPalette overridePalette;
+    private List<Item> overrideBlocks;
+
+    private List<Item> paletteBlocks() {
+        if (overrideBlocks != null) return overrideBlocks;
         BlockPalette palette = PaletteClientState.getActive();
         Minecraft mc = Minecraft.getInstance();
         if (palette == null || mc.player == null) return List.of();
@@ -284,7 +297,8 @@ public final class ShapePreview {
 
     /** Rebuilds the visible-face list when the shape or the shown layers change. */
     private void updateFaces(ShapeParams params, List<Cell> all, int minY) {
-        Object paletteKey = List.of(paletteBlocks(), PaletteClientState.getPalette(), BlockColorCache.colors().size());
+        Object paletteKey = List.of(paletteBlocks(), overridePalette != null ? overridePalette : PaletteClientState.getPalette(),
+                BlockColorCache.colors().size());
         if (params.equals(facesParams) && layer == facesLayer && highlight == facesHighlight && paletteKey.equals(facesPalette)) return;
         facesParams = params;
         facesLayer = layer;
