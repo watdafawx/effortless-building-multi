@@ -479,14 +479,17 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                 minY = Math.min(minY, c.y()); maxY = Math.max(maxY, c.y());
             }
             int span = Math.max(maxX - minX, maxZ - minZ) + 1;
-            int[] top = new int[THUMB * THUMB];
-            Arrays.fill(top, Integer.MIN_VALUE);
+            // The highest block of every column, then each thumbnail pixel looks up its column (no gaps when a small shape is enlarged)
+            Map<Long, Map.Entry<Cell, Integer>> highest = new HashMap<>();
             for (var e : labels.entrySet()) {
                 Cell c = e.getKey();
-                int px = (c.x() - minX) * THUMB / span, pz = (c.z() - minZ) * THUMB / span;
-                int i = pz * THUMB + px;
-                if (c.y() <= top[i]) continue;
-                top[i] = c.y();
+                highest.merge((((long) c.x() << 32) ^ (c.z() & 0xFFFFFFFFL)), e, (a, b) -> b.getKey().y() > a.getKey().y() ? b : a);
+            }
+            for (int i = 0; i < THUMB * THUMB; i++) {
+                int cx = minX + (i % THUMB) * span / THUMB, cz = minZ + (i / THUMB) * span / THUMB;
+                var e = highest.get((((long) cx << 32) ^ (cz & 0xFFFFFFFFL)));
+                if (e == null) continue;
+                Cell c = e.getKey();
                 int base = 0xE8A33D;
                 Integer label = e.getValue();
                 if (label != null && label >= 0 && label < p.parts().size() && !p.parts().get(label).block().isEmpty()) {
@@ -506,20 +509,59 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         return ShapeParams.defaults(type).withOrientation(ShapeParams.Orientation.FLAT);
     }
 
-    /** Draws a design's thumbnail; a file icon when it has no blocks of its own (a schematic). */
+    /** Thumbnails built so far this frame; building one generates the whole shape, so only a few are done per frame. */
+    private static int thumbnailBudget;
+
+    /**
+     * Draws a design's thumbnail; a file icon when it has no blocks of its own (a schematic). The pixels are merged
+     * into a few rectangles once, so drawing a row costs a handful of fills instead of one per pixel.
+     */
     private static class ThumbnailComponent extends BaseComponent {
         private final ShapeParams params;
+        /** x, y, width, height, color per rectangle; null until built. */
+        private int[] rects;
+        private boolean file;
 
         ThumbnailComponent(ShapeParams params) {
             this.params = params;
             sizing(Sizing.fixed(THUMB), Sizing.fixed(THUMB));
         }
 
+        private void build() {
+            int[] pixels = thumbnail(params);
+            file = true;
+            for (int p : pixels) if (p != 0) { file = false; break; }
+            List<int[]> out = new ArrayList<>();
+            boolean[] used = new boolean[pixels.length];
+            for (int py = 0; py < THUMB; py++) {
+                for (int px = 0; px < THUMB; px++) {
+                    int i = py * THUMB + px;
+                    if (pixels[i] == 0 || used[i]) continue;
+                    int w = 1;
+                    while (px + w < THUMB && !used[i + w] && pixels[i + w] == pixels[i]) w++;
+                    int h = 1;
+                    grow:
+                    while (py + h < THUMB) {
+                        for (int k = 0; k < w; k++) if (used[(py + h) * THUMB + px + k] || pixels[(py + h) * THUMB + px + k] != pixels[i]) break grow;
+                        h++;
+                    }
+                    for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) used[(py + dy) * THUMB + px + dx] = true;
+                    out.add(new int[]{px, py, w, h, pixels[i]});
+                }
+            }
+            rects = new int[out.size() * 5];
+            for (int r = 0; r < out.size(); r++) System.arraycopy(out.get(r), 0, rects, r * 5, 5);
+        }
+
         @Override
         public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-            int[] pixels = thumbnail(params);
             context.fill(x, y, x + THUMB, y + THUMB, 0xFF151515);
-            if (Arrays.stream(pixels).allMatch(p -> p == 0)) {
+            if (rects == null) {
+                if (thumbnailBudget <= 0) return; // a later frame builds it
+                thumbnailBudget--;
+                build();
+            }
+            if (file) {
                 // A page with a folded corner
                 context.fill(x + 4, y + 2, x + 10, y + 14, 0xFF8A8A8A);
                 context.fill(x + 10, y + 5, x + 12, y + 14, 0xFF8A8A8A);
@@ -527,8 +569,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                 for (int line = 0; line < 3; line++) context.fill(x + 6, y + 6 + line * 2, x + 10, y + 7 + line * 2, 0xFF4A4A4A);
                 return;
             }
-            for (int i = 0; i < pixels.length; i++) {
-                if (pixels[i] != 0) context.fill(x + i % THUMB, y + i / THUMB, x + i % THUMB + 1, y + i / THUMB + 1, pixels[i]);
+            for (int r = 0; r < rects.length; r += 5) {
+                context.fill(x + rects[r], y + rects[r + 1], x + rects[r] + rects[r + 2], y + rects[r + 1] + rects[r + 3], rects[r + 4]);
             }
         }
     }
@@ -1271,8 +1313,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
     @Override
     public void render(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        thumbnailBudget = 3;
         trackChanges();
-        preview.highlight = editing >= 0 ? editing : Integer.MIN_VALUE;
+        preview.highlight =editing >= 0 ? editing : Integer.MIN_VALUE;
         if (undoButton != null) {
             undoButton.active(!undo.isEmpty());
             redoButton.active(!redo.isEmpty());

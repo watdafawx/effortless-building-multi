@@ -71,8 +71,22 @@ public final class ShapePreview {
     // Cells and their blocks
     // =========================================================================
 
+    /** Bounding box and size text of the cells, worked out once per generated shape instead of every frame. */
+    private final int[] statMin = new int[3], statMax = new int[3];
+    private String statText;
+
+    private void computeStats() {
+        Arrays.fill(statMin, Integer.MAX_VALUE);
+        Arrays.fill(statMax, Integer.MIN_VALUE);
+        for (Cell c : cells) {
+            int[] v = {c.x(), c.y(), c.z()};
+            for (int a = 0; a < 3; a++) { statMin[a] = Math.min(statMin[a], v[a]); statMax[a] = Math.max(statMax[a], v[a]); }
+        }
+        statText = null;
+    }
+
     public List<Cell> cells(ShapeParams params) {
-        if (!params.equals(cellsParams)) {
+        if (params != cellsParams && !params.equals(cellsParams)) {
             Minecraft mc = Minecraft.getInstance();
             int maxAxis = mc.player != null ? ServerConfig.INSTANCE.getMaxBlocksPerAxis(mc.player) : 1000;
             labels = ShapeGenerator.generateLabeled(params, maxAxis, SchematicLibrary::cells);
@@ -84,6 +98,7 @@ public final class ShapePreview {
             all.addAll(axle);
             cells = List.copyOf(all);
             cellsParams = params;
+            computeStats();
         }
         return cells;
     }
@@ -185,13 +200,7 @@ public final class ShapePreview {
         List<Cell> all = cells(params);
         if (all.isEmpty()) return 0;
         int axis = switch (view) { case FRONT -> 2; case SIDE -> 0; default -> 1; };
-        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
-        for (Cell c : all) {
-            int v = axis == 0 ? c.x() : axis == 1 ? c.y() : c.z();
-            lo = Math.min(lo, v);
-            hi = Math.max(hi, v);
-        }
-        return hi - lo + 1;
+        return statMax[axis] - statMin[axis] + 1;
     }
 
     public void stepLayer(ShapeParams params, int dir) {
@@ -218,15 +227,12 @@ public final class ShapePreview {
     public String sizeText(ShapeParams params) {
         List<Cell> all = cells(params);
         if (all.isEmpty()) return I18n.get("effortlessbuilding.screen.nothing_to_build");
-        int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
-        int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
-        for (Cell c : all) {
-            int[] v = {c.x(), c.y(), c.z()};
-            for (int a = 0; a < 3; a++) { min[a] = Math.min(min[a], v[a]); max[a] = Math.max(max[a], v[a]); }
+        if (statText == null) {
+            statText = I18n.get("effortlessbuilding.screen.block_count", all.size()) + "  ·  "
+                    + (statMax[0] - statMin[0] + 1) + " × " + (statMax[1] - statMin[1] + 1) + " × " + (statMax[2] - statMin[2] + 1)
+                    + " " + I18n.get("effortlessbuilding.screen.dimensions");
         }
-        return I18n.get("effortlessbuilding.screen.block_count", all.size()) + "  ·  "
-                + (max[0] - min[0] + 1) + " × " + (max[1] - min[1] + 1) + " × " + (max[2] - min[2] + 1)
-                + " " + I18n.get("effortlessbuilding.screen.dimensions");
+        return statText;
     }
 
     // =========================================================================
@@ -255,12 +261,7 @@ public final class ShapePreview {
             g.drawCenteredString(font, I18n.get("effortlessbuilding.screen.nothing_to_build"), x + w / 2, y + h / 2 - 4, 0x888888);
             return;
         }
-        int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
-        int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
-        for (Cell c : all) {
-            int[] v = {c.x(), c.y(), c.z()};
-            for (int a = 0; a < 3; a++) { min[a] = Math.min(min[a], v[a]); max[a] = Math.max(max[a], v[a]); }
-        }
+        int[] min = statMin, max = statMax;
         int depth = depth(params);
         if (layer >= depth) layer = -1;
         if (view == View.THREE_D) render3D(g, x, y, w, h, params, all, min[1]);
@@ -295,11 +296,20 @@ public final class ShapePreview {
         RenderSystem.clear(256, Minecraft.ON_OSX);
     }
 
+    private Object cachedPaletteKey;
+    private long paletteKeyTime;
+
     /** Rebuilds the visible-face list when the shape or the shown layers change. */
     private void updateFaces(ShapeParams params, List<Cell> all, int minY) {
-        Object paletteKey = List.of(paletteBlocks(), overridePalette != null ? overridePalette : PaletteClientState.getPalette(),
-                BlockColorCache.colors().size());
-        if (params.equals(facesParams) && layer == facesLayer && highlight == facesHighlight && paletteKey.equals(facesPalette)) return;
+        // Resolving the palette scans the inventory: look again a few times a second, not every frame
+        long now = System.currentTimeMillis();
+        if (cachedPaletteKey == null || now - paletteKeyTime > 250 || overridePalette != null) {
+            cachedPaletteKey = List.of(paletteBlocks(), overridePalette != null ? overridePalette : PaletteClientState.getPalette(),
+                    BlockColorCache.colors().size());
+            paletteKeyTime = now;
+        }
+        Object paletteKey = cachedPaletteKey;
+        if ((params == facesParams || params.equals(facesParams)) && layer == facesLayer && highlight == facesHighlight && paletteKey.equals(facesPalette)) return;
         facesParams = params;
         facesLayer = layer;
         facesHighlight = highlight;

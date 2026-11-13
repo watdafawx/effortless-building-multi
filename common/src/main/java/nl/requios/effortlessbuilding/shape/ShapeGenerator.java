@@ -74,7 +74,7 @@ public final class ShapeGenerator {
             }
         }
         // The main shape's rotation turns the whole combination
-        return clip(rotateLabeled(result, p.get(ShapeType.ROTATE_X), p.get(ShapeType.ROTATE_Y), p.get(ShapeType.ROTATE_Z)), maxAxis);
+        return clip(moveAnchor(rotateLabeled(result, p.get(ShapeType.ROTATE_X), p.get(ShapeType.ROTATE_Y), p.get(ShapeType.ROTATE_Z)), p), maxAxis);
     }
 
     /** The axis a shape's face looks along: up for flat shapes, through the face for upright ones (0 x, 1 y, 2 z). */
@@ -314,6 +314,12 @@ public final class ShapeGenerator {
             case DOME -> dome(p, local);
             case STAIRS -> stairs(p, local);
             case PIPE -> pipe(p, local);
+            case BOX -> box(p, local);
+            case SPHERE -> sphere(p, local);
+            case CYLINDER -> cylinder(p, local);
+            case WEDGE -> wedge(p, local);
+            case CAPSULE -> capsule(p, local);
+            case OCTAHEDRON -> octahedron(p, local);
             case SCHEMATIC -> { }
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
@@ -877,7 +883,9 @@ public final class ShapeGenerator {
     /** Shapes whose hollow form is a 3D shell; the others handle hollow themselves. */
     private static boolean shellIn3D(ShapeType type) {
         return type == ShapeType.TORUS || type == ShapeType.ELLIPSOID || type == ShapeType.CONE
-                || type == ShapeType.PYRAMID;
+                || type == ShapeType.PYRAMID || type == ShapeType.BOX || type == ShapeType.SPHERE
+                || type == ShapeType.CYLINDER || type == ShapeType.WEDGE || type == ShapeType.CAPSULE
+                || type == ShapeType.OCTAHEDRON;
     }
 
     /** Keeps the cells with at least one empty face neighbor. */
@@ -923,6 +931,97 @@ public final class ShapeGenerator {
         List<Cell> anchored = new ArrayList<>(world.size());
         for (Cell c : world) anchored.add(new Cell(c.x(), c.y() - minY, c.z()));
         return anchored;
+    }
+
+    /**
+     * Moves the finished shape so the chosen anchor point (see {@link ShapeType#ANCHOR}), shifted by the anchor
+     * offsets, lands on the placement point. The default (base center, no offset) leaves it as it is.
+     */
+    static Map<Cell, Integer> moveAnchor(Map<Cell, Integer> cells, ShapeParams p) {
+        int mode = p.getInt(ShapeType.ANCHOR);
+        int ox = p.getInt(ShapeType.ANCHOR_X), oy = p.getInt(ShapeType.ANCHOR_Y), oz = p.getInt(ShapeType.ANCHOR_Z);
+        if ((mode == 0 && ox == 0 && oy == 0 && oz == 0) || cells.isEmpty()) return cells;
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
+        int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+        for (Cell c : cells.keySet()) {
+            int[] v = {c.x(), c.y(), c.z()};
+            for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a]); }
+        }
+        // The anchor point in the shape's own frame (x and z are centered already, y = 0 is the base)
+        int ax = 0, ay = 0, az = 0;
+        switch (mode) {
+            case 1 -> { ax = Math.floorDiv(lo[0] + hi[0], 2); ay = Math.floorDiv(lo[1] + hi[1], 2); az = Math.floorDiv(lo[2] + hi[2], 2); }
+            case 2 -> { ax = Math.floorDiv(lo[0] + hi[0], 2); ay = hi[1]; az = Math.floorDiv(lo[2] + hi[2], 2); }
+            case 3 -> { ax = lo[0]; ay = lo[1]; az = lo[2]; }
+            default -> { }
+        }
+        int dx = -(ax + ox), dy = -(ay + oy), dz = -(az + oz);
+        Map<Cell, Integer> moved = new HashMap<>(cells.size() * 2);
+        for (Map.Entry<Cell, Integer> e : cells.entrySet()) {
+            Cell c = e.getKey();
+            moved.put(new Cell(c.x() + dx, c.y() + dy, c.z() + dz), e.getValue());
+        }
+        return moved;
+    }
+
+    // -------------------------------------------------------------------------
+    // Basic solids
+    // -------------------------------------------------------------------------
+
+    /** Cuboid, 2 * size + 1 wide and 2 * length + 1 long. */
+    private static void box(ShapeParams p, Set<Cell> out) {
+        int rx = p.size(), rv = p.getInt("length"), height = p.getInt("height");
+        for (int u = -rx; u <= rx; u++)
+            for (int v = -rv; v <= rv; v++)
+                for (int w = 0; w < height; w++) out.add(new Cell(u, v, w));
+    }
+
+    private static void sphere(ShapeParams p, Set<Cell> out) {
+        int r = p.size();
+        for (int u = -r; u <= r; u++)
+            for (int v = -r; v <= r; v++)
+                for (int w = -r; w <= r; w++)
+                    if (Math.sqrt(u * u + v * v + w * w) < r + 0.5) out.add(new Cell(u, v, w));
+    }
+
+    private static void cylinder(ShapeParams p, Set<Cell> out) {
+        int r = p.size(), height = p.getInt("height");
+        for (int u = -r; u <= r; u++)
+            for (int v = -r; v <= r; v++)
+                if (Math.hypot(u, v) < r + 0.5)
+                    for (int w = 0; w < height; w++) out.add(new Cell(u, v, w));
+    }
+
+    /** Ramp: every column is as tall as the slope from the full height on the -v side down to the +v side. */
+    private static void wedge(ShapeParams p, Set<Cell> out) {
+        int rx = p.size(), rv = p.getInt("length"), height = p.getInt("height");
+        double span = 2.0 * rv + 1;
+        for (int v = -rv; v <= rv; v++) {
+            int columnHeight = Math.max(1, (int) Math.ceil(height * (1 - (v + rv) / span)));
+            for (int u = -rx; u <= rx; u++)
+                for (int w = 0; w < columnHeight; w++) out.add(new Cell(u, v, w));
+        }
+    }
+
+    /** Cylinder with a half sphere on each end; {@code height} is the whole length. */
+    private static void capsule(ShapeParams p, Set<Cell> out) {
+        int r = p.size(), height = Math.max(p.getInt("height"), 1);
+        int low = r, high = height - 1 - r; // the straight part is between these layers
+        for (int u = -r; u <= r; u++)
+            for (int v = -r; v <= r; v++)
+                for (int w = 0; w < height; w++) {
+                    int along = high >= low ? Math.max(low, Math.min(high, w)) : (low + high) / 2;
+                    if (Math.sqrt(u * u + v * v + (w - along) * (w - along)) < r + 0.5) out.add(new Cell(u, v, w));
+                }
+    }
+
+    /** Two pyramids base to base: every block within {@code size} steps (taxicab) of the middle. */
+    private static void octahedron(ShapeParams p, Set<Cell> out) {
+        int r = p.size();
+        for (int u = -r; u <= r; u++)
+            for (int v = -r; v <= r; v++)
+                for (int w = -r; w <= r; w++)
+                    if (Math.abs(u) + Math.abs(v) + Math.abs(w) <= r) out.add(new Cell(u, v, w));
     }
 
     /** Drops cells outside the size limit (a span of at most maxAxis blocks, centered on the anchor) and sorts bottom up. */

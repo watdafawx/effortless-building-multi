@@ -134,7 +134,23 @@ public enum ShapeType {
             ParamSpec.length("wall", 1, 1),
             ParamSpec.choice("bend", 0, "straight", "elbow"),
             ParamSpec.length("bend_radius", 4, 1),
-            ParamSpec.length("pipe_arm", 6, 1)));
+            ParamSpec.length("pipe_arm", 6, 1))),
+    /** Cuboid: size is the half-width, so the width is 2 * size + 1 (likewise the length). */
+    BOX(4, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("length", 4, 0),
+            ParamSpec.length("height", 9, 1))),
+    SPHERE(6, true, ShapeParams.Orientation.FLAT, List.of()),
+    CYLINDER(4, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("height", 10, 1))),
+    /** Ramp: full height on the -v side, sloping down to the +v side. */
+    WEDGE(4, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("length", 6, 0),
+            ParamSpec.length("height", 6, 1))),
+    /** Cylinder with a half sphere on each end; the height includes both caps. */
+    CAPSULE(4, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("height", 14, 1))),
+    /** Two pyramids base to base. */
+    OCTAHEDRON(6, true, ShapeParams.Orientation.FLAT, List.of());
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;
@@ -159,8 +175,19 @@ public enum ShapeType {
         all.add(ParamSpec.choice(SMOOTH, 0, "off", "stairs", "slabs", "slopes"));
         all.add(ParamSpec.count(PATH_SPACING, 8, 1, 64));
         all.add(ParamSpec.choice(PATH_ALIGN, 1, "off", "on"));
+        // Main shape only: which point of the shape sits on the placement point, and a shift from there
+        all.add(ParamSpec.choice(ANCHOR, 0, "base_center", "center", "top_center", "corner"));
+        all.add(ParamSpec.offset(ANCHOR_X));
+        all.add(ParamSpec.offset(ANCHOR_Y));
+        all.add(ParamSpec.offset(ANCHOR_Z));
         this.params = List.copyOf(all);
     }
+
+    /**
+     * Which point of the shape sits on the placement point: 0 the middle of its base (default), 1 its center,
+     * 2 the middle of its top, 3 its lowest corner. {@link #ANCHOR_X} and friends then move that point, in blocks.
+     */
+    public static final String ANCHOR = "anchor", ANCHOR_X = "anchor_x", ANCHOR_Y = "anchor_y", ANCHOR_Z = "anchor_z";
 
     /** Move every column onto the terrain below it (1) or keep the shape level (0). */
     public static final String FOLLOW_GROUND = "follow_ground";
@@ -172,7 +199,8 @@ public enum ShapeType {
     /** Settings that belong to the whole build, never to a part. */
     public static boolean isBuildSetting(String key) {
         return key.equals(SUPER_GLUE) || key.equals(BEARING) || key.equals(FOLLOW_GROUND) || key.equals(SMOOTH)
-                || key.equals(PATH_SPACING) || key.equals(PATH_ALIGN);
+                || key.equals(PATH_SPACING) || key.equals(PATH_ALIGN)
+                || key.equals(ANCHOR) || key.equals(ANCHOR_X) || key.equals(ANCHOR_Y) || key.equals(ANCHOR_Z);
     }
 
     public static final String ROTATE_X = "rotate_x", ROTATE_Y = "rotate_y", ROTATE_Z = "rotate_z";
