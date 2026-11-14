@@ -131,6 +131,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     // ---- components refreshed on change ----
     private FlowLayout root;
     private @Nullable FlowLayout sidebarList, settings, viewTabs;
+    private @Nullable KeepScroll sidebarScroll, settingsScroll;
     private LabelComponent header, layerLabel;
     private TextBoxComponent nameBox, search;
     private ButtonComponent undoButton, redoButton;
@@ -201,8 +202,13 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private void rebuild() {
+        // Resizing or switching tabs rebuilds the panels: put their scroll positions back
+        double sidebarAt = sidebarScroll != null ? sidebarScroll.offset() : 0;
+        double settingsAt = settingsScroll != null ? settingsScroll.offset() : 0;
         root.clearChildren();
         build(root);
+        if (sidebarScroll != null) sidebarScroll.restore(sidebarAt);
+        if (settingsScroll != null) settingsScroll.restore(settingsAt);
     }
 
     @Override
@@ -231,6 +237,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         FlowLayout body = Containers.horizontalFlow(Sizing.fill(100), Sizing.expand());
         body.gap(GAP);
         sidebarList = null;
+        sidebarScroll = null;
+        settingsScroll = null;
         settings = null;
         if (compact) {
             FlowLayout shared = Ui.panel(Containers.verticalFlow(Sizing.fixed(leftW), Sizing.fill(100)));
@@ -241,14 +249,14 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             tabs.child(pill(I18n.get("effortlessbuilding.screen.settings"), !libraryTab, null, () -> { libraryTab = false; rebuild(); }));
             shared.child(tabs);
             if (libraryTab) fillLibrary(shared, leftW - 10);
-            else shared.child(settingsScroll());
+            else shared.child(buildSettingsScroll());
             body.child(shared);
         } else {
             FlowLayout sidebar = Ui.panel(Containers.verticalFlow(Sizing.fixed(SIDEBAR_W), Sizing.fill(100)));
             fillLibrary(sidebar, SIDEBAR_W - 10);
             body.child(sidebar);
             FlowLayout settingsPanel = Ui.panel(Containers.verticalFlow(Sizing.content(), Sizing.fill(100)));
-            settingsPanel.child(settingsScroll());
+            settingsPanel.child(buildSettingsScroll());
             body.child(settingsPanel);
         }
         body.child(previewPanel());
@@ -315,11 +323,12 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     /** The settings in a scroll area; scrolling over a number field changes it instead. */
-    private io.wispforest.owo.ui.core.Component settingsScroll() {
+    private io.wispforest.owo.ui.core.Component buildSettingsScroll() {
         settings = Containers.verticalFlow(Sizing.content(), Sizing.content());
         settings.gap(2);
         settings.padding(Insets.right(6)); // room for the scrollbar
-        return Containers.verticalScroll(Sizing.content(), compact ? Sizing.expand() : Sizing.fill(100), settings).scrollbarThiccness(3);
+        settingsScroll = new KeepScroll(Sizing.content(), compact ? Sizing.expand() : Sizing.fill(100), settings);
+        return settingsScroll;
     }
 
     /** Preview with its info drawn on top, the view and layer pickers, then materials and export. */
@@ -406,11 +415,13 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         });
         panel.child(w(search));
         sidebarList = Containers.verticalFlow(Sizing.fixed(listW - 6), Sizing.content());
-        panel.child(Containers.verticalScroll(Sizing.fill(100), Sizing.expand(), sidebarList).scrollbarThiccness(3));
+        sidebarScroll = new KeepScroll(Sizing.fill(100), Sizing.expand(), sidebarList);
+        panel.child(sidebarScroll);
     }
 
     private void fillSidebar() {
         if (sidebarList == null) return;
+        double keepScroll = sidebarScroll != null ? sidebarScroll.offset() : 0;
         sidebarList.clearChildren();
         int listW = sidebarList.horizontalSizing().get().value;
         String query = filter.trim().toLowerCase(Locale.ROOT);
@@ -455,6 +466,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                 }, template.params(), listW));
             }
         }
+        if (sidebarScroll != null) sidebarScroll.restore(keepScroll);
     }
 
     private static boolean matches(String name, String query) {
@@ -599,6 +611,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         List<Row> rows = rows();
         measure(rows);
         int contentW = cols * (labelW + fieldW) + (cols - 1) * COL_GAP;
+        double keepScroll = settingsScroll != null ? settingsScroll.offset() : 0;
         settings.clearChildren();
         settings.child(partsList(contentW));
         for (Section section : Section.values()) {
@@ -626,6 +639,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             }
             settings.child(columns);
         }
+        if (settingsScroll != null) settingsScroll.restore(keepScroll);
     }
 
     /** The main shape and its parts; click one to edit it. Each part shows how it combines. */

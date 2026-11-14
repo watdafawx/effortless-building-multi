@@ -66,6 +66,8 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
 
     // ---- right side state ----
     private Tab tab = Tab.ALL;
+    private KeepScroll listScroll; // the favorites / presets list, kept across refreshes
+    private Tab listScrollTab;
     private final BlockGrid grid = new BlockGrid();
     private int suggestCount = 5;
     private Mode lastMode = null;
@@ -330,6 +332,8 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private void fillContent() {
+        double keepScroll = listScroll != null && listScrollTab == tab ? listScroll.offset() : 0;
+        listScroll = null;
         content.clearChildren();
         switch (tab) {
             case ALL -> content.child(new GridComponent().sizing(Sizing.fill(100), Sizing.fill(100)));
@@ -344,7 +348,10 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
                         refresh();
                     }));
                 }
-                content.child(Containers.verticalScroll(Sizing.fill(100), Sizing.fill(100), list).scrollbarThiccness(3));
+                listScroll = new KeepScroll(Sizing.fill(100), Sizing.fill(100), list);
+                listScrollTab = tab;
+                content.child(listScroll);
+                listScroll.restore(keepScroll);
             }
             case PRESETS -> {
                 FlowLayout list = Containers.verticalFlow(Sizing.fill(100), Sizing.content());
@@ -352,7 +359,10 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
                 for (PalettePresets.Preset p : PalettePresets.get()) {
                     list.child(paletteRow(p.name(), p.blocks(), () -> load(p.toPalette(palette)), null));
                 }
-                content.child(Containers.verticalScroll(Sizing.fill(100), Sizing.fill(100), list).scrollbarThiccness(3));
+                listScroll = new KeepScroll(Sizing.fill(100), Sizing.fill(100), list);
+                listScrollTab = tab;
+                content.child(listScroll);
+                listScroll.restore(keepScroll);
             }
         }
     }

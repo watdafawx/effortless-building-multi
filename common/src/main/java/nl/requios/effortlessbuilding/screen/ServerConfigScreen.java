@@ -99,8 +99,7 @@ public class ServerConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        super.init();
-        scrollOffset = 0;
+        super.init(); // (keeps scrollOffset: init runs again on resize)
         widgetOrder.clear();
 
         survAllowBreaking = scratch.survivalAllowBreaking;
@@ -205,6 +204,7 @@ public class ServerConfigScreen extends Screen {
 
         int scrollableArea = height - 20 - BOTTOM_BAR_H; // top margin 20, bottom bar
         maxScroll = Math.max(0, contentHeight - scrollableArea);
+        scrollOffset = Math.min(scrollOffset, maxScroll);
         repositionWidgets();
     }
 

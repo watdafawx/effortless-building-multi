@@ -1,9 +1,7 @@
-## 4.2.44
-
-What's new:
-- Shape Generator: new "Anchor point" setting (base center, center, top center, lowest corner) plus Anchor shift X / Up / Z, so a shape can be placed around, below or beside the spot you click.
-- Six new basic shapes, usable as the main shape or as parts for Unite / Subtract / Intersect / Exclude: Box, Sphere, Cylinder, Wedge / Ramp, Capsule and Octahedron. All can be hollow.
+## 4.2.45
 
 Fixes:
-- The Shape Generator menu is much smoother: the sidebar thumbnails draw far faster (scrolling the shape list was slow) and the preview no longer recomputes its size and bounds every frame.
-- Library thumbnails of small shapes no longer have holes.
+- Shape Generator: picking a shape no longer scrolls the shape list back to the top. The settings panel keeps its position too, including when the window is resized or you switch tabs.
+- Palette screen: the Favorites and Presets lists keep their scroll position when you delete a favorite or reload.
+- Undo history: the list keeps its scroll position when it refreshes.
+- Server config: resizing the window no longer jumps back to the top.

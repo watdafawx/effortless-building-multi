@@ -47,6 +47,7 @@ public class UndoHistoryScreen extends BaseOwoScreen<FlowLayout> {
     private boolean loaded = false;
     private int hovered = -1;
     private FlowLayout list;
+    private KeepScroll listScroll;
 
     public UndoHistoryScreen() {
         super(Component.translatable("effortlessbuilding.screen.undo_history"));
@@ -75,7 +76,8 @@ public class UndoHistoryScreen extends BaseOwoScreen<FlowLayout> {
 
         list = Containers.verticalFlow(Sizing.fill(100), Sizing.content());
         list.gap(1);
-        box.child(Containers.verticalScroll(Sizing.fill(100), Sizing.expand(), list).scrollbarThiccness(3));
+        listScroll = new KeepScroll(Sizing.fill(100), Sizing.expand(), list);
+        box.child(listScroll);
 
         FlowLayout bottom = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
         bottom.child(hspace());
@@ -99,6 +101,7 @@ public class UndoHistoryScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private void fillList() {
+        double keepScroll = listScroll != null ? listScroll.offset() : 0;
         list.clearChildren();
         rowLayouts.clear();
         hovered = -1;
@@ -114,6 +117,7 @@ public class UndoHistoryScreen extends BaseOwoScreen<FlowLayout> {
             }
             list.child(row(i));
         }
+        if (listScroll != null) listScroll.restore(keepScroll);
     }
 
     private FlowLayout row(int index) {
