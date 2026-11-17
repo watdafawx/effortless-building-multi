@@ -44,6 +44,8 @@ Hold ALT to open the radial menu and select a build mode. With a block in hand, 
 
 Build modes can be used to place blocks, break blocks, and interact with certain blocks. When holding a tool, right-clicking will interact with all the blocks in the shape. For example, stripping logs with an axe, pathing with a shovel, tilling with a hoe, and placing liquids with a bucket.
 
+![The radial menu: build modes, start point, filling and quick settings](docs/build-modes.png)
+
 Available build modes:
 * Disabled
 * Single
@@ -67,6 +69,10 @@ Modifiers can place additional blocks for each block you placed. You can enable 
 * Mirror. Place a mirror at a position of a certain size. Each block placed on one side gets mirrored to the other side.
 * Array. Copies the block you placed in a certain direction a certain number of times. Useful for repeated builds like tunnels and walls.
 * Radial Mirror. Divides an area in slices around a central point. Each slice copies your block placements.
+
+![The modifier settings screen with Mirror, Array and Radial Mirror](docs/modifiers.png)
+
+![A pyramid mirrored across a plane, preview locked](docs/modifier-world.png)
 
 ## Randomizer Tool
 
@@ -99,6 +105,8 @@ Here's a small sample of what you can configure:
 * Whether you can break and replace multiple blocks at once, including if tools are required, if they should use durability, etc. By default, you can break and replace blocks that you placed in the same play session.
 
 The functional settings can be found in the radial menu. On a server, you can only edit functional settings if you are an admin.
+
+![Functional settings: reach, limits, breaking and tool rules](docs/server-config.png)
 
 ## Installing
 Needs to be installed on both server and client. Requires owo-lib on the client. Optional: Applied Energistics 2 (pull materials from an ME network).
