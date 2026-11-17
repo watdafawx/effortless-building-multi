@@ -1,4 +1,4 @@
-## 5.0.3
+## 5.0.4
 
-Docs:
-- README now has screenshots of the radial menu, the modifier settings, a mirrored build preview and the functional (survival) settings.
+Fixes:
+- Crash when opening the Shape Generator or Block Palette preview with Sodium installed ("Not building!"). Flat and textured faces are now drawn in separate passes.
