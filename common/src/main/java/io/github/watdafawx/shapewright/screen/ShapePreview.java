@@ -298,24 +298,36 @@ public final class ShapePreview {
         pose.mulPose(Axis.YP.rotationDegrees(yaw));
         pose.translate(-facesCenter[0], -facesCenter[1], -facesCenter[2]);
         Matrix4f matrix = pose.last().pose();
-        VertexConsumer buffer = g.bufferSource().getBuffer(RenderType.debugQuads());
-        VertexConsumer textured = g.bufferSource().getBuffer(RenderType.text(TextureAtlas.LOCATION_BLOCKS));
-        for (int i = 0; i < faces.length; i++) {
-            float[] f = faces[i];
-            int color = (int) f[12];
-            TextureAtlasSprite sprite = faceSprites[i];
-            if (sprite == null) {
+        // Two passes, one buffer each: asking the buffer source for a second render type ends the first
+        // builder ("Not building!"), so flat faces are drawn and flushed before the textured ones.
+        boolean anyFlat = false, anyTextured = false;
+        for (TextureAtlasSprite sprite : faceSprites) { if (sprite == null) anyFlat = true; else anyTextured = true; }
+        if (anyFlat) {
+            VertexConsumer buffer = g.bufferSource().getBuffer(RenderType.debugQuads());
+            for (int i = 0; i < faces.length; i++) {
+                if (faceSprites[i] != null) continue;
+                float[] f = faces[i];
+                int color = (int) f[12];
                 for (int v = 0; v < 4; v++) buffer.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color);
-                continue;
             }
-            // The block's own texture. Drawn from both sides so the winding under the flipped screen axes cannot hide it.
-            for (int pass = 0; pass < 2; pass++) {
-                for (int k = 0; k < 4; k++) {
-                    int v = pass == 0 ? k : 3 - k;
-                    float u = sprite.getU0() + (sprite.getU1() - sprite.getU0()) * f[13 + v * 2];
-                    float t = sprite.getV0() + (sprite.getV1() - sprite.getV0()) * f[14 + v * 2];
-                    textured.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color).setUv(u, t)
-                            .setLight(net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);
+            g.flush();
+        }
+        if (anyTextured) {
+            VertexConsumer textured = g.bufferSource().getBuffer(RenderType.text(TextureAtlas.LOCATION_BLOCKS));
+            for (int i = 0; i < faces.length; i++) {
+                TextureAtlasSprite sprite = faceSprites[i];
+                if (sprite == null) continue;
+                float[] f = faces[i];
+                int color = (int) f[12];
+                // The block's own texture. Drawn from both sides so the winding under the flipped screen axes cannot hide it.
+                for (int pass = 0; pass < 2; pass++) {
+                    for (int k = 0; k < 4; k++) {
+                        int v = pass == 0 ? k : 3 - k;
+                        float u = sprite.getU0() + (sprite.getU1() - sprite.getU0()) * f[13 + v * 2];
+                        float t = sprite.getV0() + (sprite.getV1() - sprite.getV0()) * f[14 + v * 2];
+                        textured.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color).setUv(u, t)
+                                .setLight(net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);
+                    }
                 }
             }
         }
