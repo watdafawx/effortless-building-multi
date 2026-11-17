@@ -1,4 +1,4 @@
-# Effortless Building Multi-Loader
+# Shapewright (based on Effortless Building by Requios)
 
 Minecraft mod for **1.21.1** targeting **NeoForge** and **Fabric**.
 

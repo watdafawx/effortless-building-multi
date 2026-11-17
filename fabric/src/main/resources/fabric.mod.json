@@ -8,21 +8,21 @@
         "${mod_author}"
     ],
     "contact": {
-        "homepage": "https://github.com/Requios/effortless-building-multi",
-        "sources": "https://github.com/Requios/effortless-building-multi"
+        "homepage": "https://github.com/watdafawx/shapewright",
+        "sources": "https://github.com/watdafawx/shapewright"
     },
     "license": "${license}",
     "icon": "${mod_id}.png",
     "environment": "*",
     "entrypoints": {
         "main": [
-            "nl.requios.effortlessbuilding.EffortlessBuilding"
+            "io.github.watdafawx.shapewright.Shapewright"
         ],
         "client": [
-            "nl.requios.effortlessbuilding.EffortlessBuildingClient"
+            "io.github.watdafawx.shapewright.ShapewrightClient"
         ],
         "modmenu": [
-            "nl.requios.effortlessbuilding.ModMenuIntegration"
+            "io.github.watdafawx.shapewright.ModMenuIntegration"
         ]
     },
     "mixins": [

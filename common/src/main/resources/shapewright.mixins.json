@@ -1,0 +1,22 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.github.watdafawx.shapewright.mixin",
+  "refmap": "${mod_id}.refmap.json",
+  "compatibilityLevel": "JAVA_18",
+  "mixins": [
+    "BucketItemAccessor",
+    "MixinBlockItem"
+  ],
+  "client": [
+    "KeyMappingAccessor",
+    "MixinGameRenderer",
+    "MixinMouseHandler",
+    "MixinMinecraft"
+  ],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
+

@@ -7,21 +7,19 @@ plugins {
     id 'io.github.pacifistmc.forgix' version '1.2.9'
 }
 
-// Fork: mod version is <fork_base>.<fork_revision> from fork.properties (gradle.properties 'version' stays upstream's)
-def forkProps = new Properties()
-file('fork.properties').withInputStream { forkProps.load(it) }
-allprojects { version = "${forkProps.fork_base}.${forkProps.fork_revision}" }
+// Mod version comes from gradle.properties (own mod, plain semver)
+allprojects { version = project.property('version') }
 
 forgix {
-    group = 'nl.requios.effortlessbuilding'
-    mergedJarName = "effortlessbuilding-${version}+${project.property('minecraft_version')}.jar"
+    group = 'io.github.watdafawx.shapewright'
+    mergedJarName = "shapewright-${version}+${project.property('minecraft_version')}.jar"
     outputDir = 'build/libs/merged'
 
     fabric {
-        jarLocation = "build/libs/effortlessbuilding-fabric-${project.property('minecraft_version')}-${version}.jar"
+        jarLocation = "build/libs/shapewright-fabric-${project.property('minecraft_version')}-${version}.jar"
     }
     neoforge {
-        jarLocation = "build/libs/effortlessbuilding-neoforge-${project.property('minecraft_version')}-${version}.jar"
+        jarLocation = "build/libs/shapewright-neoforge-${project.property('minecraft_version')}-${version}.jar"
     }
 }
 
@@ -29,7 +27,7 @@ forgix {
 // After mergeJars runs, rename the double-prefixed service files to single-prefix.
 tasks.named('mergeJars').configure {
     doLast {
-        def mergedJar = file("build/libs/merged/effortlessbuilding-${version}+${project.property('minecraft_version')}.jar")
+        def mergedJar = file("build/libs/merged/shapewright-${version}+${project.property('minecraft_version')}.jar")
         if (!mergedJar.exists()) return
         
         def fixedJar = file("${mergedJar}.tmp")

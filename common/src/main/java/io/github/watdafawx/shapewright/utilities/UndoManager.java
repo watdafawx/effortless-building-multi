@@ -1,0 +1,399 @@
+package io.github.watdafawx.shapewright.utilities;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import io.github.watdafawx.shapewright.Constants;
+import io.github.watdafawx.shapewright.compat.FramedCompat;
+import io.github.watdafawx.shapewright.compat.create.CreateGlue;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.*;
+
+/**
+ * Server-side per-player undo/redo stacks.
+ * Each entry records the block positions with their old and new states.
+ * <p>
+ * Item accounting follows the game mode the operation was made in, not the current one:
+ * a survival placement is refunded on undo and paid again on redo; a creative one is free both ways,
+ * as are tool interactions and fluids, which never charged block items.
+ * Items that came from the AE2 network go back to it; the rest go to the inventory.
+ */
+public class UndoManager {
+
+    private static final int MAX_STACK_SIZE = 50;
+
+    private static final Map<UUID, Deque<UndoEntry>> undoStacks = new HashMap<>();
+    private static final Map<UUID, Deque<UndoEntry>> redoStacks = new HashMap<>();
+
+    /**
+     * @param oldData the block entity data to restore with {@code oldState}, only kept for Framed Blocks (so a camo
+     *                survives undo); null otherwise
+     * @param newData the same for {@code newState}, captured when the change is undone so redo can bring it back
+     */
+    public record BlockChange(BlockState oldState, BlockState newState, @Nullable CompoundTag oldData,
+                              @Nullable CompoundTag newData) {
+        public BlockChange(BlockState oldState, BlockState newState) {
+            this(oldState, newState, null, null);
+        }
+
+        /** A change that also remembers the framed block being replaced, camo and all. */
+        public static BlockChange of(Level level, BlockPos pos, BlockState oldState, BlockState newState) {
+            return new BlockChange(oldState, newState, snapshot(level, pos), null);
+        }
+
+        BlockChange withNewData(@Nullable CompoundTag data) {
+            return new BlockChange(oldState, newState, oldData, data);
+        }
+    }
+
+    /** The block entity data of a framed block at {@code pos} (null for anything else: chests and the like are not copied). */
+    public static @Nullable CompoundTag snapshot(Level level, BlockPos pos) {
+        if (!FramedCompat.isFramed(level.getBlockState(pos))) return null;
+        BlockEntity be = level.getBlockEntity(pos);
+        return be == null ? null : be.saveWithFullMetadata(level.registryAccess());
+    }
+
+    private static void restore(Level level, BlockPos pos, BlockState state, @Nullable CompoundTag data) {
+        level.setBlock(pos, state, 3);
+        if (data == null || !FramedCompat.isFramed(state)) return;
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be == null) return;
+        be.loadWithComponents(data, level.registryAccess());
+        be.setChanged();
+        level.sendBlockUpdated(pos, state, state, 3);
+    }
+
+    /**
+     * A single undo-able operation: a set of block changes in a specific dimension.
+     *
+     * @param free         no item accounting: made in creative, or not paid with block items
+     * @param networkDebit per item, how many of the placed blocks were paid from the AE2 network;
+     *                     updated as undo refunds them and redo pays again
+     */
+    public record UndoEntry(ResourceKey<Level> dimension, Map<BlockPos, BlockChange> changes,
+                            boolean free, Map<Item, Integer> networkDebit, long time) {}
+
+    /**
+     * One line of the history screen: the operation's main block, how many blocks it changed,
+     * what it did and how long ago.
+     */
+    public record Summary(Item item, int blocks, Kind kind, long ageSeconds, boolean free) {
+        public enum Kind { PLACED, BROKEN, CHANGED }
+    }
+
+    /** The undo stack (newest first) or the redo stack (next redo first), summarized. */
+    public static List<Summary> history(ServerPlayer player, boolean redo) {
+        Deque<UndoEntry> stack = (redo ? redoStacks : undoStacks).get(player.getUUID());
+        if (stack == null) return List.of();
+        long now = System.currentTimeMillis();
+        List<Summary> out = new ArrayList<>(stack.size());
+        for (UndoEntry entry : stack) {
+            int placed = 0, broken = 0;
+            Map<Item, Integer> counts = new HashMap<>();
+            for (BlockChange change : entry.changes().values()) {
+                Kind kind = Kind.of(change);
+                if (kind == Kind.BREAK) broken++; else if (kind == Kind.PLACE) placed++;
+                BlockState shown = change.newState().isAir() ? change.oldState() : change.newState();
+                Item item = itemOf(shown);
+                if (item != Items.AIR) counts.merge(item, 1, Integer::sum);
+            }
+            Item main = counts.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(Items.AIR);
+            int total = entry.changes().size();
+            Summary.Kind kind = placed == total ? Summary.Kind.PLACED : broken == total ? Summary.Kind.BROKEN : Summary.Kind.CHANGED;
+            out.add(new Summary(main, total, kind, Math.max(0, (now - entry.time()) / 1000), entry.free()));
+        }
+        return out;
+    }
+
+    /** How a change is reverted or re-applied, and which items that costs or returns. */
+    private enum Kind {
+        /** Air/replaceable → block. */
+        PLACE,
+        /** Block → air. */
+        BREAK,
+        /** Solid block → other block (replace mode). */
+        REPLACE,
+        /** Anything else (tool interactions, fluids): restored without items. */
+        OTHER;
+
+        static Kind of(BlockChange change) {
+            BlockState oldState = change.oldState(), newState = change.newState();
+            if (newState.isAir()) return oldState.isAir() ? OTHER : BREAK;
+            if (oldState.canBeReplaced()) return PLACE;
+            return itemOf(newState) != Items.AIR && itemOf(oldState) != Items.AIR ? REPLACE : OTHER;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Recording
+    // -------------------------------------------------------------------------
+
+    /**
+     * Record a block placement or break paid in items (unless in creative). Clears the redo stack.
+     *
+     * @param networkDebit per item, how many placed blocks were paid from the AE2 network
+     */
+    public static void recordOperation(ServerPlayer player, ResourceKey<Level> dimension,
+                                       Map<BlockPos, BlockChange> changes, Map<Item, Integer> networkDebit) {
+        record(player, new UndoEntry(dimension, changes, player.isCreative(), new HashMap<>(networkDebit), System.currentTimeMillis()));
+    }
+
+    /**
+     * Record an operation that undo/redo reverts without moving items (tool interactions, fluids).
+     * Clears the redo stack.
+     */
+    public static void recordFreeOperation(ServerPlayer player, ResourceKey<Level> dimension,
+                                           Map<BlockPos, BlockChange> changes) {
+        record(player, new UndoEntry(dimension, changes, true, new HashMap<>(), System.currentTimeMillis()));
+    }
+
+    private static void record(ServerPlayer player, UndoEntry entry) {
+        if (entry.changes().isEmpty()) return;
+
+        UUID id = player.getUUID();
+        push(undoStacks.computeIfAbsent(id, k -> new ArrayDeque<>()), entry);
+
+        // New operation invalidates redo history
+        redoStacks.computeIfAbsent(id, k -> new ArrayDeque<>()).clear();
+    }
+
+    // -------------------------------------------------------------------------
+    // Undo / Redo
+    // -------------------------------------------------------------------------
+
+    /**
+     * Undo the most recent operation. Returns the number of blocks restored, or -1 if nothing to undo.
+     * Positions changed by someone else since are skipped. For survival operations, undoing a placement
+     * refunds the item; restoring a broken or replaced block costs its item (inventory, then AE2), and
+     * is skipped if the player can't pay (a replaced position is left as air).
+     */
+    public static int undo(ServerPlayer player) {
+        UUID id = player.getUUID();
+        Deque<UndoEntry> undoStack = undoStacks.get(id);
+        if (undoStack == null || undoStack.isEmpty()) return -1;
+
+        UndoEntry entry = undoStack.pop();
+        ServerLevel level = player.server.getLevel(entry.dimension());
+        if (level == null) {
+            Constants.LOG.warn("[Shapewright] Cannot undo: dimension {} no longer loaded", entry.dimension());
+            return -1;
+        }
+
+        // Keep positions that are still as we left them
+        List<Map.Entry<BlockPos, BlockChange>> todo = new ArrayList<>();
+        for (var e : entry.changes().entrySet()) {
+            BlockState current = level.getBlockState(e.getKey());
+            BlockChange change = e.getValue();
+            if (entry.free() || Kind.of(change) == Kind.OTHER || current.equals(change.newState())) {
+                todo.add(e);
+            }
+        }
+
+        // What stands there now (a camo, say) is what redo has to bring back
+        for (var e : todo) {
+            CompoundTag now = snapshot(level, e.getKey());
+            if (now != null) e.setValue(e.getValue().withNewData(now));
+        }
+
+        int restored = 0;
+        if (entry.free()) {
+            for (var e : todo) {
+                restore(level, e.getKey(), e.getValue().oldState(), e.getValue().oldData());
+                restored++;
+            }
+        } else {
+            Budget budget = Budget.take(player, todo, change -> switch (Kind.of(change)) {
+                case BREAK, REPLACE -> itemOf(change.oldState());
+                default -> Items.AIR;
+            });
+            Map<Item, Integer> refunds = new HashMap<>();
+            List<BlockPos> restoredPlacements = new ArrayList<>();
+            for (var e : todo) {
+                BlockPos pos = e.getKey();
+                BlockChange change = e.getValue();
+                switch (Kind.of(change)) {
+                    case PLACE -> {
+                        restore(level, pos, change.oldState(), change.oldData());
+                        refunds.merge(itemOf(change.newState()), 1, Integer::sum);
+                    }
+                    case BREAK -> {
+                        if (!budget.spend(itemOf(change.oldState()))) continue;
+                        restore(level, pos, change.oldState(), change.oldData());
+                        restoredPlacements.add(pos);
+                    }
+                    case REPLACE -> {
+                        refunds.merge(itemOf(change.newState()), 1, Integer::sum);
+                        boolean paid = budget.spend(itemOf(change.oldState()));
+                        restore(level, pos, paid ? change.oldState() : Blocks.AIR.defaultBlockState(), paid ? change.oldData() : null);
+                        if (paid) restoredPlacements.add(pos);
+                    }
+                    case OTHER -> restore(level, pos, change.oldState(), change.oldData());
+                }
+                restored++;
+            }
+            refund(player, refunds, entry.networkDebit());
+            budget.refundUnspent(player);
+            PlacedBlockTracker.trackAll(player.getUUID(), entry.dimension(), restoredPlacements);
+        }
+
+        // Super glue laid over this build would otherwise stay behind and glue whatever is built there next
+        CreateGlue.removeWithin(level, entry.changes().keySet());
+
+        push(redoStacks.computeIfAbsent(id, k -> new ArrayDeque<>()), entry);
+        return restored;
+    }
+
+    /**
+     * Redo the most recently undone operation. Returns the number of blocks re-applied, or -1 if nothing to redo.
+     * For survival operations, re-placing costs the item (inventory, then AE2) and is skipped if the player
+     * can't pay; re-breaking gives the item back.
+     */
+    public static int redo(ServerPlayer player) {
+        UUID id = player.getUUID();
+        Deque<UndoEntry> redoStack = redoStacks.get(id);
+        if (redoStack == null || redoStack.isEmpty()) return -1;
+
+        UndoEntry entry = redoStack.pop();
+        ServerLevel level = player.server.getLevel(entry.dimension());
+        if (level == null) {
+            Constants.LOG.warn("[Shapewright] Cannot redo: dimension {} no longer loaded", entry.dimension());
+            return -1;
+        }
+
+        List<Map.Entry<BlockPos, BlockChange>> todo = new ArrayList<>();
+        for (var e : entry.changes().entrySet()) {
+            BlockState current = level.getBlockState(e.getKey());
+            BlockChange change = e.getValue();
+            if (entry.free() || Kind.of(change) == Kind.OTHER || current.equals(change.oldState())) {
+                todo.add(e);
+            }
+        }
+
+        int reapplied = 0;
+        if (entry.free()) {
+            for (var e : todo) {
+                restore(level, e.getKey(), e.getValue().newState(), e.getValue().newData());
+                reapplied++;
+            }
+        } else {
+            Budget budget = Budget.take(player, todo, change -> switch (Kind.of(change)) {
+                case PLACE, REPLACE -> itemOf(change.newState());
+                default -> Items.AIR;
+            });
+            Map<Item, Integer> returned = new HashMap<>();
+            List<BlockPos> placedAgain = new ArrayList<>();
+            for (var e : todo) {
+                BlockPos pos = e.getKey();
+                BlockChange change = e.getValue();
+                Kind kind = Kind.of(change);
+                if ((kind == Kind.PLACE || kind == Kind.REPLACE) && !budget.spend(itemOf(change.newState()))) continue;
+                if (kind == Kind.BREAK || kind == Kind.REPLACE) returned.merge(itemOf(change.oldState()), 1, Integer::sum);
+                if (kind == Kind.PLACE || kind == Kind.REPLACE) placedAgain.add(pos);
+                restore(level, pos, change.newState(), change.newData());
+                reapplied++;
+            }
+            for (var r : returned.entrySet()) {
+                InventoryHelper.giveOrDropItems(player, r.getKey(), r.getValue());
+            }
+            budget.refundUnspent(player);
+            // Whatever redo kept from the network is refundable again by the next undo
+            budget.fromNetwork.forEach((item, n) -> entry.networkDebit().merge(item, n, Integer::sum));
+            PlacedBlockTracker.trackAll(player.getUUID(), entry.dimension(), placedAgain);
+        }
+
+        push(undoStacks.computeIfAbsent(id, k -> new ArrayDeque<>()), entry);
+        return reapplied;
+    }
+
+    // -------------------------------------------------------------------------
+    // Cleanup
+    // -------------------------------------------------------------------------
+
+    /**
+     * Clear undo/redo stacks for a player (call on disconnect).
+     */
+    public static void clearPlayer(UUID playerId) {
+        undoStacks.remove(playerId);
+        redoStacks.remove(playerId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
+
+    private static void push(Deque<UndoEntry> stack, UndoEntry entry) {
+        stack.push(entry);
+        if (stack.size() > MAX_STACK_SIZE) stack.removeLast();
+    }
+
+    private static Item itemOf(BlockState state) {
+        return state.getBlock().asItem();
+    }
+
+    /**
+     * Refunds items per type: the part that was paid from the network goes back to it
+     * (and is taken off the entry's debit), the rest goes to the inventory.
+     */
+    private static void refund(ServerPlayer player, Map<Item, Integer> refunds, Map<Item, Integer> networkDebit) {
+        for (var r : refunds.entrySet()) {
+            Item item = r.getKey();
+            if (item == Items.AIR) continue;
+            int toNetwork = Math.min(r.getValue(), networkDebit.getOrDefault(item, 0));
+            InventoryHelper.returnItems(player, item, r.getValue(), toNetwork);
+            if (toNetwork > 0) networkDebit.merge(item, -toNetwork, Integer::sum);
+        }
+    }
+
+    /**
+     * Items taken up front (inventory first, then AE2) for the positions that need paying,
+     * so each item type costs one inventory scan and one network call instead of one per block.
+     */
+    private static final class Budget {
+        final Map<Item, Integer> available = new HashMap<>();
+        final Map<Item, Integer> fromNetwork = new HashMap<>();
+
+        static Budget take(ServerPlayer player, List<Map.Entry<BlockPos, BlockChange>> changes,
+                           java.util.function.Function<BlockChange, Item> cost) {
+            Map<Item, Integer> needed = new HashMap<>();
+            for (var e : changes) {
+                Item item = cost.apply(e.getValue());
+                if (item != Items.AIR) needed.merge(item, 1, Integer::sum);
+            }
+            Budget budget = new Budget();
+            for (var n : needed.entrySet()) {
+                InventoryHelper.Taken taken = InventoryHelper.takeItems(player, n.getKey(), n.getValue());
+                budget.available.put(n.getKey(), taken.total());
+                if (taken.fromNetwork() > 0) budget.fromNetwork.put(n.getKey(), taken.fromNetwork());
+            }
+            return budget;
+        }
+
+        boolean spend(Item item) {
+            if (item == Items.AIR) return false;
+            int left = available.getOrDefault(item, 0);
+            if (left <= 0) return false;
+            available.put(item, left - 1);
+            return true;
+        }
+
+        /** Returns anything taken but not spent (positions skipped after the budget was taken). */
+        void refundUnspent(ServerPlayer player) {
+            for (var a : available.entrySet()) {
+                int left = a.getValue();
+                if (left <= 0) continue;
+                int toNetwork = Math.min(left, fromNetwork.getOrDefault(a.getKey(), 0));
+                InventoryHelper.returnItems(player, a.getKey(), left, toNetwork);
+                fromNetwork.merge(a.getKey(), -toNetwork, Integer::sum);
+            }
+        }
+    }
+}

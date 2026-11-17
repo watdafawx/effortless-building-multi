@@ -1,0 +1,647 @@
+package io.github.watdafawx.shapewright.buildpipeline;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import io.github.watdafawx.shapewright.Constants;
+import io.github.watdafawx.shapewright.buildmode.BuildModeEnum;
+import io.github.watdafawx.shapewright.buildmode.BuildModes;
+import io.github.watdafawx.shapewright.buildmode.BuildSettings;
+import io.github.watdafawx.shapewright.buildmode.ModeOptions;
+import io.github.watdafawx.shapewright.buildmode.ThreeClicksBuildMode;
+import io.github.watdafawx.shapewright.buildmode.buildmodes.ShapeMode;
+import io.github.watdafawx.shapewright.shape.ShapeClientState;
+import io.github.watdafawx.shapewright.palette.BlockPalette;
+import io.github.watdafawx.shapewright.palette.PaletteClientState;
+import io.github.watdafawx.shapewright.palette.PaletteSystem;
+import io.github.watdafawx.shapewright.shape.ShapeParams;
+import io.github.watdafawx.shapewright.shape.ShapeType;
+import io.github.watdafawx.shapewright.config.ClientConfig;
+import io.github.watdafawx.shapewright.config.ServerConfig;
+import io.github.watdafawx.shapewright.modifier.ModifierSystem;
+import io.github.watdafawx.shapewright.network.BreakBuildModePacket;
+import io.github.watdafawx.shapewright.network.PacketHandler;
+import io.github.watdafawx.shapewright.network.PlaceBuildModePacket;
+import io.github.watdafawx.shapewright.utilities.BlockEntry;
+import io.github.watdafawx.shapewright.utilities.BlockSet;
+import io.github.watdafawx.shapewright.utilities.BlockStatus;
+import io.github.watdafawx.shapewright.utilities.BreakDisplayTracker;
+import io.github.watdafawx.shapewright.utilities.ItemUsageTracker;
+import io.github.watdafawx.shapewright.utilities.PlacedBlockTracker;
+import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.world.item.BucketItem;
+import net.minecraft.world.level.material.Fluids;
+import io.github.watdafawx.shapewright.mixin.BucketItemAccessor;
+import io.github.watdafawx.shapewright.item.RandomizerToolItem;
+
+/**
+ * Client-side controller for the unified build pipeline.
+ *
+ * <p>Manages the multi-click sequence state, preview computation, and packet
+ * dispatch for all build modes. When mode is DISABLED but modifiers are active,
+ * the pipeline still runs (producing mirrored/arrayed copies of the single block).
+ *
+ * <p>Every method here touches {@link Minecraft} or other client-only types, keeping
+ * them out of the server-side {@link BuildPipeline} to prevent Fabric's dedicated-server
+ * classloader from pulling in {@code net.minecraft.client.*}.
+ */
+public class BuildPipelineClient {
+
+    /**
+     * Client-side pipeline with all stages pre-registered.
+     * Pipeline order: ModifierSystem.CLIENT → ConstraintSystem
+     */
+    public static final BuildPipeline CLIENT = createClientPipeline();
+
+    private static BuildPipeline createClientPipeline() {
+        BuildPipeline pipeline = new BuildPipeline();
+        pipeline.addSystem(ModifierSystem.CLIENT);
+        pipeline.addSystem(RandomizerSystem.INSTANCE);
+        pipeline.addSystem(PaletteSystem.CLIENT);
+        pipeline.addSystem(ConstraintSystem.INSTANCE);
+        return pipeline;
+    }
+
+    /** Client-side item usage tracker — updated each frame during preview rendering. */
+    public static final ItemUsageTracker ITEM_USAGE = new ItemUsageTracker();
+
+    /** Client-side break display tracker — updated each frame during breaking preview. */
+    public static final BreakDisplayTracker BREAK_DISPLAY = new BreakDisplayTracker();
+
+    /** Preview lock (anchor) state: when true, the ghost preview stays frozen in the world. */
+    public static boolean previewLocked = false;
+
+    /**
+     * Everything needed to place the anchored preview later, captured when locking, so the server
+     * regenerates exactly the frozen shape no matter where the player walks or which options change.
+     */
+    private record Anchor(BlockSet blocks, ResourceKey<Level> dimension, BuildModeEnum mode,
+                          BlockPos firstPos, BlockPos secondPos, @Nullable BlockPos thirdPos,
+                          Direction hitFace, Vec3 hitLocation,
+                          ModeOptions.ActionEnum fill, ModeOptions.ActionEnum cubeFill,
+                          ModeOptions.ActionEnum raisedEdge, ModeOptions.ActionEnum circleStart,
+                          @Nullable ShapeParams shape, @Nullable BlockPalette palette) {}
+
+    @Nullable private static Anchor anchor = null;
+
+    /** The most recently computed preview (used to initialize the lock). */
+    @Nullable private static BlockSet lastPreviewBlocks = null;
+
+    /** Toggles the preview lock on/off using the last computed preview. */
+    public static void togglePreviewLock() {
+        if (previewLocked) {
+            clearAnchor();
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        BlockSet preview = lastPreviewBlocks;
+        if (mc.level == null || preview == null || preview.isEmpty()
+                || preview.firstPos == null || preview.lastPos == null) return;
+
+        BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
+        // Same position semantics as a finished click sequence (see handleClick). A three-click
+        // mode locked before its second click is sent as a single layer (third = second).
+        BlockPos intermediate = buildState != null ? mode.instance.getIntermediatePos() : null;
+        BlockPos secondPos = intermediate != null ? intermediate : preview.lastPos;
+        BlockPos thirdPos = intermediate != null ? preview.lastPos
+                : mode.instance instanceof ThreeClicksBuildMode ? preview.lastPos : null;
+
+        BlockHitResult hit = firstClickHit != null ? firstClickHit
+                : mc.hitResult instanceof BlockHitResult b ? b : null;
+        ShapeParams shape = shapeFor(mode);
+        // Before the first click the preview shows the shape at the screen's size
+        if (shape != null && buildState == null) shape = shape.withSizing(ShapeParams.Sizing.SCREEN);
+
+        anchor = new Anchor(preview, mc.level.dimension(), mode, preview.firstPos, secondPos, thirdPos,
+                hit != null ? hit.getDirection() : Direction.UP,
+                hit != null ? hit.getLocation() : Vec3.atCenterOf(preview.firstPos),
+                ModeOptions.getFill(), ModeOptions.getCubeFill(),
+                ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(), shape, PaletteClientState.getActive());
+        previewLocked = true;
+
+        // The click sequence is captured; start over so the next right-click places the anchor
+        mode.instance.initialize();
+        buildState = null;
+        firstClickHit = null;
+    }
+
+    /** Toggles the lock and tells the player the new state on the action bar. */
+    public static void togglePreviewLockWithMessage() {
+        togglePreviewLock();
+        Player player = Minecraft.getInstance().player;
+        if (player != null) {
+            player.displayClientMessage(Component.translatable(previewLocked
+                    ? "shapewright.message.preview_locked"
+                    : "shapewright.message.preview_unlocked"), true);
+        }
+    }
+
+    /** Drops the anchored preview, e.g. when the build mode changes. */
+    public static void clearAnchor() {
+        previewLocked = false;
+        anchor = null;
+        anchorTool = AnchorTool.MOVE;
+    }
+
+    /** The build mode the anchor was locked in, or null when nothing is anchored. */
+    public static @Nullable BuildModeEnum getAnchorMode() {
+        return anchor != null ? anchor.mode() : null;
+    }
+
+    /** The anchored preview's blocks, or null when nothing is anchored. */
+    public static @Nullable BlockSet getAnchorBlocks() {
+        return anchor != null ? anchor.blocks() : null;
+    }
+
+    /**
+     * Moves the anchored preview by whole blocks. The clicks are shifted and the preview is worked out
+     * again the way the server will (modifiers included), so what is shown is still what gets built.
+     */
+    public static void nudgeAnchor(int dx, int dy, int dz) {
+        Anchor a = anchor;
+        if (a == null || (dx == 0 && dy == 0 && dz == 0)) return;
+        BlockPos first = a.firstPos().offset(dx, dy, dz), second = a.secondPos().offset(dx, dy, dz);
+        BlockPos third = a.thirdPos() != null ? a.thirdPos().offset(dx, dy, dz) : null;
+        reanchor(a, first, second, third, a.hitLocation().add(dx, dy, dz), a.shape());
+    }
+
+    /** Whether the anchored preview can be turned (only shapes from the generator can). */
+    public static boolean canRotateAnchor() {
+        return anchor != null && anchor.shape() != null;
+    }
+
+    /** Turns an anchored generator shape a quarter turn around its vertical axis. */
+    public static void rotateAnchor(int quarterTurns) {
+        Anchor a = anchor;
+        if (a == null || a.shape() == null || quarterTurns == 0) return;
+        double turned = a.shape().get(ShapeType.ROTATE_Y) + 90.0 * quarterTurns;
+        double wrapped = Math.floorMod((long) turned + 180, 360L) - 180; // the angle is kept in -180..179
+        reanchor(a, a.firstPos(), a.secondPos(), a.thirdPos(), a.hitLocation(), a.shape().with(ShapeType.ROTATE_Y, wrapped));
+    }
+
+    /** Works the anchor out again for new clicks/shape, the way the server will (modifiers included). */
+    private static void reanchor(Anchor a, BlockPos first, BlockPos second, @Nullable BlockPos third,
+                                 Vec3 hitLocation, @Nullable ShapeParams shape) {
+        Player player = Minecraft.getInstance().player;
+        if (player == null) return;
+
+        // Work it out with the options captured at lock time, then put the current ones back
+        ModeOptions.ActionEnum fill = ModeOptions.getFill(), cubeFill = ModeOptions.getCubeFill();
+        ModeOptions.ActionEnum raisedEdge = ModeOptions.getRaisedEdge(), circleStart = ModeOptions.getCircleStart();
+        BlockSet blocks = new BlockSet();
+        try {
+            ModeOptions.applyForCalculation(a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart());
+            for (BlockPos pos : a.mode().instance.getServerBlocks(player, first, second, third, shape)) {
+                blocks.add(new BlockEntry(pos));
+            }
+            blocks.firstPos = first;
+            blocks.lastPos = third != null ? third : second;
+            a.mode().instance.assignItems(blocks, player, first, second, shape);
+            CLIENT.processBlocks(blocks, player, BuildPipeline.BuildState.PLACING);
+        } finally {
+            ModeOptions.applyForCalculation(fill, cubeFill, raisedEdge, circleStart);
+        }
+        if (blocks.isEmpty()) return;
+        anchor = new Anchor(blocks, a.dimension(), a.mode(), first, second, third, a.hitFace(),
+                hitLocation, a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(), shape, a.palette());
+    }
+
+    // -------------------------------------------------------------------------
+    // Anchor toolbar (Create schematic style): Ctrl+scroll picks a tool, Shift+scroll uses it
+    // -------------------------------------------------------------------------
+
+    /** What scrolling does to the anchored preview. */
+    public enum AnchorTool {
+        MOVE("move"), SLIDE("slide"), LIFT("lift"), ROTATE("rotate"), VIEW("view");
+
+        public final String key;
+        AnchorTool(String key) { this.key = key; }
+
+        public String getNameKey() { return "shapewright.anchor_tool." + key; }
+    }
+
+    private static AnchorTool anchorTool = AnchorTool.MOVE;
+
+    public static AnchorTool getAnchorTool() { return anchorTool; }
+
+    /** Tools on offer for the current anchor (rotating needs a generator shape). */
+    public static java.util.List<AnchorTool> availableAnchorTools() {
+        java.util.List<AnchorTool> tools = new java.util.ArrayList<>(java.util.List.of(AnchorTool.values()));
+        if (!canRotateAnchor()) tools.remove(AnchorTool.ROTATE);
+        return tools;
+    }
+
+    /** Selects the next/previous tool. */
+    public static void cycleAnchorTool(int direction) {
+        java.util.List<AnchorTool> tools = availableAnchorTools();
+        int i = Math.max(0, tools.indexOf(anchorTool));
+        anchorTool = tools.get(Math.floorMod(i + (direction > 0 ? -1 : 1), tools.size())); // scroll up = previous
+    }
+
+    /**
+     * Mouse-wheel gestures for the anchored preview: Ctrl picks a tool, Shift uses it (Shift+Ctrl, 5 blocks).
+     *
+     * @return true when the scroll was taken (the hotbar must not scroll)
+     */
+    public static boolean handleAnchorScroll(boolean ctrl, boolean shift, double scrollY) {
+        if (!previewLocked || anchor == null || scrollY == 0 || (!ctrl && !shift)) return false;
+        int direction = scrollY > 0 ? 1 : -1;
+        if (shift) useAnchorTool(direction, ctrl);
+        else cycleAnchorTool(direction);
+        return true;
+    }
+
+    /** Uses the selected tool once; {@code direction} is +1 or -1, {@code big} moves 5 blocks. */
+    public static void useAnchorTool(int direction, boolean big) {
+        if (anchor == null) return;
+        int n = direction * (big ? 5 : 1);
+        switch (anchorTool) {
+            case MOVE -> nudgeAnchorRelative(n, 0, 0);
+            case SLIDE -> nudgeAnchorRelative(0, n, 0);
+            case LIFT -> nudgeAnchorRelative(0, 0, n);
+            case ROTATE -> rotateAnchor(direction);
+            case VIEW -> Minecraft.getInstance().setScreen(new io.github.watdafawx.shapewright.screen.AnchorViewScreen());
+        }
+    }
+
+    /** Moves the anchored preview relative to where the player looks: forward/right in blocks, up in blocks. */
+    public static void nudgeAnchorRelative(int forward, int right, int up) {
+        Player player = Minecraft.getInstance().player;
+        if (player == null || anchor == null) return;
+        Direction facing = player.getDirection();
+        Direction rightSide = facing.getClockWise();
+        nudgeAnchor(facing.getStepX() * forward + rightSide.getStepX() * right, up,
+                facing.getStepZ() * forward + rightSide.getStepZ() * right);
+    }
+
+    /** Builds the anchored preview (same as right-clicking while anchored). */
+    public static void buildAnchor() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && mc.level != null && anchor != null) sendLockedPlacement(mc, mc.player);
+    }
+
+    // -------------------------------------------------------------------------
+    // Multi-click sequence state
+    // -------------------------------------------------------------------------
+
+    @Nullable private static BuildPipeline.BuildState buildState = null;
+    @Nullable private static BlockHitResult firstClickHit = null;
+
+    static {
+        // Run while the old mode is still active, so its multi-click state is reset.
+        BuildModes.CLIENT.setBeforeDisable(BuildPipelineClient::cancelCurrentSequence);
+    }
+
+    public static @Nullable BuildPipeline.BuildState getBuildState() { return buildState; }
+    public static @Nullable BlockHitResult getFirstClickHit() { return firstClickHit; }
+
+    // -------------------------------------------------------------------------
+    // Interception decision
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns {@code true} if the mod should intercept vanilla click handling.
+     */
+    public static boolean shouldInterceptPlacing() {
+        Minecraft mc = Minecraft.getInstance();
+        return BuildModes.CLIENT.getBuildMode() != BuildModeEnum.DISABLED
+                || mc.player != null && mc.player.getMainHandItem().getItem() instanceof RandomizerToolItem;
+    }
+    
+    /**
+     * Returns {@code true} if the mod should intercept vanilla break handling.
+     */
+    public static boolean shouldInterceptBreaking() {
+        if (BuildModes.CLIENT.getBuildMode() == BuildModeEnum.DISABLED) return false;
+        Minecraft mc = Minecraft.getInstance();
+        Player player = mc.player;
+        if (player == null) return false;
+        if (!player.getAbilities().instabuild && !ServerConfig.INSTANCE.survivalAllowBreaking) {
+            return false;
+        }
+        // A left-click during an existing sequence cancels that sequence, rather than mining.
+        if (buildState != null || player.getAbilities().instabuild) return true;
+
+        // Do not take over vanilla mining for a target that this mod would reject. This lets
+        // survival players hold attack to break that single block with vanilla behaviour.
+        if (mc.level != null && mc.hitResult instanceof BlockHitResult hit) {
+            BlockPos target = hit.getBlockPos();
+            BlockSet singleTarget = new BlockSet();
+            singleTarget.add(new BlockEntry(target));
+            ConstraintSystem.INSTANCE.processBlocks(singleTarget, player, BuildPipeline.BuildState.BREAKING);
+            BlockEntry entry = singleTarget.get(target);
+            if (entry != null && !entry.isValid()) return false;
+        }
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Click handling — called by platform-specific client tick handlers
+    // -------------------------------------------------------------------------
+
+    public static void handleRightClick(Minecraft mc) {
+        handleClick(mc, BuildPipeline.BuildState.PLACING);
+    }
+
+    public static void handleLeftClick(Minecraft mc) {
+        handleClick(mc, BuildPipeline.BuildState.BREAKING);
+    }
+
+    private static void handleClick(Minecraft mc, BuildPipeline.BuildState action) {
+        BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
+        Player player = mc.player;
+        if (player == null || mc.level == null) return;
+
+        // While anchored, right-click builds the anchored shape and left-click releases it
+        if (previewLocked && anchor != null) {
+            if (action == BuildPipeline.BuildState.PLACING) {
+                sendLockedPlacement(mc, player);
+            } else {
+                clearAnchor();
+                player.displayClientMessage(Component.translatable("shapewright.message.preview_unlocked"), true);
+            }
+            return;
+        }
+
+        BlockPos clickedPos;
+        if (mode.instance.isFirstClick()) {
+            Vec3 start = player.getEyePosition();
+            Vec3 end = start.add(player.getLookAngle().scale(ServerConfig.INSTANCE.getReach(player)));
+            ClipContext ctx = new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player);
+            BlockHitResult hit = mc.level.clip(ctx);
+            if (hit.getType() != HitResult.Type.BLOCK) return;
+            clickedPos = resolveFirstClickPos(hit, action, mc.level);
+            buildState = action;
+            firstClickHit = hit;
+        } else {
+            clickedPos = player.blockPosition();
+        }
+
+        BlockSet blocks = new BlockSet();
+        boolean shouldPlace = mode.instance.onClick(blocks, clickedPos, player);
+
+        if (shouldPlace) {
+            mode.instance.findCoordinates(blocks, player);
+            CLIENT.processBlocks(blocks, player, action);
+
+            if (blocks.firstPos != null && blocks.lastPos != null) {
+                SoundType soundType;
+                if (action == BuildPipeline.BuildState.PLACING) {
+                    var held = player.getMainHandItem();
+                    BlockEntry firstEntry = blocks.get(blocks.firstPos);
+                    if (firstEntry != null && firstEntry.blockState != null) {
+                        soundType = firstEntry.blockState.getSoundType();
+                    } else {
+                        soundType = held.getItem() instanceof BlockItem blockItem
+                                ? blockItem.getBlock().defaultBlockState().getSoundType()
+                                : SoundType.STONE;
+                    }
+                    mc.level.playLocalSound(blocks.firstPos, soundType.getPlaceSound(), SoundSource.BLOCKS,
+                            soundType.getVolume(), soundType.getPitch(), false);
+                } else {
+                    soundType = mc.level.getBlockState(blocks.firstPos).getSoundType();
+                    mc.level.playLocalSound(blocks.firstPos, soundType.getBreakSound(), SoundSource.BLOCKS,
+                            soundType.getVolume(), soundType.getPitch(), false);
+                }
+
+                BlockPos intermediate = mode.instance.getIntermediatePos();
+                BlockPos secondPos = intermediate != null ? intermediate : blocks.lastPos;
+                BlockPos thirdPos  = intermediate != null ? blocks.lastPos : null;
+
+                if (action == BuildPipeline.BuildState.PLACING) {
+                    // Show warnings for rejected entries during placement
+                    if (!blocks.rejectedEntries().isEmpty()) {
+                        BlockStatus firstRejection = blocks.rejectedEntries().getFirst().getValue().getStatus();
+                        if (firstRejection == BlockStatus.WORLD_BORDER) {
+                            player.displayClientMessage(
+                                    Component.translatable("shapewright.message.world_border"), true);
+                        } else if (!player.getAbilities().instabuild) {
+                            if (firstRejection == BlockStatus.NOT_PLACED_BY_PLAYER) {
+                                player.displayClientMessage(
+                                        Component.translatable("shapewright.message.only_replace_placed"), true);
+                            } else if (firstRejection == BlockStatus.TOO_HARD) {
+                                player.displayClientMessage(
+                                        Component.translatable("shapewright.message.too_hard"), true);
+                            } else if (firstRejection == BlockStatus.PROTECTED_TILE_ENTITY) {
+                                player.displayClientMessage(
+                                        Component.translatable("shapewright.message.protected_tile_entity"), true);
+                            }
+                        }
+                    }
+                    Direction hitFace = firstClickHit != null ? firstClickHit.getDirection() : Direction.UP;
+                    Vec3 hitLocation = firstClickHit != null ? firstClickHit.getLocation() : Vec3.atCenterOf(blocks.firstPos);
+                    PacketHandler.sendToServer(new PlaceBuildModePacket(
+                            mode, blocks.firstPos, secondPos, thirdPos,
+                            hitFace, hitLocation,
+                            ModeOptions.getFill(), ModeOptions.getCubeFill(),
+                            ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
+                            BuildSettings.CLIENT.getReplaceMode(),
+                            ClientConfig.INSTANCE.shouldProtectTileEntities(),
+                            shapeFor(mode), PaletteClientState.getActive()));
+                    // Client-side placement tracking
+                    PlacedBlockTracker.clientTrackAll(mc.level.dimension(), blocks.keySet());
+                } else {
+                    // Show warnings for specific rejection reasons
+                    if (!blocks.rejectedEntries().isEmpty()) {
+                        BlockStatus firstRejection = blocks.rejectedEntries().getFirst().getValue().getStatus();
+                        if (firstRejection == BlockStatus.WORLD_BORDER) {
+                            player.displayClientMessage(
+                                    Component.translatable("shapewright.message.world_border"), true);
+                        } else if (!player.getAbilities().instabuild) {
+                            if (firstRejection == BlockStatus.NOT_PLACED_BY_PLAYER) {
+                                player.displayClientMessage(
+                                        Component.translatable("shapewright.message.only_break_placed"), true);
+                            } else if (firstRejection == BlockStatus.TOO_HARD) {
+                                player.displayClientMessage(
+                                        Component.translatable("shapewright.message.too_hard"), true);
+                            } else if (firstRejection == BlockStatus.PROTECTED_TILE_ENTITY) {
+                                player.displayClientMessage(
+                                        Component.translatable("shapewright.message.protected_tile_entity"), true);
+                            }
+                        }
+                    }
+                    PacketHandler.sendToServer(new BreakBuildModePacket(
+                            mode, blocks.firstPos, secondPos, thirdPos,
+                            ModeOptions.getFill(), ModeOptions.getCubeFill(),
+                            ModeOptions.getRaisedEdge(), ModeOptions.getCircleStart(),
+                            ClientConfig.INSTANCE.shouldProtectTileEntities(),
+                            shapeFor(mode)));
+                }
+            } else {
+                Constants.LOG.warn("[Shapewright] Build mode {} produced no block positions", mode);
+            }
+
+            mode.instance.initialize();
+            buildState = null;
+            firstClickHit = null;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Preview computation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Computes the block set that should be highlighted in the preview this frame.
+     */
+    public static BlockSet getPreviewBlocks(Minecraft mc) {
+        Player player = mc.player;
+        if (player == null || mc.level == null) return null;
+
+        // If preview is locked, return the frozen block set (released when leaving its dimension)
+        if (previewLocked && anchor != null) {
+            if (anchor.dimension() == mc.level.dimension()) return anchor.blocks();
+            clearAnchor();
+        }
+
+        BuildModeEnum mode = BuildModes.CLIENT.getBuildMode();
+
+        BlockSet result;
+        if (!mode.instance.isFirstClick()) {
+            BlockSet previewBlocks = new BlockSet();
+            mode.instance.findCoordinates(previewBlocks, player);
+            BuildPipeline.BuildState action = buildState != null ? buildState : BuildPipeline.BuildState.PLACING;
+            CLIENT.processBlocks(previewBlocks, player, action);
+            if (previewBlocks.isEmpty()) return null;
+            previewBlocks.sortByDistance();
+            previewBlocks.truncate(ServerConfig.INSTANCE.getMaxBlocksPlaced(player));
+            result = previewBlocks;
+        } else {
+            Vec3 start = player.getEyePosition();
+            Vec3 end = start.add(player.getLookAngle().scale(ServerConfig.INSTANCE.getReach(player)));
+            ClipContext ctx = new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player);
+            BlockHitResult hit = mc.level.clip(ctx);
+            if (hit.getType() != HitResult.Type.BLOCK) return null;
+            BlockPos targetPos = resolveFirstClickPos(hit, BuildPipeline.BuildState.PLACING, mc.level);
+            BlockSet blockSet = new BlockSet();
+            if (mode == BuildModeEnum.SHAPE) {
+                // Show the whole shape where it would stand, not just the targeted block
+                ((ShapeMode) mode.instance).previewAt(blockSet, player, targetPos);
+            } else {
+                blockSet.add(new BlockEntry(targetPos));
+                blockSet.firstPos = targetPos;
+                blockSet.lastPos = targetPos;
+            }
+            CLIENT.processBlocks(blockSet, player, BuildPipeline.BuildState.PLACING);
+            result = blockSet;
+        }
+
+        // Cache the result for preview lock
+        lastPreviewBlocks = result;
+
+        // Update item usage tracker for the preview
+        updateDisplayTrackers(player, result);
+        return result;
+    }
+
+    /**
+     * Updates the client-side trackers based on the current preview block set.
+     */
+    private static void updateDisplayTrackers(Player player, BlockSet blockSet) {
+        BuildPipeline.BuildState action = buildState != null ? buildState : BuildPipeline.BuildState.PLACING;
+
+        if (action == BuildPipeline.BuildState.BREAKING) {
+            BREAK_DISPLAY.compute(player, blockSet);
+            ITEM_USAGE.initialize();
+        } else {
+            var held = player.getMainHandItem();
+            net.minecraft.world.item.Item heldItem = null;
+            if (held.getItem() instanceof BlockItem) {
+                heldItem = held.getItem();
+            } else if (held.getItem() instanceof BucketItem bucketItem) {
+                var fluid = ((BucketItemAccessor) bucketItem).shapewright$getFluid();
+                if (!fluid.isSame(Fluids.EMPTY)) {
+                    heldItem = held.getItem();
+                }
+            }
+
+            if (held.getItem() instanceof RandomizerToolItem || blockSet.values().stream().anyMatch(e -> e.item != null)) {
+                // Per-block items; blocks without one use the held block
+                ITEM_USAGE.compute(player, blockSet, heldItem, player.getAbilities().instabuild);
+            } else if (heldItem != null) {
+                ITEM_USAGE.compute(player, blockSet.validPositions(), heldItem, player.getAbilities().instabuild);
+            } else {
+                ITEM_USAGE.initialize();
+            }
+            BREAK_DISPLAY.initialize();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Sequence cancellation
+    // -------------------------------------------------------------------------
+
+    /** Builds the anchored shape with the settings captured when it was locked, then releases it. */
+    private static void sendLockedPlacement(Minecraft mc, Player player) {
+        Anchor a = anchor;
+        clearAnchor();
+        if (a == null) return;
+
+        SoundType soundType = player.getMainHandItem().getItem() instanceof BlockItem blockItem
+                ? blockItem.getBlock().defaultBlockState().getSoundType()
+                : SoundType.STONE;
+        mc.level.playLocalSound(a.firstPos(), soundType.getPlaceSound(), SoundSource.BLOCKS,
+                soundType.getVolume(), soundType.getPitch(), false);
+
+        PacketHandler.sendToServer(new PlaceBuildModePacket(
+                a.mode(), a.firstPos(), a.secondPos(), a.thirdPos(),
+                a.hitFace(), a.hitLocation(),
+                a.fill(), a.cubeFill(), a.raisedEdge(), a.circleStart(),
+                BuildSettings.CLIENT.getReplaceMode(),
+                ClientConfig.INSTANCE.shouldProtectTileEntities(),
+                a.shape(), a.palette()));
+        PlacedBlockTracker.clientTrackAll(mc.level.dimension(), a.blocks().keySet());
+    }
+
+    public static void cancelCurrentSequence() {
+        if (buildState != null) {
+            Minecraft.getInstance().getSoundManager().play(
+                    SimpleSoundInstance.forUI(SoundEvents.UI_TOAST_OUT, 1f));
+        }
+        BuildModes.CLIENT.getBuildMode().instance.initialize();
+        buildState = null;
+        firstClickHit = null;
+        // The anchor is deliberately kept: it stays locked until built or unlocked,
+        // even when building is disabled and enabled again.
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
+
+    /** The Shape Generator settings to send with a build, only for SHAPE mode. */
+    private static @Nullable ShapeParams shapeFor(BuildModeEnum mode) {
+        if (mode != BuildModeEnum.SHAPE) return null;
+        ShapeParams active = ShapeClientState.getActive();
+        return mode.instance instanceof io.github.watdafawx.shapewright.buildmode.buildmodes.ShapeMode shape
+                ? active.withPath(shape.pathPoints()) : active;
+    }
+
+    private static BlockPos resolveFirstClickPos(BlockHitResult hit, BuildPipeline.BuildState action, Level level) {
+        BlockPos hitPos = hit.getBlockPos();
+        if (action == BuildPipeline.BuildState.BREAKING) return hitPos;
+        // Tools interact with the clicked block itself, not adjacent
+        var mc = Minecraft.getInstance();
+        if (mc.player != null && BuildPipeline.isToolInteractionItem(mc.player.getMainHandItem())) {
+            return hitPos;
+        }
+        // When replacing blocks, click on the block itself instead of adjacent
+        if (BuildSettings.CLIENT.shouldOffsetStartPosition()) return hitPos;
+        if (level.getBlockState(hitPos).canBeReplaced()) return hitPos;
+        return hitPos.relative(hit.getDirection());
+    }
+}
