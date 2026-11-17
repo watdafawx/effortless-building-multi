@@ -39,7 +39,6 @@ Open it from Shape mode in the radial menu (hold ALT). The left side lists saved
 Choose the deform axis and an origin (start, center, end plus x/y/z offsets). The **Gizmo** tab toggles the red/green/blue axis gizmo at the anchor and a yellow cross at the modifier origin.
 
 ## Build Modes
-</iframe>
 
 Hold ALT to open the radial menu and select a build mode. With a block in hand, right-click to pick the starting position. Aim somewhere else, then right-click again to build the shape.
 
@@ -61,18 +60,13 @@ Available build modes:
 
 On the right side of the radial menu you can find additional options for each build mode. On the left side you can find buttons for undo/redo, replace options, opening the modifier settings and config screens.
 
-</iframe>
-</iframe>
-
 ## Build Modifiers
-</iframe>
 
 Modifiers can place additional blocks for each block you placed. You can enable any number of modifiers in the modifier settings. Open the modifier settings with the button in the radial menu, or use the keybind (default NUMPAD+).
 
 * Mirror. Place a mirror at a position of a certain size. Each block placed on one side gets mirrored to the other side.
 * Array. Copies the block you placed in a certain direction a certain number of times. Useful for repeated builds like tunnels and walls.
 * Radial Mirror. Divides an area in slices around a central point. Each slice copies your block placements.
-
 
 ## Randomizer Tool
 
@@ -81,7 +75,6 @@ This item allows you to place random blocks. Configure the tool by shift-rightcl
 * Use it in combination with build modes and build modifiers.
 * While placing a shape, you can open the randomizer tool and change its settings. You can preview those settings in realtime!
 * Setting the ratio of an empty slot will cause air gaps to appear in your shape.
-
 
 Crafting recipe: 3 iron ingots, 1 redstone dust, 1 any flower.
 
@@ -106,7 +99,6 @@ Here's a small sample of what you can configure:
 * Whether you can break and replace multiple blocks at once, including if tools are required, if they should use durability, etc. By default, you can break and replace blocks that you placed in the same play session.
 
 The functional settings can be found in the radial menu. On a server, you can only edit functional settings if you are an admin.
-
 
 ## Installing
 Needs to be installed on both server and client. Requires owo-lib on the client. Optional: Applied Energistics 2 (pull materials from an ME network).
