@@ -1,5 +1,5 @@
-## 5.0.1
+## 5.0.2
 
-New:
-- The Shape Generator's 3D preview now draws the real block textures of your blocks, parts and palette instead of flat colors. Tinted blocks (grass, leaves) keep their tint; with no block chosen it uses the held block.
+Changes:
+- Block Palette screen: the "selected shape" preview now draws real block textures, is zoomed in to fill its panel and no longer shows the axis gizmo.
 
