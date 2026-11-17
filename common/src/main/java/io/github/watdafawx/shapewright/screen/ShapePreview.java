@@ -47,6 +47,8 @@ public final class ShapePreview {
     /** Slice index along the view's depth axis (in 3D: build up to this layer), or -1 for all. */
     public int layer = -1;
     public float yaw = 35, pitch = 28, zoom = 1;
+    /** Whether to draw the axis gizmo (when the player has it switched on). Small embedded previews turn it off. */
+    public boolean gizmo = true;
     /** Part whose blocks are tinted (the one being edited), or none. */
     public int highlight = Integer.MIN_VALUE;
     /** Screen pixels per block in the last drawn 3D view and slice, for dragging parts. */
@@ -318,7 +320,7 @@ public final class ShapePreview {
             }
         }
         g.flush();
-        if (io.github.watdafawx.shapewright.config.ClientConfig.INSTANCE.shouldShowGizmo()) {
+        if (gizmo && io.github.watdafawx.shapewright.config.ClientConfig.INSTANCE.shouldShowGizmo()) {
             // Always on top, like Blender's gizmo: clear depth so the shape cannot hide it
             RenderSystem.clear(256, Minecraft.ON_OSX);
             drawGizmo(g.bufferSource().getBuffer(RenderType.debugQuads()), matrix);

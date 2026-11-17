@@ -80,6 +80,11 @@ public class PaletteScreen extends BaseOwoScreen<FlowLayout> {
     /** Show the Shape Generator's selected shape (built with the palette) instead of the test room. */
     private boolean showShape = false;
     private final ShapePreview shapePreview = new ShapePreview();
+    {
+        // A small panel: no gizmo, and zoomed in so a flat shape fills it
+        shapePreview.gizmo = false;
+        shapePreview.zoom = 1.6f;
+    }
 
     // ---- containers refreshed on change ----
     private FlowLayout root, left, suggestionRow, tabs, content;
