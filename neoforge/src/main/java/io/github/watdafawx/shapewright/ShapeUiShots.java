@@ -19,6 +19,10 @@ import io.github.watdafawx.shapewright.shape.ShapeParams;
 import io.github.watdafawx.shapewright.shape.ShapeParams.Operation;
 import io.github.watdafawx.shapewright.shape.ShapeParams.Part;
 import io.github.watdafawx.shapewright.shape.ShapeType;
+import io.github.watdafawx.shapewright.palette.BlockPalette;
+import io.github.watdafawx.shapewright.palette.PaletteClientState;
+import io.github.watdafawx.shapewright.palette.PalettePattern;
+import net.minecraft.world.item.Items;
 import org.lwjgl.glfw.GLFW;
 
 import java.nio.file.Path;
@@ -63,6 +67,13 @@ final class ShapeUiShots {
                         new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, 6, 0, -6, "minecraft:oak_planks", 4, ""),
                         new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, -6, 0, 6, "minecraft:oak_leaves", 4, ""),
                         new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, 6, 0, 6, "minecraft:stone_bricks", 4, ""))), -1),
+                // A custom palette (stone, mossy bricks, wood, glass-like mix) with a noisy gradient: the preview must show the blocks
+                new Design("readme-palette", ShapeParams.defaults(ShapeType.PYRAMID).withSize(18), -1, screen -> {
+                    PaletteClientState.setPalette(BlockPalette.defaults().withSource(BlockPalette.Source.CUSTOM)
+                            .withCustom(List.of(Items.DEEPSLATE_BRICKS, Items.STONE_BRICKS, Items.MOSSY_STONE_BRICKS, Items.OAK_PLANKS, Items.GRASS_BLOCK))
+                            .withPattern(PalettePattern.NOISY_GRADIENT).withBand(2));
+                    PaletteClientState.setEnabled(true);
+                }),
                 new Design("floor", ShapeParams.defaults(ShapeType.FLOOR), -1),
                 new Design("text", ShapeParams.defaults(ShapeType.TEXT).withSchematic("Hello builders|Second line"), -1),
                 new Design("schematic", ShapeParams.defaults(ShapeType.SCHEMATIC).withSchematic(SCHEMATIC), -1),
@@ -100,6 +111,7 @@ final class ShapeUiShots {
             Minecraft mc = Minecraft.getInstance();
             io.github.watdafawx.shapewright.screen.RadialMenu.keepOpen = false;
             mc.setScreen(null);
+            PaletteClientState.setEnabled(false);
             ShapeClientState.deleteTemplate(LONG_TEMPLATE);
             ShapeClientState.deleteTemplate("Tower");
             mc.options.guiScale().set(savedScale[0]);

@@ -22,6 +22,9 @@ Shapewright is a building mod for Minecraft 1.21.1 (NeoForge and Fabric). Pick a
 ![Shape preview with real block textures](docs/shapegen-blocks.png)
 *The preview draws the real block textures of your blocks, parts and palette.*
 
+![Palette preview](docs/shapegen-palette.png)
+*A palette (noisy gradient from deepslate bricks to grass) shown with its real blocks.*
+
 ## Shape Generator
 Open it from Shape mode in the radial menu (hold ALT). The left side lists saved templates, the middle shows a live 3D preview, the right side holds the settings, grouped into Design, Shape, Heights, Rotation, Modifiers and Build.
 

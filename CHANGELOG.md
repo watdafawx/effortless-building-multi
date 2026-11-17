@@ -1,3 +1,8 @@
+## 5.0.1
+
+New:
+- The Shape Generator's 3D preview now draws the real block textures of your blocks, parts and palette instead of flat colors. Tinted blocks (grass, leaves) keep their tint; with no block chosen it uses the held block.
+
 ## 5.0.0
 
 Effortless Building is now **Shapewright** (mod id `shapewright`, by watdafawx), based on Effortless Building by Requios. Because the mod id changed, install it in place of Effortless Building (do not run both). Your saved client config, palettes, shape templates and per-world settings are moved over automatically on first start.

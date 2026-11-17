@@ -1,11 +1,5 @@
-## 5.0.0
-
-Effortless Building is now **Shapewright** (mod id `shapewright`, by watdafawx), based on Effortless Building by Requios. Because the mod id changed, install it in place of Effortless Building (do not run both). Your saved client config, palettes, shape templates and per-world settings are moved over automatically on first start.
+## 5.0.1
 
 New:
-- Shape Generator modifiers: twist, taper, shear, wave, bend, grow/shrink, noise and decimate, with a choice of deform axis and a movable origin (start, center, end plus x/y/z offsets).
-- 3D gizmo that shows the anchor and the modifier origin, in the Shape Generator preview and in the world. A "Gizmo" button toggles it. Arms are sized to the shape.
-- Up to 128 shape parameters can be synced.
+- The Shape Generator's 3D preview now draws the real block textures of your blocks, parts and palette instead of flat colors. Tinted blocks (grass, leaves) keep their tint; with no block chosen it uses the held block.
 
-Fixes:
-- Shape Generator: clicking a template no longer resets the list scroll position.
