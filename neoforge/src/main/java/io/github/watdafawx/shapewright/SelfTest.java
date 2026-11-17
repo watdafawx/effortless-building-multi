@@ -110,6 +110,7 @@ public final class SelfTest {
         }
         out.add(ShapeUiShots.scenario());
         out.add(ReadmeShots.scenario());
+        if (GhostBridgeTest.present()) out.add(GhostBridgeTest.scenario());
         // EB_SELFTEST_ONLY=shape-ui (comma separated) runs just those scenarios, for quick iteration
         String only = System.getenv("EB_SELFTEST_ONLY");
         if (only != null && !only.isBlank()) out.removeIf(s -> !List.of(only.split(",")).contains(s.name));

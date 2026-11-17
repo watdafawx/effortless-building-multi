@@ -31,6 +31,7 @@ import io.github.watdafawx.shapewright.buildmode.BuildModeEnum;
 import io.github.watdafawx.shapewright.buildmode.BuildModes;
 import io.github.watdafawx.shapewright.buildpipeline.BuildPipelineClient;
 import io.github.watdafawx.shapewright.compat.FramedCompat;
+import io.github.watdafawx.shapewright.compat.GhostCompat;
 import io.github.watdafawx.shapewright.compat.create.CreateGlue;
 import io.github.watdafawx.shapewright.network.BuildModeHintC2SPacket;
 import io.github.watdafawx.shapewright.network.PacketHandler;
@@ -360,8 +361,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         actions.child(w(materials).verticalSizing(Sizing.fixed(CONTROL_H)));
         String exportText = I18n.get("shapewright.screen.export") + "  ▼";
         ButtonComponent export = Components.button(Component.literal(exportText), b -> Ui.openMenu(this, root, b, "",
-                List.of(".schem", ".nbt"), ext -> I18n.get(ext.equals(".schem") ? "shapewright.screen.export_schem"
-                        : "shapewright.screen.export_nbt"), this::export, () -> {}));
+                GhostCompat.isAvailable() ? List.of(".schem", ".nbt", GHOST) : List.of(".schem", ".nbt"),
+                ext -> I18n.get(ext.equals(".schem") ? "shapewright.screen.export_schem"
+                        : ext.equals(GHOST) ? "shapewright.screen.export_ghost" : "shapewright.screen.export_nbt"), this::export, () -> {}));
         w(export).sizing(Sizing.fixed(font.width(exportText) + 14), Sizing.fixed(CONTROL_H));
         w(export).tooltip(wrapped(I18n.get("shapewright.screen.export_schem.description") + "\n"
                 + I18n.get("shapewright.screen.export_nbt.description")));
@@ -775,6 +777,12 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         if (type == ShapeType.SCHEMATIC) {
             list.add(new Row(Section.DESIGN, I18n.get("shapewright.shape.param.file"), "shapewright.screen.schematic.description",
                     this::schematicControl));
+            list.add(new Row(Section.DESIGN, I18n.get("shapewright.screen.reload_schematics_row"), "shapewright.screen.reload_schematics.description",
+                    () -> fixedButton(I18n.get("shapewright.screen.reload_schematics"), fieldW, this::rebuild)));
+            if (GhostCompat.canImport() && !GhostCompat.ids().isEmpty()) {
+                list.add(new Row(Section.DESIGN, I18n.get("shapewright.screen.ghost_row"), "shapewright.screen.ghost_import.description",
+                        () -> choice(I18n.get("shapewright.screen.ghost_import"), GhostCompat.ids().toArray(new String[0]), n -> n, this::importGhost)));
+            }
             list.add(new Row(Section.DESIGN, I18n.get("shapewright.screen.pixel_art_row"), "shapewright.screen.pixel_art.description",
                     () -> fixedButton(I18n.get("shapewright.screen.pixel_art_open"), fieldW, () -> {
                         if (minecraft != null) minecraft.setScreen(new PixelArtScreen(this, name -> setCurrent(current().withSchematic(name))));
@@ -869,6 +877,19 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     // ---- controls: all fieldW wide and CONTROL_H high ----
+
+    /** Turns a mc-mcp ghost into a schematic in the library and selects it as this shape's source. */
+    private void importGhost(String id) {
+        var blocks = GhostCompat.fetch(id);
+        if (blocks == null || minecraft == null || minecraft.player == null) return;
+        String name = SchematicWriter.safeName("ghost-" + id);
+        try {
+            SchematicWriter.write(SchematicLibrary.FOLDERS.getFirst().resolve(name + ".schem"), blocks);
+            setCurrent(current().withSchematic(name));
+        } catch (java.io.IOException e) {
+            minecraft.player.displayClientMessage(Component.translatable("shapewright.message.export_failed", e.getMessage()), false);
+        }
+    }
 
     private io.wispforest.owo.ui.core.Component schematicControl() {
         List<String> names = SchematicLibrary.list();
@@ -1189,6 +1210,9 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     /** Saves exactly what would be built (saved blocks, middle block, palette, else the held block) as a schematic. */
+    /** Export-menu entry that sends the build to the optional mc-mcp mod as a ghost instead of writing a file. */
+    private static final String GHOST = "ghost";
+
     private void export(String extension) {
         if (minecraft == null || minecraft.player == null) return;
         Map<Cell, BlockState> blocks = preview.blocksToExport(params);
@@ -1197,6 +1221,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             return;
         }
         String name = SchematicWriter.safeName(nameBox.getValue().isBlank() ? defaultName() : nameBox.getValue());
+        if (extension.equals(GHOST)) {
+            boolean sent = GhostCompat.send(name, minecraft.player.blockPosition(), blocks);
+            minecraft.player.displayClientMessage(Component.translatable(sent ? "shapewright.message.ghost_sent" : "shapewright.message.ghost_failed", name), false);
+            return;
+        }
         java.nio.file.Path file = SchematicLibrary.FOLDERS.getFirst().resolve(name + extension);
         try {
             SchematicWriter.write(file, blocks);

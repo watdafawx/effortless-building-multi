@@ -717,5 +717,14 @@
   "shapewright.shape.param.anchor_z": "Anchor shift Z",
   "shapewright.shape.param.anchor_x.description": "Moves the anchor point this many blocks east (negative: west) of the chosen anchor. The shape moves the other way, so the anchor still lands on the spot you place it at.",
   "shapewright.shape.param.anchor_y.description": "Moves the anchor point this many blocks up (negative: down). Use it to sink a shape into the ground or lift it.",
-  "shapewright.shape.param.anchor_z.description": "Moves the anchor point this many blocks south (negative: north)."
+  "shapewright.shape.param.anchor_z.description": "Moves the anchor point this many blocks south (negative: north).",
+  "shapewright.screen.export_ghost": "Send to ghost (mc-mcp)",
+  "shapewright.screen.ghost_row": "From ghost",
+  "shapewright.screen.ghost_import": "Pick a ghost",
+  "shapewright.screen.ghost_import.description": "Use a ghost build from the mc-mcp mod as this shape's source, then twist, taper or bend it like any schematic.",
+  "shapewright.message.ghost_sent": "Sent \"%s\" to mc-mcp as a ghost at your feet.",
+  "shapewright.message.ghost_failed": "Could not send \"%s\" to mc-mcp.",
+  "shapewright.screen.reload_schematics_row": "Schematic files",
+  "shapewright.screen.reload_schematics": "Reload list",
+  "shapewright.screen.reload_schematics.description": "Rescan the schematic folders (config/shapewright/schematics, schematics, config/worldedit/schematics) for files added while the game runs, e.g. exported from a ghost build."
 }
