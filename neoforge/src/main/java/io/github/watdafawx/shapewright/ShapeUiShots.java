@@ -96,6 +96,17 @@ final class ShapeUiShots {
             shot(seq, design, windows.get(0), 3);
             shot(seq, design, windows.get(1), 0);
         }
+        // Empty hand and no block chosen: every face is a flat color (regression: mixing flat and textured draws crashed "Not building!")
+        seq.onServerRun(p -> p.getInventory().clearContent()).waitTicks(10).run(() -> {
+            PaletteClientState.setEnabled(false);
+            Minecraft mc = Minecraft.getInstance();
+            mc.getWindow().setWindowed(1920, 1080);
+            mc.options.guiScale().set(3);
+            mc.resizeDisplay();
+            ShapeClientState.setActive(ShapeParams.defaults(ShapeType.PYRAMID).withSize(12));
+            mc.setScreen(new ShapeGeneratorScreen());
+        }).waitTicks(10).check("shape-ui-empty-hand", () ->
+                Minecraft.getInstance().screen instanceof ShapeGeneratorScreen ? List.of() : List.of("shape generator closed (crash?)"));
         // The Block Palette screen: its own 3D preview must show the real blocks too
         for (Window window : List.of(windows.get(0), windows.get(1))) {
             int scale = window.width() >= 1920 ? 3 : 0;
