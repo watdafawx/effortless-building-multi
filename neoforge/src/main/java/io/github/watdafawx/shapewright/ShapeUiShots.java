@@ -8,6 +8,7 @@ import io.wispforest.owo.ui.core.OwoUIAdapter;
 import io.wispforest.owo.ui.core.ParentComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import io.github.watdafawx.shapewright.screen.ShapeGeneratorScreen;
@@ -112,6 +113,22 @@ final class ShapeUiShots {
             }).waitTicks(10).check(name, () -> Minecraft.getInstance().screen instanceof io.github.watdafawx.shapewright.screen.PaletteScreen
                     ? List.of() : List.of("palette screen closed"));
         }
+        // Same screen, previewing the selected shape (not the test room): the path that draws the shape with the palette
+        seq.run(() -> {
+            Minecraft mc = Minecraft.getInstance();
+            mc.getWindow().setWindowed(1920, 1080);
+            mc.options.guiScale().set(3);
+            mc.resizeDisplay();
+            ShapeClientState.setActive(ShapeParams.defaults(ShapeType.PYRAMID).withSize(14));
+            var screen = new io.github.watdafawx.shapewright.screen.PaletteScreen(null);
+            mc.setScreen(screen);
+            pressButton(adapter(screen).rootComponent, I18n.get("shapewright.screen.palette_scene_room"));
+        }).waitTicks(10).check("palette-screen-shape-1920x1080", () -> {
+            Minecraft mc = Minecraft.getInstance();
+            if (!(mc.screen instanceof io.github.watdafawx.shapewright.screen.PaletteScreen screen)) return List.of("palette screen closed");
+            return hasButton(adapter(screen).rootComponent, I18n.get("shapewright.screen.palette_scene_shape"))
+                    ? List.of() : List.of("preview did not switch to the selected shape");
+        });
         // The radial menu shows the selected shape's name and a preview in Shape mode
         seq.run(() -> {
             Minecraft mc = Minecraft.getInstance();
@@ -205,6 +222,17 @@ final class ShapeUiShots {
         String text = c instanceof AbstractButton b ? " \"" + b.getMessage().getString() + "\""
                 : c instanceof LabelComponent l ? " \"" + l.text().getString() + "\"" : "";
         return c.getClass().getSimpleName() + text + " at " + c.x() + "," + c.y() + " " + c.width() + "x" + c.height();
+    }
+
+    private static boolean hasButton(io.wispforest.owo.ui.core.Component c, String text) {
+        if (c instanceof AbstractButton b && b.getMessage().getString().equals(text)) return true;
+        if (c instanceof ParentComponent p) for (var child : p.children()) if (hasButton(child, text)) return true;
+        return false;
+    }
+
+    private static void pressButton(io.wispforest.owo.ui.core.Component c, String text) {
+        if (c instanceof AbstractButton b && b.getMessage().getString().equals(text)) { b.onPress(); return; }
+        if (c instanceof ParentComponent p) for (var child : List.copyOf(p.children())) pressButton(child, text);
     }
 
     private static OwoUIAdapter<?> adapter(BaseOwoScreen<?> screen) {
