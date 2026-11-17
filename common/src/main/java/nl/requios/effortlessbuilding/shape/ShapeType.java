@@ -167,6 +167,22 @@ public enum ShapeType {
         all.add(ParamSpec.angle(ROTATE_X));
         all.add(ParamSpec.angle(ROTATE_Y));
         all.add(ParamSpec.angle(ROTATE_Z));
+        // Twist: turns each layer a bit more than the one before, like Blender's twist deform
+        all.add(ParamSpec.choice(ShapeModifiers.AXIS, 0, "depth", "x", "y", "z"));
+        all.add(ParamSpec.choice(ShapeModifiers.ORIGIN, 0, "start", "center", "end"));
+        all.add(ParamSpec.offset(ShapeModifiers.ORIGIN_X));
+        all.add(ParamSpec.offset(ShapeModifiers.ORIGIN_Y));
+        all.add(ParamSpec.offset(ShapeModifiers.ORIGIN_Z));
+        all.add(new ParamSpec(ShapeModifiers.TWIST, 0, -720, 720, false, false, 15, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.TAPER, 0, -3, 0.95, false, false, 0.05, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.SHEAR, 0, -64, 64, true, false, 1, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.BEND, 0, -180, 180, false, false, 15, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.WAVE, 0, -32, 32, true, false, 1, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.WAVE_LENGTH, 12, 2, 128, true, false, 1, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.GROW, 0, -8, 8, false, true, 1, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.NOISE, 0, 0, 8, false, true, 1, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.DECIMATE, 0, 0, 95, false, true, 5, List.of()));
+        all.add(new ParamSpec(ShapeModifiers.SEED, 0, 0, 9999, false, true, 1, List.of()));
         // Only used on the main shape, and only offered when Create is installed
         all.add(ParamSpec.choice(SUPER_GLUE, 0, "off", "on"));
         all.add(ParamSpec.choice(BEARING, 0, "off", "start", "end"));

@@ -292,6 +292,39 @@ public final class ShapeGenerator {
 
     /** One shape (its parts ignored), oriented and anchored, not clipped. */
     private static Collection<Cell> single(ShapeParams p, Function<String, List<Cell>> schematics) {
+        Collection<Cell> base = oriented(p, schematics);
+        if (base.isEmpty() || !ShapeModifiers.active(p)) return base;
+        return ShapeModifiers.apply(base instanceof List<Cell> list ? list : new ArrayList<>(base), p);
+    }
+
+    /**
+     * Where the modifiers' origin (see {@link ShapeModifiers#origin}) ends up in the finished shape, in cell
+     * indices (a block's center), or null when it cannot be followed: with parts or a tilt the shape is moved
+     * by more than the anchor, and without modifiers there is no origin to show.
+     */
+    public static double[] modifierOrigin(ShapeParams p, Function<String, List<Cell>> schematics) {
+        if (!p.parts().isEmpty() || !ShapeModifiers.active(p) || p.type() == ShapeType.SCHEMATIC
+                || p.get(ShapeType.ROTATE_X) % 360 != 0 || p.get(ShapeType.ROTATE_Y) % 360 != 0 || p.get(ShapeType.ROTATE_Z) % 360 != 0) return null;
+        Collection<Cell> base = oriented(p, schematics);
+        if (base.isEmpty()) return null;
+        List<Cell> list = base instanceof List<Cell> l ? l : new ArrayList<>(base);
+        double[] o = ShapeModifiers.origin(list, p);
+        List<Cell> deformed = ShapeModifiers.deform(list, p);
+        o[1] += ShapeModifiers.lift(list, deformed);
+        List<Cell> finished = ShapeModifiers.apply(list, p);
+        if (finished.isEmpty()) return null;
+        // The anchor setting moves every block by one amount: the difference of the bounding-box minimums
+        Map<Cell, Integer> labeled = new HashMap<>();
+        for (Cell c : finished) labeled.put(c, MAIN);
+        Map<Cell, Integer> moved = moveAnchor(labeled, p);
+        int[] lo = minCorner(labeled.keySet()), lo2 = minCorner(moved.keySet());
+        o[0] += lo2[0] - lo[0];
+        o[1] += lo2[1] - lo[1];
+        o[2] += lo2[2] - lo[2];
+        return o;
+    }
+
+    private static Collection<Cell> oriented(ShapeParams p, Function<String, List<Cell>> schematics) {
         if (p.type() == ShapeType.SCHEMATIC) return schematics.apply(p.schematic());
         Set<Cell> local = new HashSet<>();
         switch (p.type()) {
@@ -324,6 +357,12 @@ public final class ShapeGenerator {
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
         return orient(local, p.orientation());
+    }
+
+    private static int[] minCorner(Collection<Cell> cells) {
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
+        for (Cell c : cells) { lo[0] = Math.min(lo[0], c.x()); lo[1] = Math.min(lo[1], c.y()); lo[2] = Math.min(lo[2], c.z()); }
+        return lo;
     }
 
     // -------------------------------------------------------------------------

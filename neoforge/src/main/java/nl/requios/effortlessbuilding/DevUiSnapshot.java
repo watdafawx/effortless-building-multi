@@ -80,6 +80,7 @@ public final class DevUiSnapshot {
     public static void onTick(ClientTickEvent.Post event) {
         if (SCREEN.isEmpty()) return;
         Minecraft mc = Minecraft.getInstance();
+        SelfTest.mute(mc);
         if (ticks < 0) {
             if (!(mc.screen instanceof TitleScreen) || mc.getOverlay() != null) return;
             Supplier<Screen> screen = switch (SCREEN) {
@@ -176,9 +177,9 @@ public final class DevUiSnapshot {
                 File out = new File(dir, "screenshots/ui-" + SCREEN + ".png");
                 out.getParentFile().mkdirs();
                 image.writeToFile(out);
-                Constants.LOG.info("[EffortlessBuilding] UI snapshot saved to {}", out.getAbsolutePath());
+                Constants.LOG.info("[Shapewright] UI snapshot saved to {}", out.getAbsolutePath());
             } catch (Exception e) {
-                Constants.LOG.error("[EffortlessBuilding] UI snapshot failed", e);
+                Constants.LOG.error("[Shapewright] UI snapshot failed", e);
             }
             mc.stop();
         }

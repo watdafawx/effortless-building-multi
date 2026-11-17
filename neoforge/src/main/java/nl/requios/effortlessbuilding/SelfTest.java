@@ -675,12 +675,19 @@ public final class SelfTest {
         }));
     }
 
+    /** Dev runs are silent: nothing here tests audio, and the game runs on a machine someone is working near. */
+    static void mute(Minecraft mc) {
+        var master = mc.options.getSoundSourceOptionInstance(net.minecraft.sounds.SoundSource.MASTER);
+        if (master.get() > 0) master.set(0.0);
+    }
+
     @SubscribeEvent
     static void onClientTick(ClientTickEvent.Post event) {
         if (FMLEnvironment.production) return;
         Minecraft mc = Minecraft.getInstance();
 
         if (AUTO) {
+            mute(mc);
             mc.options.pauseOnLostFocus = false; // unattended: the window is rarely focused
             // A fresh game directory (no options.txt) opens the accessibility onboarding screen instead
             // of the title screen on first launch - accept either, or an unattended run waits forever.

@@ -49,6 +49,9 @@ public final class ShapePreview {
     public float lastScale = 1;
     public int lastSliceScale = 1;
 
+    /** Where the modifiers' origin is in cell coordinates, or null (no modifier, parts or a tilt). */
+    private double[] origin;
+
     // ---- cells cache ----
     private ShapeParams cellsParams;
     private List<Cell> cells = List.of();
@@ -66,6 +69,8 @@ public final class ShapePreview {
     private float[][] faces = new float[0][];
     private float[] facesCenter = new float[3];
     private float facesRadius = 1;
+    /** Size of the shape along x, y and z, for sizing the gizmo. */
+    private float[] facesExtent = {1, 1, 1};
 
     // =========================================================================
     // Cells and their blocks
@@ -98,6 +103,7 @@ public final class ShapePreview {
             all.addAll(axle);
             cells = List.copyOf(all);
             cellsParams = params;
+            origin = ShapeGenerator.modifierOrigin(params, SchematicLibrary::cells);
             computeStats();
         }
         return cells;
@@ -290,10 +296,77 @@ public final class ShapePreview {
             for (int v = 0; v < 4; v++) buffer.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color);
         }
         g.flush();
+        if (nl.requios.effortlessbuilding.config.ClientConfig.INSTANCE.shouldShowGizmo()) {
+            // Always on top, like Blender's gizmo: clear depth so the shape cannot hide it
+            RenderSystem.clear(256, Minecraft.ON_OSX);
+            drawGizmo(g.bufferSource().getBuffer(RenderType.debugQuads()), matrix);
+            g.flush();
+        }
         pose.popPose();
         g.disableScissor();
         // Menus and tooltips drawn later must not hide behind the cubes
         RenderSystem.clear(256, Minecraft.ON_OSX);
+    }
+
+    private static final int X_COLOR = 0xFFE5484D, Y_COLOR = 0xFF46C256, Z_COLOR = 0xFF4A86F0, ORIGIN_COLOR = 0xFFFFD23F;
+
+    /**
+     * The usual 3D gizmo: red x, green y, blue z arrows from the anchor (the spot the shape is placed at), with a
+     * dimmer stub the other way. When a modifier is on, a yellow cross marks its origin.
+     */
+    private void drawGizmo(VertexConsumer buffer, Matrix4f m) {
+        // Arms reach about half the shape along each axis (never longer than half its biggest side), so a flat
+        // shape does not get a tall green arm and a huge one does not get a needle
+        float biggest = Math.max(facesExtent[0], Math.max(facesExtent[1], facesExtent[2]));
+        float base = Math.max(3f, biggest * 0.5f), t = Math.max(0.07f, base * 0.02f);
+        float cx = 0.5f, cy = 0.5f, cz = 0.5f; // the anchor cell's middle
+        int[] colors = {X_COLOR, Y_COLOR, Z_COLOR};
+        for (int a = 0; a < 3; a++) {
+            float len = Math.max(2f, Math.min(base, facesExtent[a] * 0.5f + 1f));
+            float[] lo = {cx - t, cy - t, cz - t}, hi = {cx + t, cy + t, cz + t};
+            float[] tipLo = {cx - t * 2.5f, cy - t * 2.5f, cz - t * 2.5f}, tipHi = {cx + t * 2.5f, cy + t * 2.5f, cz + t * 2.5f};
+            float[] c = {cx, cy, cz};
+            // Positive arm with a cube tip, then a short dim stub the other way
+            float[] l = lo.clone(), h = hi.clone();
+            h[a] = c[a] + len;
+            box(buffer, m, l, h, colors[a]);
+            tipLo[a] = c[a] + len - t * 2.5f;
+            tipHi[a] = c[a] + len + t * 2.5f;
+            box(buffer, m, tipLo, tipHi, colors[a]);
+            l = lo.clone();
+            h = hi.clone();
+            l[a] = c[a] - len * 0.35f;
+            box(buffer, m, l, h, dim(colors[a]));
+        }
+        box(buffer, m, new float[]{cx - t * 2, cy - t * 2, cz - t * 2}, new float[]{cx + t * 2, cy + t * 2, cz + t * 2}, 0xFFFFFFFF);
+        if (origin != null) {
+            float ox = (float) origin[0] + 0.5f, oy = (float) origin[1] + 0.5f, oz = (float) origin[2] + 0.5f;
+            float arm = Math.max(1.2f, base * 0.25f);
+            box(buffer, m, new float[]{ox - arm, oy - t, oz - t}, new float[]{ox + arm, oy + t, oz + t}, ORIGIN_COLOR);
+            box(buffer, m, new float[]{ox - t, oy - arm, oz - t}, new float[]{ox + t, oy + arm, oz + t}, ORIGIN_COLOR);
+            box(buffer, m, new float[]{ox - t, oy - t, oz - arm}, new float[]{ox + t, oy + t, oz + arm}, ORIGIN_COLOR);
+            float s = t * 3;
+            box(buffer, m, new float[]{ox - s, oy - s, oz - s}, new float[]{ox + s, oy + s, oz + s}, ORIGIN_COLOR);
+        }
+    }
+
+    private static int dim(int argb) {
+        return 0xFF000000 | (((argb >> 16) & 0xFF) / 2) << 16 | (((argb >> 8) & 0xFF) / 2) << 8 | ((argb & 0xFF) / 2);
+    }
+
+    /** A solid box, each side shaded a little differently so it reads as 3D. */
+    private static void box(VertexConsumer b, Matrix4f m, float[] lo, float[] hi, int color) {
+        float x0 = lo[0], y0 = lo[1], z0 = lo[2], x1 = hi[0], y1 = hi[1], z1 = hi[2];
+        quad(b, m, shade(color, 1f), x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0);
+        quad(b, m, shade(color, 0.5f), x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1);
+        quad(b, m, shade(color, 0.8f), x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1);
+        quad(b, m, shade(color, 0.8f), x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0);
+        quad(b, m, shade(color, 0.65f), x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1);
+        quad(b, m, shade(color, 0.65f), x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0);
+    }
+
+    private static void quad(VertexConsumer b, Matrix4f m, int color, float... p) {
+        for (int v = 0; v < 4; v++) b.addVertex(m, p[v * 3], p[v * 3 + 1], p[v * 3 + 2]).setColor(color);
     }
 
     private Object cachedPaletteKey;
@@ -327,6 +400,7 @@ public final class ShapePreview {
             for (int a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[a]); hi[a] = Math.max(hi[a], v[a] + 1); }
         }
         facesCenter = new float[]{(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2};
+        facesExtent = new float[]{hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]};
         facesRadius = Math.max(1, (float) Math.sqrt(sq(hi[0] - lo[0]) + sq(hi[1] - lo[1]) + sq(hi[2] - lo[2])) / 2);
 
         // Neighbor offset, brightness, and the four corners of that face on a unit cube

@@ -39,8 +39,18 @@ public class ClientConfig {
     private float previewBlockTransparency = DEFAULT_PREVIEW_BLOCK_TRANSPARENCY;
     private boolean protectTileEntities = DEFAULT_PROTECT_TILE_ENTITIES;
     private int maxBlockPreviews = DEFAULT_MAX_BLOCK_PREVIEWS;
+    private boolean showGizmo = true;
 
     // --- Getters ---
+
+    /** Whether the axis gizmo shows at a shape's anchor, in the shape screen's preview and in the world. */
+    public boolean shouldShowGizmo() {
+        return showGizmo;
+    }
+
+    public void setShowGizmo(boolean value) {
+        this.showGizmo = value;
+    }
 
     /** Preview block size as a fraction (0.10 – 1.0). */
     public float getPreviewBlockSize() {
@@ -87,6 +97,7 @@ public class ClientConfig {
         obj.addProperty("previewBlockTransparency", previewBlockTransparency);
         obj.addProperty("protectTileEntities", protectTileEntities);
         obj.addProperty("maxBlockPreviews", maxBlockPreviews);
+        obj.addProperty("showGizmo", showGizmo);
         return GSON.toJson(obj);
     }
 
@@ -97,6 +108,7 @@ public class ClientConfig {
             if (obj.has("previewBlockTransparency")) setPreviewBlockTransparency(obj.get("previewBlockTransparency").getAsFloat());
             if (obj.has("protectTileEntities")) setProtectTileEntities(obj.get("protectTileEntities").getAsBoolean());
             if (obj.has("maxBlockPreviews")) setMaxBlockPreviews(obj.get("maxBlockPreviews").getAsInt());
+            if (obj.has("showGizmo")) setShowGizmo(obj.get("showGizmo").getAsBoolean());
         } catch (Exception ignored) {
             // Keep current / default values on parse failure
         }

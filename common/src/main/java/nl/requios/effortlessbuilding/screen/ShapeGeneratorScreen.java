@@ -35,6 +35,7 @@ import nl.requios.effortlessbuilding.compat.create.CreateGlue;
 import nl.requios.effortlessbuilding.network.BuildModeHintC2SPacket;
 import nl.requios.effortlessbuilding.network.PacketHandler;
 import nl.requios.effortlessbuilding.palette.BlockColorCache;
+import nl.requios.effortlessbuilding.config.ClientConfig;
 import nl.requios.effortlessbuilding.shape.*;
 import nl.requios.effortlessbuilding.shape.ShapeGenerator.Cell;
 import nl.requios.effortlessbuilding.utilities.ShareCode;
@@ -89,7 +90,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
     /** Settings are grouped under these headings; the closed ones fold away until clicked. */
     private enum Section {
-        PART(true), DESIGN(true), SHAPE(true), HEIGHTS(false), ROTATION(false), BUILD(true);
+        PART(true), DESIGN(true), SHAPE(true), HEIGHTS(false), ROTATION(false), MODIFIERS(false), BUILD(true);
 
         final boolean openByDefault;
 
@@ -398,6 +399,13 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                         refresh();
                     }));
         }
+        // The axis gizmo at the anchor, in this preview and in the world
+        boolean gizmo = ClientConfig.INSTANCE.shouldShowGizmo();
+        viewTabs.child(pill(I18n.get("effortlessbuilding.screen.gizmo"), gizmo, "effortlessbuilding.screen.gizmo.description", () -> {
+            ClientConfig.INSTANCE.setShowGizmo(!gizmo);
+            ClientConfig.INSTANCE.save();
+            refresh();
+        }).margins(Insets.left(4)));
     }
 
     // =========================================================================
@@ -840,6 +848,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private static Section sectionOf(String key) {
+        if (ShapeModifiers.isModifierKey(key)) return Section.MODIFIERS;
         if (key.equals(ShapeType.ROTATE_X) || key.equals(ShapeType.ROTATE_Y) || key.equals(ShapeType.ROTATE_Z)) return Section.ROTATION;
         if (ShapeType.isBuildSetting(key) || key.equals(TerrainBlender.ENABLED) || key.equals(TerrainBlender.MARGIN)
                 || key.equals(ShapeMaterials.USE_SAVED_BLOCKS)) return Section.BUILD;

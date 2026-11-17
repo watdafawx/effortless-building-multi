@@ -17,7 +17,7 @@ import java.util.Map;
  */
 public final class ShapeParamsCodec {
 
-    private static final int MAX_VALUES = 64;
+    private static final int MAX_VALUES = 128;
     private static final int MAX_STRING = 256;
 
     private ShapeParamsCodec() {}

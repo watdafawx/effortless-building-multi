@@ -79,6 +79,8 @@ public class BlockPreviewRenderer {
 
         List<BlockPos> positions = new ArrayList<>(blockSet.keySet());
 
+        GizmoRenderer.render(poseStack, bufferSource, camX, camY, camZ, blockSet);
+
         BuildPipeline.BuildState pendingAction = BuildPipelineClient.getBuildState();
 
         // Delegate sound + action-bar to RenderHandler.
