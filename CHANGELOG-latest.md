@@ -1,5 +1,4 @@
-## 5.0.2
+## 5.0.3
 
-Changes:
-- Block Palette screen: the "selected shape" preview now draws real block textures, is zoomed in to fill its panel and no longer shows the axis gizmo.
-
+Docs:
+- README now has screenshots of the radial menu, the modifier settings, a mirrored build preview and the functional (survival) settings.
