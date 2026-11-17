@@ -95,6 +95,23 @@ final class ShapeUiShots {
             shot(seq, design, windows.get(0), 3);
             shot(seq, design, windows.get(1), 0);
         }
+        // The Block Palette screen: its own 3D preview must show the real blocks too
+        for (Window window : List.of(windows.get(0), windows.get(1))) {
+            int scale = window.width() >= 1920 ? 3 : 0;
+            String name = "palette-screen-" + window.width() + "x" + window.height();
+            seq.run(() -> {
+                Minecraft mc = Minecraft.getInstance();
+                mc.getWindow().setWindowed(window.width(), window.height());
+                mc.options.guiScale().set(scale);
+                mc.resizeDisplay();
+                PaletteClientState.setPalette(BlockPalette.defaults().withSource(BlockPalette.Source.CUSTOM)
+                        .withCustom(List.of(Items.DEEPSLATE_BRICKS, Items.STONE_BRICKS, Items.MOSSY_STONE_BRICKS, Items.OAK_PLANKS, Items.GRASS_BLOCK))
+                        .withPattern(PalettePattern.NOISY_GRADIENT).withBand(2));
+                PaletteClientState.setEnabled(true);
+                mc.setScreen(new io.github.watdafawx.shapewright.screen.PaletteScreen(null));
+            }).waitTicks(10).check(name, () -> Minecraft.getInstance().screen instanceof io.github.watdafawx.shapewright.screen.PaletteScreen
+                    ? List.of() : List.of("palette screen closed"));
+        }
         // The radial menu shows the selected shape's name and a preview in Shape mode
         seq.run(() -> {
             Minecraft mc = Minecraft.getInstance();
