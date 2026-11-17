@@ -58,6 +58,11 @@ final class ShapeUiShots {
                 new Design("gear-part", gear, 1),
                 new Design("readme-twist", ShapeParams.defaults(ShapeType.STAR).withSize(10).with("height", 26).with(io.github.watdafawx.shapewright.shape.ShapeModifiers.TWIST, 180).with(io.github.watdafawx.shapewright.shape.ShapeModifiers.TAPER, -0.4), -1),
                 new Design("readme-bend", ShapeParams.defaults(ShapeType.ARCH).withSize(20).with(io.github.watdafawx.shapewright.shape.ShapeModifiers.BEND, 90).with(io.github.watdafawx.shapewright.shape.ShapeModifiers.WAVE, 3), -1),
+                new Design("readme-blocks", ShapeParams.defaults(ShapeType.PYRAMID).withSize(16).withParts(List.of(
+                        new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, -6, 0, -6, "minecraft:grass_block", 4, ""),
+                        new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, 6, 0, -6, "minecraft:oak_planks", 4, ""),
+                        new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, -6, 0, 6, "minecraft:oak_leaves", 4, ""),
+                        new Part(ShapeParams.defaults(ShapeType.PRISM).withSize(5), Operation.UNITE, 6, 0, 6, "minecraft:stone_bricks", 4, ""))), -1),
                 new Design("floor", ShapeParams.defaults(ShapeType.FLOOR), -1),
                 new Design("text", ShapeParams.defaults(ShapeType.TEXT).withSchematic("Hello builders|Second line"), -1),
                 new Design("schematic", ShapeParams.defaults(ShapeType.SCHEMATIC).withSchematic(SCHEMATIC), -1),

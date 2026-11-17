@@ -8,6 +8,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.core.Direction;
+import net.minecraft.util.RandomSource;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -67,6 +71,8 @@ public final class ShapePreview {
     private int facesHighlight = Integer.MIN_VALUE;
     /** Visible cube faces: x, y, z of four corners, then an ARGB color, per face. */
     private float[][] faces = new float[0][];
+    /** Per face: the block texture to draw it with, or null for a flat color. Same order as {@link #faces}. */
+    private TextureAtlasSprite[] faceSprites = new TextureAtlasSprite[0];
     private float[] facesCenter = new float[3];
     private float facesRadius = 1;
     /** Size of the shape along x, y and z, for sizing the gizmo. */
@@ -291,9 +297,25 @@ public final class ShapePreview {
         pose.translate(-facesCenter[0], -facesCenter[1], -facesCenter[2]);
         Matrix4f matrix = pose.last().pose();
         VertexConsumer buffer = g.bufferSource().getBuffer(RenderType.debugQuads());
-        for (float[] f : faces) {
+        VertexConsumer textured = g.bufferSource().getBuffer(RenderType.text(TextureAtlas.LOCATION_BLOCKS));
+        for (int i = 0; i < faces.length; i++) {
+            float[] f = faces[i];
             int color = (int) f[12];
-            for (int v = 0; v < 4; v++) buffer.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color);
+            TextureAtlasSprite sprite = faceSprites[i];
+            if (sprite == null) {
+                for (int v = 0; v < 4; v++) buffer.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color);
+                continue;
+            }
+            // The block's own texture. Drawn from both sides so the winding under the flipped screen axes cannot hide it.
+            for (int pass = 0; pass < 2; pass++) {
+                for (int k = 0; k < 4; k++) {
+                    int v = pass == 0 ? k : 3 - k;
+                    float u = sprite.getU0() + (sprite.getU1() - sprite.getU0()) * f[13 + v * 2];
+                    float t = sprite.getV0() + (sprite.getV1() - sprite.getV0()) * f[14 + v * 2];
+                    textured.addVertex(matrix, f[v * 3], f[v * 3 + 1], f[v * 3 + 2]).setColor(color).setUv(u, t)
+                            .setLight(net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);
+                }
+            }
         }
         g.flush();
         if (io.github.watdafawx.shapewright.config.ClientConfig.INSTANCE.shouldShowGizmo()) {
@@ -413,24 +435,43 @@ public final class ShapePreview {
                 {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}},
                 {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}},
                 {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}};
+        // Local texture coordinates (0 or 1) of each face corner: top/bottom use x,z; sides use the horizontal axis and 1 - y
         List<float[]> out = new ArrayList<>();
+        List<TextureAtlasSprite> sprites = new ArrayList<>();
         for (Cell c : shown) {
+            BlockState state = cellState(params, c, minY, maxY);
+            FaceTex[] tex = state != null ? texturesFor(state) : null;
             boolean topLayer = layer >= 0 && c.y() - minY == layer;
             float checker = ((c.x() + c.y() + c.z()) & 1) == 1 ? 0.88f : 1f; // alternating shades make blocks countable
             for (int d = 0; d < 6; d++) {
                 if (shown.contains(new Cell(c.x() + dirs[d][0], c.y() + dirs[d][1], c.z() + dirs[d][2]))) continue;
-                float[] f = new float[13];
+                float[] f = new float[21];
                 for (int v = 0; v < 4; v++) {
                     f[v * 3] = c.x() + corners[d][v][0];
                     f[v * 3 + 1] = c.y() + corners[d][v][1];
                     f[v * 3 + 2] = c.z() + corners[d][v][2];
+                    float[] k = corners[d][v];
+                    f[13 + v * 2] = d < 2 || d >= 4 ? k[0] : k[2];
+                    f[14 + v * 2] = d < 2 ? k[2] : 1 - k[1];
                 }
                 float dim = layer >= 0 && !topLayer ? 0.6f : 1f; // layers below the chosen one are dimmed
-                f[12] = shade(cellColor(params, c, minY, maxY), light[d] * checker * dim);
+                FaceTex ft = tex != null ? tex[d] : null;
+                if (ft != null && ft.sprite() != null) {
+                    // Real texture: tint (grass, leaves) and the edited-part highlight multiply it, no checker shading
+                    int base = ft.tint();
+                    Integer label = labels.get(c);
+                    if (label != null && label == highlight) base = mix(base, 0x3FA9FF, 0.55f);
+                    f[12] = shade(base, light[d] * dim);
+                    sprites.add(ft.sprite());
+                } else {
+                    f[12] = shade(cellColor(params, c, minY, maxY), light[d] * checker * dim);
+                    sprites.add(null);
+                }
                 out.add(f);
             }
         }
         faces = out.toArray(new float[0][]);
+        faceSprites = sprites.toArray(new TextureAtlasSprite[0]);
     }
 
     /** Slice (or projection when all layers) through the chosen plane. */
@@ -481,6 +522,53 @@ public final class ShapePreview {
                         oy + (sy + 1) * scale - (scale > 3 ? 1 : 0), color);
             }
         }
+    }
+
+    /** A block face texture and the tint colour (white when untinted) to draw it with. */
+    private record FaceTex(@Nullable TextureAtlasSprite sprite, int tint) {}
+
+    private final Map<BlockState, FaceTex[]> textureCache = new HashMap<>();
+
+    /** The block each cell would become: its own block, else the held block; null when nothing is chosen (flat color). */
+    private @Nullable BlockState cellState(ShapeParams params, Cell c, int minY, int maxY) {
+        BlockState saved = materials.get(c);
+        Integer label = labels.get(c);
+        boolean partBlock = label != null && label >= 0 && label < params.parts().size() && !params.parts().get(label).block().isEmpty();
+        if (saved != null && !axle.contains(c) && !partBlock) return saved;
+        Item item = cellItem(params, c, minY, maxY);
+        if (item == null) item = heldBlock();
+        return item instanceof BlockItem b ? b.getBlock().defaultBlockState() : null;
+    }
+
+    /** The six face textures (up, down, east, west, south, north) of a block's model; its particle texture where the model has none. */
+    private FaceTex[] texturesFor(BlockState state) {
+        return textureCache.computeIfAbsent(state, st -> {
+            FaceTex[] out = new FaceTex[6];
+            Direction[] order = {Direction.UP, Direction.DOWN, Direction.EAST, Direction.WEST, Direction.SOUTH, Direction.NORTH};
+            try {
+                Minecraft mc = Minecraft.getInstance();
+                var model = mc.getBlockRenderer().getBlockModel(st);
+                for (int d = 0; d < 6; d++) {
+                    final Direction dir = order[d];
+                    var quads = model.getQuads(st, dir, RandomSource.create(42));
+                    if (quads.isEmpty()) quads = model.getQuads(st, null, RandomSource.create(42)).stream()
+                            .filter(q -> q.getDirection() == dir).toList();
+                    if (quads.isEmpty()) { out[d] = new FaceTex(model.getParticleIcon(), 0xFFFFFF); continue; }
+                    var quad = quads.get(0);
+                    int tint = 0xFFFFFF;
+                    if (quad.isTinted()) {
+                        try {
+                            int color = mc.getBlockColors().getColor(st, null, null, quad.getTintIndex());
+                            if (color != -1) tint = color & 0xFFFFFF;
+                        } catch (RuntimeException ignored) { /* a colour provider that needs a level: keep it untinted */ }
+                    }
+                    out[d] = new FaceTex(quad.getSprite(), tint);
+                }
+            } catch (RuntimeException e) {
+                Arrays.fill(out, new FaceTex(null, 0xFFFFFF));
+            }
+            return out;
+        });
     }
 
     /** The block color a cell gets: from its own block when it has one, else the plain preview color. */

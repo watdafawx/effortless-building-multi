@@ -6,6 +6,7 @@ Shapewright is a building mod for Minecraft 1.21.1 (NeoForge and Fabric). Pick a
 
 * Shape Generator with 30+ shapes, combine parts (unite, subtract, intersect), tilt and rotate
 * Modifiers: twist, taper, shear, wave, bend, grow/shrink, noise, decimate, with a movable origin
+* Preview with the real block textures of your palette and parts
 * 3D gizmo that shows the anchor and the modifier origin, in the editor and in the world
 * Place and break many blocks at once, mirror, array, undo and redo
 * Block palettes, schematics, pixel art, randomizer bag
@@ -17,6 +18,9 @@ Shapewright is a building mod for Minecraft 1.21.1 (NeoForge and Fabric). Pick a
 
 ![Bent and waved arch in the Shape Generator](docs/shapegen-bend.png)
 *Arch with bend 90 and wave. The Modifiers section lists what changed.*
+
+![Shape preview with real block textures](docs/shapegen-blocks.png)
+*The preview draws the real block textures of your blocks, parts and palette.*
 
 ## Shape Generator
 Open it from Shape mode in the radial menu (hold ALT). The left side lists saved templates, the middle shows a live 3D preview, the right side holds the settings, grouped into Design, Shape, Heights, Rotation, Modifiers and Build.
