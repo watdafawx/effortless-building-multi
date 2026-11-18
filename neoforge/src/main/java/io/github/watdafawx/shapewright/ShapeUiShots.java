@@ -145,6 +145,26 @@ final class ShapeUiShots {
             return hasButton(adapter(screen).rootComponent, I18n.get("shapewright.screen.palette_scene_shape"))
                     ? List.of() : List.of("preview did not switch to the selected shape");
         });
+        // The shape list scrolled to its end must show its last row whole
+        for (int[] res : new int[][] {{1920, 1080, 3}, {1920, 1080, 2}, {1280, 720, 0}}) {
+            seq.run(() -> {
+                Minecraft mc = Minecraft.getInstance();
+                mc.getWindow().setWindowed(res[0], res[1]);
+                mc.options.guiScale().set(res[2]);
+                mc.resizeDisplay();
+                ShapeClientState.setActive(ShapeParams.defaults(ShapeType.PYRAMID).withSize(14));
+                mc.setScreen(new ShapeGeneratorScreen());
+            }).waitTicks(6).run(() -> {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.screen instanceof ShapeGeneratorScreen s) for (int i = 0; i < 60; i++) s.mouseScrolled(20, s.height / 2.0, 0, -1);
+            }).waitTicks(20).check("shape-list-end-" + res[0] + "x" + res[1] + "-s" + res[2], () -> {
+                Minecraft mc = Minecraft.getInstance();
+                if (!(mc.screen instanceof ShapeGeneratorScreen s)) return List.of("screen not open");
+                List<String> issues = new ArrayList<>();
+                sidebarEnd(adapter(s).rootComponent, issues);
+                return issues;
+            });
+        }
         // The radial menu shows the selected shape's name and a preview in Shape mode
         seq.run(() -> {
             Minecraft mc = Minecraft.getInstance();
@@ -231,6 +251,37 @@ final class ShapeUiShots {
         if (c instanceof ParentComponent parent) {
             ScrollContainer<?> inner = c instanceof ScrollContainer<?> s ? s : clip;
             for (var child : parent.children()) walk(child, inner, mc, sw, sh, issues);
+        }
+    }
+
+    /** The leftmost scroll area is the shape list: its last row has to end inside it. */
+    private static boolean sidebarEnd(io.wispforest.owo.ui.core.Component c, List<String> issues) {
+        if (c instanceof ScrollContainer<?> sc && sc.x() < 200 && sc.children().size() == 1
+                && sc.children().get(0) instanceof ParentComponent list && !list.children().isEmpty()) {
+            var last = list.children().get(list.children().size() - 1);
+            int bottom = last.y() + last.height(), clipBottom = sc.y() + sc.height();
+            issues.add((bottom <= clipBottom ? "info: " : "cut off: ") + "last row " + describe(last) + " bottom " + bottom
+                    + ", scroll area " + sc.y() + ".." + clipBottom + ", rows " + list.children().size()
+                    + ", list " + list.y() + " h" + list.height() + " bottom " + (list.y() + list.height())
+                    + ", padding " + sc.padding().get().vertical() + ", " + scrollState(sc));
+            if (bottom <= clipBottom) issues.clear();
+            return true;
+        }
+        if (c instanceof ParentComponent p) for (var child : p.children()) if (sidebarEnd(child, issues)) return true;
+        return false;
+    }
+
+    private static String scrollState(ScrollContainer<?> sc) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            for (String f : new String[] {"scrollOffset", "currentScrollPosition", "maxScroll", "scrollStep", "childSize"}) {
+                var field = ScrollContainer.class.getDeclaredField(f);
+                field.setAccessible(true);
+                sb.append(f).append('=').append(field.get(sc)).append(' ');
+            }
+            return sb.toString().trim();
+        } catch (ReflectiveOperationException e) {
+            return "state unreadable: " + e;
         }
     }
 

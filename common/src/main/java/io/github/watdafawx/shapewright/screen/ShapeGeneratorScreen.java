@@ -436,7 +436,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         panel.child(librarySections);
         sidebarList = Containers.verticalFlow(Sizing.fixed(listW - 6), Sizing.content());
         sidebarScroll = new KeepScroll(Sizing.fill(100), Sizing.expand(), sidebarList);
-        sidebarScroll.scrollStep(SIDEBAR_SCROLL_STEP);
+        sidebarScroll.wheelPixels(SIDEBAR_SCROLL_STEP);
         panel.child(sidebarScroll);
     }
 

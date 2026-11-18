@@ -51,6 +51,24 @@ final class KeepScroll extends ScrollContainer<FlowLayout> {
         if (pending == 0 || (maxScroll > 0 && System.currentTimeMillis() > holdUntil)) pending = -1;
     }
 
+    /**
+     * Pixels per wheel notch. owo's own {@code scrollStep} snaps the list to multiples of the step, so the
+     * end of the list (rarely a multiple) can never be reached; the speed is applied here instead.
+     */
+    private int wheelPixels = 15;
+
+    KeepScroll wheelPixels(int pixels) {
+        wheelPixels = pixels;
+        return this;
+    }
+
+    @Override
+    public boolean onMouseScroll(double mouseX, double mouseY, double amount) {
+        if (child.onMouseScroll(x + mouseX - child.x(), y + mouseY - child.y(), amount)) return true;
+        scrollBy(-amount * wheelPixels, false, true);
+        return true;
+    }
+
     /** Mouse wheel, scrollbar drag and keys all end up here: the player now decides where the list is. */
     @Override
     protected void scrollBy(double offset, boolean instant, boolean showScrollbar) {
