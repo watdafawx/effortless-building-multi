@@ -353,6 +353,8 @@ public final class ShapeGenerator {
             case WEDGE -> wedge(p, local);
             case CAPSULE -> capsule(p, local);
             case OCTAHEDRON -> octahedron(p, local);
+            case FRUSTUM -> frustum(p, local);
+            case ROOF -> roof(p, local);
             case SCHEMATIC -> { }
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
@@ -1061,6 +1063,101 @@ public final class ShapeGenerator {
             for (int v = -r; v <= r; v++)
                 for (int w = -r; w <= r; w++)
                     if (Math.abs(u) + Math.abs(v) + Math.abs(w) <= r) out.add(new Cell(u, v, w));
+    }
+
+    /**
+     * Truncated cone (sides = 0) or pyramid: the radius shrinks from {@code size} at the bottom layer to
+     * {@code size * top_ratio} at the top one. Hollow keeps a wall of {@code wall} blocks, the top of every step,
+     * and a floor and ceiling when the caps are closed.
+     */
+    private static void frustum(ShapeParams p, Set<Cell> out) {
+        int r = p.size(), height = p.getInt("height"), sides = p.getInt("sides"), wall = p.getInt("wall");
+        double ratio = p.get("top_ratio");
+        boolean hollow = p.hollow(), closed = p.getInt("caps") == 1;
+        for (int w = 0; w < height; w++) {
+            double radius = frustumRadius(r, ratio, w, height);
+            double[][] poly = sides >= 3 ? regularPolygon(sides, radius, 0) : null;
+            double[][] inner = sides >= 3 && radius - wall >= 0 ? regularPolygon(sides, radius - wall, 0) : null;
+            double aboveRadius = w < height - 1 ? frustumRadius(r, ratio, w + 1, height) : -1;
+            double[][] above = sides >= 3 && w < height - 1 ? regularPolygon(sides, aboveRadius, 0) : null;
+            boolean cap = closed && (w == 0 || w == height - 1);
+            for (int u = -r - 1; u <= r + 1; u++)
+                for (int v = -r - 1; v <= r + 1; v++) {
+                    if (!inFrustumLayer(u, v, poly, radius)) continue;
+                    if (hollow && !cap) {
+                        boolean ring = poly != null ? inner == null || !inPolygon(u, v, inner)
+                                : Math.hypot(u, v) >= radius + 0.5 - wall;
+                        // The top of a step stays covered; the very top layer is the (open) cap
+                        boolean stepTop = w < height - 1 && !inFrustumLayer(u, v, above, aboveRadius);
+                        if (!ring && !stepTop) continue;
+                    }
+                    out.add(new Cell(u, v, w));
+                }
+        }
+    }
+
+    private static double frustumRadius(int r, double ratio, int w, int height) {
+        return r * (1 - (1 - ratio) * (height <= 1 ? 0 : w / (double) (height - 1)));
+    }
+
+    private static boolean inFrustumLayer(int u, int v, double[][] poly, double radius) {
+        return poly != null ? inPolygon(u, v, poly) : Math.hypot(u, v) < radius + 0.5;
+    }
+
+    /**
+     * Roof shell: a surface over |u| &lt;= size (+ overhang), |v| &lt;= length (+ overhang), {@code thickness}
+     * blocks deep. Style 0 gable (ridge along v), 1 hip, 2 shed (high on -u), 3 gambrel. The eave sits at w = 0.
+     * Closed gable ends fill the end walls under the roof (gable, shed, gambrel).
+     */
+    private static void roof(ShapeParams p, Set<Cell> out) {
+        int a = p.size(), len = p.getInt("length"), oh = p.getInt("overhang"), t = p.getInt("thickness");
+        int style = p.getInt("roof_style");
+        boolean closedEnds = p.getInt("gable_ends") == 1 && style != 1;
+        int ru = a + oh, rv = len + oh;
+        int[][] top = new int[2 * ru + 3][2 * rv + 3]; // one extra ring so neighbours are always defined
+        for (int u = -ru - 1; u <= ru + 1; u++)
+            for (int v = -rv - 1; v <= rv + 1; v++) {
+                int cu = Math.max(-ru, Math.min(ru, u)), cv = Math.max(-rv, Math.min(rv, v));
+                int cell = (int) Math.ceil(roofHeight(p, style, a, len, cu, cv) - 1e-9) - 1;
+                if (Math.abs(cu) <= a && Math.abs(cv) <= len) cell = Math.max(0, cell);
+                top[u + ru + 1][v + rv + 1] = cell;
+            }
+        int[][] around = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int u = -ru; u <= ru; u++)
+            for (int v = -rv; v <= rv; v++) {
+                int tp = top[u + ru + 1][v + rv + 1];
+                int bottom = tp - t + 1;
+                // Reach down to the lower neighbours so a steep slope has no gaps
+                for (int[] d : around) bottom = Math.min(bottom, top[u + d[0] + ru + 1][v + d[1] + rv + 1] + 1);
+                for (int w = Math.min(bottom, tp); w <= tp; w++) out.add(new Cell(u, v, w));
+                if (closedEnds && Math.abs(u) <= a && Math.abs(v) <= len && len - Math.abs(v) < t)
+                    for (int w = 0; w <= tp; w++) out.add(new Cell(u, v, w));
+            }
+    }
+
+    /** Roof surface height above the eave line at (u, v); negative past the eave (overhang). */
+    private static double roofHeight(ShapeParams p, int style, int a, int len, int u, int v) {
+        double pitch = p.get("pitch"), run = a + 0.5;
+        double side = run - Math.abs(u); // distance in from the eave
+        switch (style) {
+            case 1 -> {
+                double endIn = len + 0.5 - Math.abs(v);
+                int ridge = p.getInt("ridge_length");
+                if (ridge <= 0) return pitch * Math.min(side, endIn);
+                // Ridge as long as asked: the end slopes rise from the end of the building to the ridge's end
+                double rh = Math.min(ridge / 2.0, len), ridgeHeight = pitch * run;
+                double end = Math.abs(v) <= rh ? ridgeHeight : ridgeHeight * endIn / (len + 0.5 - rh);
+                return Math.min(pitch * side, end);
+            }
+            case 2 -> { return pitch * (run - u); } // high on the -u side
+            case 3 -> {
+                // Steep lower slope over the outer 40% of the run (75% of the rise), shallow slope above it
+                double ridgeHeight = pitch * run, bend = 0.4 * run;
+                return side <= bend ? ridgeHeight * 0.75 * side / bend
+                        : ridgeHeight * (0.75 + 0.25 * (side - bend) / (run - bend));
+            }
+            default -> { return pitch * side; }
+        }
     }
 
     /** Drops cells outside the size limit (a span of at most maxAxis blocks, centered on the anchor) and sorts bottom up. */

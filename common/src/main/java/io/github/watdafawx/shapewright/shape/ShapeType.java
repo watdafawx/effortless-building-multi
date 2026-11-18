@@ -150,7 +150,26 @@ public enum ShapeType {
     CAPSULE(4, true, ShapeParams.Orientation.FLAT, List.of(
             ParamSpec.length("height", 14, 1))),
     /** Two pyramids base to base. */
-    OCTAHEDRON(6, true, ShapeParams.Orientation.FLAT, List.of());
+    OCTAHEDRON(6, true, ShapeParams.Orientation.FLAT, List.of()),
+    /** Truncated cone or pyramid: bottom radius is the size, the top is {@code top_ratio} of it. */
+    FRUSTUM(8, true, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.length("height", 10, 1),
+            ParamSpec.count("sides", 0, 0, 64),
+            ParamSpec.ratio("top_ratio", 0.5, 0, 1),
+            ParamSpec.length("wall", 1, 1),
+            ParamSpec.choice("caps", 0, "open", "closed"))),
+    /**
+     * Roof shell over a rectangular footprint (2 * size + 1 across, 2 * length + 1 long), ridge along v.
+     * Its lowest edge is the wall top; the ridge rises {@code pitch * span / 2}.
+     */
+    ROOF(6, false, ShapeParams.Orientation.FLAT, List.of(
+            ParamSpec.choice("roof_style", 0, "gable", "hip", "shed", "gambrel"),
+            ParamSpec.length("length", 8, 0),
+            ParamSpec.ratio("pitch", 1, 0.1, 4),
+            ParamSpec.length("overhang", 0, 0),
+            ParamSpec.length("thickness", 1, 1),
+            ParamSpec.length("ridge_length", 0, 0),
+            ParamSpec.choice("gable_ends", 0, "open", "closed")));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;

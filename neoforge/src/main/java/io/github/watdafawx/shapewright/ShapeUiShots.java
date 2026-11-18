@@ -76,6 +76,8 @@ final class ShapeUiShots {
                     PaletteClientState.setEnabled(true);
                 }),
                 new Design("floor", ShapeParams.defaults(ShapeType.FLOOR), -1),
+                new Design("frustum", ShapeParams.defaults(ShapeType.FRUSTUM).withSize(10).with("sides", 6).with("height", 14).withHollow(true), -1),
+                new Design("roof", ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 3).with("overhang", 1), -1),
                 new Design("text", ShapeParams.defaults(ShapeType.TEXT).withSchematic("Hello builders|Second line"), -1),
                 new Design("schematic", ShapeParams.defaults(ShapeType.SCHEMATIC).withSchematic(SCHEMATIC), -1),
                 // Ctrl+F opens the library (its tab on narrow screens) and focuses the search box

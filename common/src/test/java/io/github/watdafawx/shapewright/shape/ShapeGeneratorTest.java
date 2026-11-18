@@ -467,4 +467,165 @@ class ShapeGeneratorTest {
         }
         assertEquals(3, gen(solid.with("thickness", 3).withSize(1).with("length", 1)).stream().map(Cell::y).distinct().count());
     }
+
+    // ---- frustum ----
+
+    @Test
+    void frustumDefaultsHaveTheExpectedBoundingBoxAndNarrowUpwards() {
+        ShapeParams f = ShapeParams.defaults(ShapeType.FRUSTUM);
+        List<Cell> cells = gen(f);
+        assertFalse(cells.isEmpty());
+        assertEquals(f.getInt("height") - 1, cells.stream().mapToInt(Cell::y).max().orElseThrow());
+        assertEquals(f.size(), cells.stream().mapToInt(Cell::x).max().orElseThrow());
+        assertEquals(-f.size(), cells.stream().mapToInt(Cell::x).min().orElseThrow());
+        int bottom = (int) cells.stream().filter(c -> c.y() == 0).count();
+        int top = (int) cells.stream().filter(c -> c.y() == f.getInt("height") - 1).count();
+        assertTrue(top < bottom);
+        // Top layer radius is half the bottom one
+        int topRadius = cells.stream().filter(c -> c.y() == f.getInt("height") - 1).mapToInt(Cell::x).max().orElseThrow();
+        assertEquals(Math.round(f.size() * 0.5), topRadius);
+    }
+
+    @Test
+    void frustumIsSymmetricRoundAndSquared() {
+        for (int sides : new int[]{0, 4}) {
+            Set<Cell> cells = new HashSet<>(gen(ShapeParams.defaults(ShapeType.FRUSTUM).with("sides", sides)));
+            for (Cell c : cells) {
+                assertTrue(cells.contains(new Cell(-c.x(), c.y(), c.z())), sides + " x mirror of " + c);
+                assertTrue(cells.contains(new Cell(c.x(), c.y(), -c.z())), sides + " z mirror of " + c);
+            }
+        }
+    }
+
+    @Test
+    void frustumWithTopRatioOneMatchesCylinderAndPrism() {
+        ShapeParams cyl = ShapeParams.defaults(ShapeType.CYLINDER).withSize(7).with("height", 9);
+        ShapeParams round = ShapeParams.defaults(ShapeType.FRUSTUM).withSize(7).with("height", 9).with("top_ratio", 1).with("sides", 0);
+        assertEquals(new HashSet<>(gen(cyl)), new HashSet<>(gen(round)));
+        ShapeParams prism = ShapeParams.defaults(ShapeType.PRISM).withSize(7).with("sides", 6).with("height", 9);
+        ShapeParams poly = ShapeParams.defaults(ShapeType.FRUSTUM).withSize(7).with("height", 9).with("top_ratio", 1).with("sides", 6);
+        assertEquals(new HashSet<>(gen(prism)), new HashSet<>(gen(poly)));
+    }
+
+    @Test
+    void frustumHollowIsASmallerSubsetAndClosedCapsAddBlocks() {
+        for (int sides : new int[]{0, 5}) {
+            ShapeParams solid = ShapeParams.defaults(ShapeType.FRUSTUM).with("sides", sides);
+            Set<Cell> all = new HashSet<>(gen(solid));
+            List<Cell> open = gen(solid.withHollow(true));
+            List<Cell> closed = gen(solid.withHollow(true).with("caps", 1));
+            assertTrue(open.size() < all.size(), "sides " + sides);
+            assertTrue(all.containsAll(open) && all.containsAll(closed), "sides " + sides);
+            assertTrue(closed.size() > open.size(), "closed caps add a floor and ceiling, sides " + sides);
+            // Open top: the middle of the top layer is empty
+            int topLayer = solid.getInt("height") - 1;
+            assertFalse(new HashSet<>(open).contains(new Cell(0, topLayer, 0)));
+            assertTrue(new HashSet<>(closed).contains(new Cell(0, topLayer, 0)));
+        }
+    }
+
+    // ---- roof ----
+
+    private static int height(List<Cell> cells) {
+        return cells.stream().mapToInt(Cell::y).max().orElseThrow() + 1;
+    }
+
+    @Test
+    void roofStylesAreNonEmptyAndStandOnTheAnchor() {
+        for (int style = 0; style < 4; style++) {
+            for (int size : new int[]{0, 1, 2, 12}) {
+                List<Cell> cells = gen(ShapeParams.defaults(ShapeType.ROOF).withSize(size).with("roof_style", style));
+                assertFalse(cells.isEmpty(), "style " + style + " size " + size);
+                assertEquals(0, cells.stream().mapToInt(Cell::y).min().orElseThrow());
+            }
+        }
+    }
+
+    @Test
+    void gableRoofRidgeHeightFollowsPitchAndSpan() {
+        ShapeParams roof = ShapeParams.defaults(ShapeType.ROOF); // gable, radius 6: span 13, length 8
+        int span = 2 * roof.size() + 1;
+        for (double pitch : new double[]{0.5, 1, 2}) {
+            List<Cell> cells = gen(roof.with("pitch", pitch));
+            assertEquals((int) Math.ceil(pitch * span / 2), height(cells), "pitch " + pitch);
+        }
+        List<Cell> cells = gen(roof);
+        assertEquals(roof.size(), cells.stream().mapToInt(Cell::x).max().orElseThrow());
+        assertEquals(roof.getInt("length"), cells.stream().mapToInt(Cell::z).max().orElseThrow());
+        // The ridge is above the middle line along the whole length
+        int ridge = height(cells) - 1;
+        for (int z = -roof.getInt("length"); z <= roof.getInt("length"); z++)
+            assertTrue(cells.contains(new Cell(0, ridge, z)), "ridge at z " + z);
+    }
+
+    @Test
+    void roofsAreMirrorSymmetricAcrossTheRidge() {
+        for (int style : new int[]{0, 1, 3}) {
+            Set<Cell> cells = new HashSet<>(gen(ShapeParams.defaults(ShapeType.ROOF).with("roof_style", style).with("overhang", 1)));
+            for (Cell c : cells) {
+                assertTrue(cells.contains(new Cell(-c.x(), c.y(), c.z())), "style " + style + " x mirror of " + c);
+                assertTrue(cells.contains(new Cell(c.x(), c.y(), -c.z())), "style " + style + " z mirror of " + c);
+            }
+        }
+    }
+
+    @Test
+    void hipRoofClosesAllFourSidesAndRidgeLengthShortensTheRidge() {
+        ShapeParams hip = ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 1); // radius 6, length 8
+        List<Cell> cells = gen(hip);
+        // Lowest layer touches every edge of the footprint; the ridge ends before the ends of the roof
+        int ridge = height(cells) - 1;
+        Set<Cell> set = new HashSet<>(cells);
+        assertTrue(set.contains(new Cell(0, 0, -8)) && set.contains(new Cell(0, 0, 8)));
+        assertFalse(set.contains(new Cell(0, ridge, 8)));
+        assertTrue(set.contains(new Cell(0, ridge, 0)));
+        int ridgeCells = (int) cells.stream().filter(c -> c.y() == ridge && c.x() == 0).count();
+        List<Cell> longer = gen(hip.with("ridge_length", 12));
+        assertEquals(height(cells), height(longer));
+        assertTrue(longer.stream().filter(c -> c.y() == ridge && c.x() == 0).count() > ridgeCells);
+    }
+
+    @Test
+    void shedAndGambrelRoofsAreAsTallAsExpected() {
+        ShapeParams shed = ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 2);
+        List<Cell> cells = gen(shed);
+        // High on the -x side, one block at the low side
+        assertEquals(height(cells) - 1, cells.stream().filter(c -> c.x() == -shed.size()).mapToInt(Cell::y).max().orElseThrow());
+        assertEquals(0, cells.stream().filter(c -> c.x() == shed.size()).mapToInt(Cell::y).max().orElseThrow());
+        ShapeParams gambrel = ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 3);
+        int span = 2 * gambrel.size() + 1;
+        assertEquals((int) Math.ceil(span / 2.0), height(gen(gambrel)));
+        // The steep lower slope puts more of the rise near the eaves than a gable does
+        int gableEave = gen(ShapeParams.defaults(ShapeType.ROOF)).stream().filter(c -> c.x() == 4 && c.z() == 0).mapToInt(Cell::y).max().orElseThrow();
+        int gambrelEave = gen(gambrel).stream().filter(c -> c.x() == 4 && c.z() == 0).mapToInt(Cell::y).max().orElseThrow();
+        assertTrue(gambrelEave > gableEave);
+    }
+
+    @Test
+    void roofThicknessOverhangAndGableEndsChangeTheBlockCount() {
+        ShapeParams roof = ShapeParams.defaults(ShapeType.ROOF);
+        int base = gen(roof).size();
+        assertTrue(gen(roof.with("thickness", 3)).size() > base);
+        List<Cell> over = gen(roof.with("overhang", 2));
+        assertEquals(roof.size() + 2, over.stream().mapToInt(Cell::x).max().orElseThrow());
+        assertEquals(roof.getInt("length") + 2, over.stream().mapToInt(Cell::z).max().orElseThrow());
+        assertTrue(over.size() > base);
+        // Closed ends fill the triangle under the roof
+        Set<Cell> closed = new HashSet<>(gen(roof.with("gable_ends", 1)));
+        assertTrue(closed.size() > base);
+        assertTrue(closed.contains(new Cell(0, 0, roof.getInt("length"))));
+        assertTrue(closed.containsAll(gen(roof)));
+        assertFalse(new HashSet<>(gen(roof)).contains(new Cell(0, 0, roof.getInt("length"))));
+    }
+
+    @Test
+    void roofHasNoGapsLookingDown() {
+        // Every column of the footprint has a block, at any style and a steep pitch
+        for (int style = 0; style < 4; style++) {
+            ShapeParams roof = ShapeParams.defaults(ShapeType.ROOF).with("roof_style", style).with("pitch", 3);
+            Set<Long> columns = new HashSet<>();
+            for (Cell c : gen(roof)) columns.add(((long) c.x() << 32) | (c.z() & 0xffffffffL));
+            assertEquals((2 * roof.size() + 1) * (2 * roof.getInt("length") + 1), columns.size(), "style " + style);
+        }
+    }
 }
