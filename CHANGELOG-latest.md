@@ -1,4 +1,4 @@
-## 5.3.0
+## 5.3.1
 
-New:
-- Two new shapes in the Shape Generator: Frustum (a truncated cone or pyramid with round or 3+ sided base, adjustable top size, wall and caps) and Roof (gable, hip, shed or gambrel roof shell with pitch, overhang, thickness and open or closed gable ends).
+Fixed:
+- The shape list in the Shape Generator could not be scrolled to its last rows (they stayed cut off at the bottom).
