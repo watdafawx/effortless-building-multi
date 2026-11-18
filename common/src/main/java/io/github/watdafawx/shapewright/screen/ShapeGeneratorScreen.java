@@ -10,6 +10,7 @@ import io.wispforest.owo.ui.container.Containers;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.core.Color;
 import io.wispforest.owo.ui.core.CursorStyle;
+import io.wispforest.owo.ui.core.HorizontalAlignment;
 import io.wispforest.owo.ui.core.Insets;
 import io.wispforest.owo.ui.core.OwoUIAdapter;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
@@ -67,7 +68,7 @@ import static io.github.watdafawx.shapewright.screen.Ui.w;
  */
 public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
-    private static final int SIDEBAR_W = 124;
+    private static final int SIDEBAR_W = 142;
     private static final int ROW_H = 18;
     /** Height of buttons and fields in the panels (vanilla's 20 leaves little room). */
     private static final int CONTROL_H = 16;
@@ -132,7 +133,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
     // ---- components refreshed on change ----
     private FlowLayout root;
-    private @Nullable FlowLayout sidebarList, settings, viewTabs;
+    private @Nullable FlowLayout sidebarList, settings, viewTabs, librarySections;
+    private LibrarySection librarySection = LibrarySection.SHAPES;
+    private int libraryW = 150;
+    /** Pixels the library list moves per wheel notch (owo's default is about one pixel row). */
+    private static final int SIDEBAR_SCROLL_STEP = 48;
     private @Nullable KeepScroll sidebarScroll, settingsScroll;
     private LabelComponent header, layerLabel;
     private TextBoxComponent nameBox, search;
@@ -240,6 +245,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         body.gap(GAP);
         sidebarList = null;
         sidebarScroll = null;
+        librarySections = null;
         settingsScroll = null;
         settings = null;
         if (compact) {
@@ -415,6 +421,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     // =========================================================================
 
     private void fillLibrary(FlowLayout panel, int listW) {
+        libraryW = listW;
         search = Components.textBox(Sizing.fill(100));
         w(search).verticalSizing(Sizing.fixed(CONTROL_H)).margins(Insets.bottom(4));
         search.setHint(Component.translatable("shapewright.screen.search"));
@@ -424,9 +431,55 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             fillSidebar();
         });
         panel.child(w(search));
+        librarySections = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        librarySections.margins(Insets.bottom(4));
+        panel.child(librarySections);
         sidebarList = Containers.verticalFlow(Sizing.fixed(listW - 6), Sizing.content());
         sidebarScroll = new KeepScroll(Sizing.fill(100), Sizing.expand(), sidebarList);
+        sidebarScroll.scrollStep(SIDEBAR_SCROLL_STEP);
         panel.child(sidebarScroll);
+    }
+
+    /** One entry per tab above the library list; designs are hidden while a part's shape is being picked. */
+    private void fillLibrarySections() {
+        if (librarySections == null) return;
+        librarySections.clearChildren();
+        if (editing >= 0) librarySection = LibrarySection.SHAPES;
+        // While searching, every group shows with its own heading, so the tabs would only repeat them
+        boolean hidden = !filter.trim().isEmpty();
+        librarySections.margins(Insets.bottom(hidden ? 0 : 4));
+        if (hidden) return;
+        List<LibrarySection> shown = new ArrayList<>();
+        for (LibrarySection tab : LibrarySection.values()) {
+            if (!(tab == LibrarySection.DESIGNS && editing >= 0)) shown.add(tab);
+        }
+        // Each tab is as wide as its text; when they do not all fit, every one shrinks by the same factor
+        int avail = libraryW - 6 - shown.size();
+        int wanted = 0;
+        for (LibrarySection tab : shown) wanted += font.width(I18n.get(tab.titleKey)) + 5;
+        double factor = wanted > avail ? (double) avail / wanted : 1;
+        for (LibrarySection tab : shown) {
+            int tabW = (int) ((font.width(I18n.get(tab.titleKey)) + 5) * factor);
+            FlowLayout pill = pill(fit(I18n.get(tab.titleKey), tabW - 1), librarySection == tab, null, () -> {
+                librarySection = tab;
+                fillSidebar();
+                if (sidebarScroll != null) sidebarScroll.restore(0);
+            });
+            pill.horizontalSizing(Sizing.fixed(tabW));
+            pill.horizontalAlignment(HorizontalAlignment.CENTER).padding(Insets.horizontal(0));
+            pill.margins(Insets.right(1));
+            librarySections.child(pill);
+        }
+    }
+
+    private enum LibrarySection {
+        SHAPES("shapewright.screen.shapes"), DESIGNS("shapewright.screen.designs"), TEMPLATES("shapewright.screen.tab.templates");
+
+        final String titleKey;
+
+        LibrarySection(String titleKey) {
+            this.titleKey = titleKey;
+        }
     }
 
     private void fillSidebar() {
@@ -436,9 +489,13 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         int listW = sidebarList.horizontalSizing().get().value;
         String query = filter.trim().toLowerCase(Locale.ROOT);
         boolean searching = !query.isEmpty();
+        fillLibrarySections();
+        // Searching looks through every tab (with headings); otherwise only the chosen tab shows
+        boolean allTabs = searching;
 
         List<ShapeType> types = Arrays.stream(ShapeType.values()).filter(t -> matches(I18n.get(t.getNameKey()), query)).toList();
-        if (groupHeading(sidebarList, "library.shapes", I18n.get("shapewright.screen.shapes"), types.size(), true, searching, this::fillSidebar)) {
+        if ((allTabs || librarySection == LibrarySection.SHAPES)
+                && libraryOpen(sidebarList, "library.shapes", "shapewright.screen.shapes", types.size(), allTabs)) {
             if (editing >= 0) {
                 // While a part is being edited, the list sets that part's shape
                 sidebarList.child(Ui.label(Component.translatable("shapewright.screen.shapes_for_part", editing + 1), MUTED)
@@ -452,16 +509,16 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         }
         if (editing < 0) {
             List<ShapePresets.Preset> designs = ShapePresets.get().stream().filter(d -> matches(I18n.get(d.getNameKey()), query)).toList();
-            if (!designs.isEmpty() && groupHeading(sidebarList, "library.designs", I18n.get("shapewright.screen.designs"),
-                    designs.size(), true, searching, this::fillSidebar)) {
+            if ((allTabs || librarySection == LibrarySection.DESIGNS) && !designs.isEmpty()
+                    && libraryOpen(sidebarList, "library.designs", "shapewright.screen.designs", designs.size(), allTabs)) {
                 for (ShapePresets.Preset design : designs) {
                     sidebarList.child(listRow(I18n.get(design.getNameKey()), DESIGN, false, () -> selectPreset(design), null, design.params(), listW));
                 }
             }
         }
         List<ShapeClientState.Template> templates = ShapeClientState.getTemplates().stream().filter(t -> matches(t.name(), query)).toList();
-        if (groupHeading(sidebarList, "library.templates", I18n.get("shapewright.screen.templates"), templates.size(), true,
-                searching, this::fillSidebar)) {
+        if ((allTabs || librarySection == LibrarySection.TEMPLATES)
+                && libraryOpen(sidebarList, "library.templates", "shapewright.screen.templates", templates.size(), allTabs)) {
             if (templates.isEmpty()) {
                 sidebarList.child(Ui.label(Component.translatable(searching ? "shapewright.screen.no_matches"
                         : "shapewright.screen.no_templates"), 0x777777).maxWidth(listW).margins(Insets.left(3)));
@@ -477,6 +534,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             }
         }
         if (sidebarScroll != null) sidebarScroll.restore(keepScroll);
+    }
+
+    /** A library group: with a heading while searching across tabs, plain (always open) when a tab already names it. */
+    private boolean libraryOpen(FlowLayout list, String id, String titleKey, int count, boolean withHeading) {
+        return !withHeading || groupHeading(list, id, I18n.get(titleKey), count, true, true, this::fillSidebar);
     }
 
     private static boolean matches(String name, String query) {
