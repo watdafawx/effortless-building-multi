@@ -103,6 +103,7 @@ public final class SelfTest {
     /** Runs in the throwaway scratch world: free to wipe and provision the player. */
     private static void suite(List<Seq> out) {
         out.add(floorAnchorScenario());
+        out.add(roofWorldScenario());
         out.add(scrollGestureScenario());
         if (io.github.watdafawx.shapewright.compat.FramedCompat.isAvailable()) {
             out.add(framedCamoScenario());
@@ -119,6 +120,76 @@ public final class SelfTest {
     /** Runs in the player's real world via the command: never destroy anything here. */
     private static void manualSuite(List<Seq> out) {
         out.add(new Seq("manual-ghost-scan").check("client-matches-server", SelfTest::ghostDiff));
+    }
+
+    // ---- ROOF and FRUSTUM in the world ----------------------------------------------------------------
+
+    /** Each roof style and a frustum: lock the preview, build it, and the server world must match the preview. */
+    private static Seq roofWorldScenario() {
+        Seq seq = new Seq("roof-world");
+        String[] names = {"gable", "hip", "shed", "gambrel", "frustum"};
+        ShapeParams[] shapes = {
+                ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 0).withSize(4).with("length", 5),
+                ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 1).withSize(4).with("length", 5),
+                ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 2).withSize(4).with("length", 5),
+                ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 3).withSize(4).with("length", 5),
+                ShapeParams.defaults(ShapeType.FRUSTUM).withSize(6).with("sides", 6).with("height", 8)};
+        for (int i = 0; i < shapes.length; i++) {
+            String name = names[i];
+            ShapeParams params = shapes[i];
+            double x = 200.5 + i * 40;
+            seq.onServerRun(p -> {
+                        if (name.equals("gable")) {
+                            clearPlayer(p);
+                            p.setGameMode(GameType.CREATIVE);
+                            p.getInventory().setItem(0, new ItemStack(Items.STONE, 64));
+                        }
+                        p.teleportTo(x, -60, 0.5);
+                    })
+                    .waitTicks(30)
+                    .run(() -> {
+                        Minecraft.getInstance().player.setXRot(60);
+                        holdStone();
+                        BuildModes.CLIENT.setBuildMode(BuildModeEnum.SHAPE);
+                        ShapeClientState.setActive(params);
+                    })
+                    .waitTicks(SETTLE)
+                    .run(BuildPipelineClient::togglePreviewLock)
+                    .check("roof-world-" + name + "-locked", () -> {
+                        BlockSet blocks = BuildPipelineClient.getAnchorBlocks();
+                        if (!BuildPipelineClient.previewLocked || blocks == null) return List.of("preview did not lock");
+                        anchorBefore = blocks;
+                        return blocks.validCount() > 0 ? List.of() : List.of("empty preview");
+                    })
+                    .run(() -> {
+                        anchorBefore = BuildPipelineClient.getAnchorBlocks();
+                        BuildPipelineClient.buildAnchor();
+                    })
+                    .waitTicks(SETTLE)
+                    .check("roof-world-" + name + "-built", () -> {
+                        List<String> f = new ArrayList<>();
+                        Set<BlockPos> want = new HashSet<>(anchorBefore.validPositions());
+                        int[] b = bounds(anchorBefore);
+                        int[] stray = {0};
+                        Set<BlockPos> missing = new HashSet<>(want);
+                        onServer(p -> {
+                            var level = p.serverLevel();
+                            for (int y = b[1]; y <= b[4]; y++)
+                                for (int x2 = b[0] - 2; x2 <= b[3] + 2; x2++)
+                                    for (int z = b[2] - 2; z <= b[5] + 2; z++) {
+                                        BlockPos pos = new BlockPos(x2, y, z);
+                                        boolean stone = level.getBlockState(pos).is(Blocks.STONE);
+                                        if (stone && want.contains(pos)) missing.remove(pos);
+                                        else if (stone) stray[0]++;
+                                    }
+                            return null;
+                        });
+                        if (!missing.isEmpty()) f.add(missing.size() + " previewed blocks missing on the server, e.g. " + missing.iterator().next());
+                        if (stray[0] > 0) f.add(stray[0] + " stone blocks the preview never showed");
+                        return f;
+                    });
+        }
+        return seq;
     }
 
     // ---- FLOOR shape + anchor toolbar -------------------------------------------------------------

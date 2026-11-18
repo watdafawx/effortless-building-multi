@@ -78,6 +78,9 @@ final class ShapeUiShots {
                 new Design("floor", ShapeParams.defaults(ShapeType.FLOOR), -1),
                 new Design("frustum", ShapeParams.defaults(ShapeType.FRUSTUM).withSize(10).with("sides", 6).with("height", 14).withHollow(true), -1),
                 new Design("roof", ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 3).with("overhang", 1), -1),
+                new Design("roof-gable", ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 0).with("overhang", 1), -1),
+                new Design("roof-hip", ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 1).with("overhang", 1).with("ridge_length", 3), -1),
+                new Design("roof-shed", ShapeParams.defaults(ShapeType.ROOF).with("roof_style", 2).with("overhang", 1), -1),
                 new Design("text", ShapeParams.defaults(ShapeType.TEXT).withSchematic("Hello builders|Second line"), -1),
                 new Design("schematic", ShapeParams.defaults(ShapeType.SCHEMATIC).withSchematic(SCHEMATIC), -1),
                 // Ctrl+F opens the library (its tab on narrow screens) and focuses the search box
