@@ -26,6 +26,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import io.github.watdafawx.shapewright.palette.BlockColorCache;
 import io.github.watdafawx.shapewright.shape.FloorDesigner;
+import io.github.watdafawx.shapewright.shape.FloorThemes;
 import io.github.watdafawx.shapewright.shape.SchematicLibrary;
 import io.github.watdafawx.shapewright.shape.SchematicWriter;
 import io.github.watdafawx.shapewright.shape.ShapeGenerator.Cell;
@@ -53,31 +54,6 @@ public class FloorDesignerScreen extends BaseOwoScreen<FlowLayout> {
     private static final int LABEL_W = 68;
     private static final int FIELD_W = 128;
 
-    private record Theme(String key, String[] blocks) {
-        String name() { return I18n.get("shapewright.floor_designer.theme." + key); }
-    }
-
-    private static final List<Theme> THEMES = List.of(
-            new Theme("pastel_lavender", new String[]{
-                    "minecraft:smooth_quartz", "minecraft:purple_terracotta", "minecraft:light_gray_terracotta",
-                    "minecraft:purple_concrete_powder", "minecraft:sea_lantern"}),
-            new Theme("royal_gold", new String[]{
-                    "minecraft:smooth_sandstone", "minecraft:yellow_terracotta", "minecraft:terracotta",
-                    "minecraft:brown_terracotta", "minecraft:glowstone"}),
-            new Theme("emerald_oak", new String[]{
-                    "minecraft:dark_oak_planks", "minecraft:dark_prismarine", "minecraft:birch_planks",
-                    "minecraft:spruce_planks", "minecraft:ochre_froglight"}),
-            new Theme("mossy_ruins", new String[]{
-                    "minecraft:mud_bricks", "minecraft:moss_block", "minecraft:oxidized_cut_copper",
-                    "minecraft:cobblestone", "minecraft:verdant_froglight"}),
-            new Theme("desert_sunburst", new String[]{
-                    "minecraft:deepslate_tiles", "minecraft:yellow_concrete", "minecraft:orange_terracotta",
-                    "minecraft:blackstone", "minecraft:sea_lantern"}),
-            new Theme("deepslate_quartz", new String[]{
-                    "minecraft:polished_deepslate", "minecraft:quartz_block", "minecraft:cyan_terracotta",
-                    "minecraft:deepslate_bricks", "minecraft:shroomlight"})
-    );
-
     private static final String[] SLOT_KEYS = {"base", "primary", "secondary", "trim", "accent"};
 
     private final Screen parent;
@@ -92,7 +68,7 @@ public class FloorDesignerScreen extends BaseOwoScreen<FlowLayout> {
     private int seed = 1;
     private boolean border = true;
     private int themeIndex = 0;
-    private final String[] slotBlocks = THEMES.getFirst().blocks().clone();
+    private final String[] slotBlocks;
     private int activeBrush = FloorDesigner.PRIMARY;
     private boolean paintMirror = true;
 
@@ -108,7 +84,13 @@ public class FloorDesignerScreen extends BaseOwoScreen<FlowLayout> {
         super(Component.translatable("shapewright.screen.floor_designer"));
         this.parent = parent;
         this.onCreated = onCreated;
+        FloorThemes.reload();
+        this.slotBlocks = FloorThemes.get().getFirst().blocks().clone();
         regenerate();
+    }
+
+    private static String themeLabel(FloorThemes.Theme t) {
+        return t.displayName() != null ? t.displayName() : I18n.get(t.getNameKey());
     }
 
     private void regenerate() {
@@ -202,9 +184,11 @@ public class FloorDesignerScreen extends BaseOwoScreen<FlowLayout> {
 
         controls.child(Ui.label(Component.translatable("shapewright.floor_designer.palette").withStyle(s -> s.withBold(true)), Ui.SECTION)
                 .margins(Insets.of(6, 2, 0, 0)));
-        controls.child(row("shapewright.floor_designer.theme", choice(THEMES.get(themeIndex).name(),
-                THEMES.toArray(new Theme[0]), Theme::name, t -> {
-                    themeIndex = THEMES.indexOf(t);
+        List<FloorThemes.Theme> themes = FloorThemes.get();
+        if (themeIndex >= themes.size()) themeIndex = 0;
+        controls.child(row("shapewright.floor_designer.theme", choice(themeLabel(themes.get(themeIndex)),
+                themes.toArray(new FloorThemes.Theme[0]), FloorDesignerScreen::themeLabel, t -> {
+                    themeIndex = themes.indexOf(t);
                     System.arraycopy(t.blocks(), 0, slotBlocks, 0, slotBlocks.length);
                     rebuildScreen();
                 })));

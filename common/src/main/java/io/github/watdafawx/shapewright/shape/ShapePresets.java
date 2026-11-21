@@ -1,15 +1,38 @@
 package io.github.watdafawx.shapewright.shape;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import io.github.watdafawx.shapewright.Constants;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 /**
- * Ready-made designs shown in the Shape Generator next to the player's own templates. They are built from
- * the same parameters as anything the player makes, so picking one just loads it for editing.
+ * Ready-made designs shown in the Shape Generator next to the player's own templates. Built-in
+ * defaults are merged with any custom {@code .json} files placed in {@code config/shapewright/designs/}.
  */
 public final class ShapePresets {
 
-    /** @param id names the design: its title is the language key {@code shapewright.design.<id>} */
-    public record Preset(String id, ShapeParams params) {
+    public static final Path FOLDER = Path.of("config", Constants.MOD_ID, "designs");
+    private static final Gson GSON = new Gson();
+
+    /**
+     * @param id          unique id; built-in titles use {@code shapewright.design.<id>}
+     * @param displayName optional literal name from JSON (null for built-ins using lang keys)
+     */
+    public record Preset(String id, @Nullable String displayName, ShapeParams params) {
+        public Preset(String id, ShapeParams params) {
+            this(id, null, params);
+        }
+
         public String getNameKey() {
             return "shapewright.design." + id;
         }
@@ -89,10 +112,59 @@ public final class ShapePresets {
             new Preset("twisted_spire", ShapeParams.defaults(ShapeType.PRISM).withSize(5).with("sides", 6).with("height", 20)
                     .withHollow(true).with(ShapeModifiers.TAPER, 0.8).with(ShapeModifiers.TWIST, 180)));
 
+    private static List<Preset> loaded = null;
+
     private ShapePresets() {}
 
     public static List<Preset> get() {
-        return ALL;
+        if (loaded == null) reload();
+        return loaded;
+    }
+
+    /** Reloads built-in designs merged with any custom {@code .json} files in {@code config/shapewright/designs/}. */
+    public static void reload() {
+        Map<String, Preset> byId = new LinkedHashMap<>();
+        for (Preset p : ALL) byId.put(p.id(), p);
+
+        if (Files.isDirectory(FOLDER)) {
+            try (Stream<Path> files = Files.list(FOLDER)) {
+                List<Path> jsonFiles = files.filter(f -> f.getFileName().toString().toLowerCase().endsWith(".json"))
+                        .sorted().toList();
+                for (Path file : jsonFiles) {
+                    loadFile(file, byId);
+                }
+            } catch (IOException e) {
+                Constants.LOG.warn("[Shapewright] Cannot scan custom designs in {}", FOLDER, e);
+            }
+        }
+        loaded = List.copyOf(new ArrayList<>(byId.values()));
+    }
+
+    private static void loadFile(Path file, Map<String, Preset> byId) {
+        try {
+            JsonElement root = GSON.fromJson(Files.readString(file), JsonElement.class);
+            if (root == null) return;
+            if (root.isJsonArray()) {
+                for (JsonElement el : root.getAsJsonArray()) {
+                    if (el.isJsonObject()) readEntry(el.getAsJsonObject(), null, byId);
+                }
+            } else if (root.isJsonObject()) {
+                String fallbackId = file.getFileName().toString().replaceFirst("(?i)\\.json$", "");
+                readEntry(root.getAsJsonObject(), fallbackId, byId);
+            }
+        } catch (IOException | RuntimeException e) {
+            Constants.LOG.warn("[Shapewright] Cannot read custom design {}", file, e);
+        }
+    }
+
+    private static void readEntry(JsonObject o, @Nullable String fallbackId, Map<String, Preset> byId) {
+        if (!o.has("shape") || !o.get("shape").isJsonObject()) return;
+        ShapeParams params = ShapeTemplateStorage.fromJson(o.getAsJsonObject("shape"));
+        if (params == null) return;
+        String id = o.has("id") ? o.get("id").getAsString() : fallbackId;
+        if (id == null || id.isBlank()) return;
+        String name = o.has("name") ? o.get("name").getAsString() : id;
+        byId.put(id, new Preset(id, name, params));
     }
 
     private static ShapeParams tower(int radius, int height, int sides) {

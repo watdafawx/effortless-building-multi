@@ -168,6 +168,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     public ShapeGeneratorScreen(boolean docked) {
         super(Component.translatable("shapewright.screen.shape_generator"));
         this.docked = docked && BuildPipelineClient.canRotateAnchor();
+        ShapePresets.reload();
         ShapeParams anchored = BuildPipelineClient.getAnchorShape();
         params = anchored != null ? anchored : ShapeClientState.getActive();
     }
@@ -593,11 +594,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             }
         }
         if (editing < 0) {
-            List<ShapePresets.Preset> designs = ShapePresets.get().stream().filter(d -> matches(I18n.get(d.getNameKey()), query)).toList();
+            List<ShapePresets.Preset> designs = ShapePresets.get().stream().filter(d -> matches(presetLabel(d), query)).toList();
             if ((allTabs || librarySection == LibrarySection.DESIGNS) && !designs.isEmpty()
                     && libraryOpen(sidebarList, "library.designs", "shapewright.screen.designs", designs.size(), allTabs)) {
                 for (ShapePresets.Preset design : designs) {
-                    sidebarList.child(listRow(I18n.get(design.getNameKey()), DESIGN, false, () -> selectPreset(design), null, design.params(), listW));
+                    sidebarList.child(listRow(presetLabel(design), DESIGN, false, () -> selectPreset(design), null, design.params(), listW));
                 }
             }
         }
@@ -1356,14 +1357,18 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         refresh();
     }
 
-    /** Loads a built-in design for editing; it is saved as a template only when the player saves it. */
+    /** Loads a built-in or JSON design for editing; it is saved as a template only when the player saves it. */
     private void selectPreset(ShapePresets.Preset design) {
         params = design.params();
         templateName = null;
         editing = -1;
-        setName(I18n.get(design.getNameKey()));
+        setName(presetLabel(design));
         preview.layer = -1;
         refresh();
+    }
+
+    private static String presetLabel(ShapePresets.Preset design) {
+        return design.displayName() != null ? design.displayName() : I18n.get(design.getNameKey());
     }
 
     /** Puts a name in the name box (null: the default name for the design). */

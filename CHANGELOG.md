@@ -1,3 +1,9 @@
+## 5.4.1
+
+New:
+- **JSON-extensible Designs**: drop `.json` files into `config/shapewright/designs/` (single design or array) to add or override Designs in the Shape Generator, hot-reloaded whenever the screen opens.
+- **JSON-extensible Floor Themes**: customize or add 5-block palettes in `config/shapewright/floor_themes.json`, hot-reloaded whenever the Floor Designer opens.
+
 ## 5.4.0
 
 New:
