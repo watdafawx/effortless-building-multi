@@ -184,6 +184,22 @@ public class BuildPipelineClient {
         return anchor != null && anchor.shape() != null;
     }
 
+    /** The generator shape currently anchored, or null if none. */
+    public static @Nullable ShapeParams getAnchorShape() {
+        return anchor != null ? anchor.shape() : null;
+    }
+
+    /** Updates the anchored generator shape in place and recomputes the preview. */
+    public static void updateAnchorShape(ShapeParams shape) {
+        Anchor a = anchor;
+        if (a == null || a.shape() == null || shape == null) return;
+        ShapeParams updated = a.shape().path().isEmpty() ? shape : shape.withPath(a.shape().path());
+        if (a.firstPos().equals(a.secondPos()) && updated.sizing() != ShapeParams.Sizing.SCREEN) {
+            updated = updated.withSizing(ShapeParams.Sizing.SCREEN);
+        }
+        reanchor(a, a.firstPos(), a.secondPos(), a.thirdPos(), a.hitLocation(), updated);
+    }
+
     /** Turns an anchored generator shape a quarter turn around its vertical axis. */
     public static void rotateAnchor(int quarterTurns) {
         Anchor a = anchor;
@@ -226,7 +242,7 @@ public class BuildPipelineClient {
 
     /** What scrolling does to the anchored preview. */
     public enum AnchorTool {
-        MOVE("move"), SLIDE("slide"), LIFT("lift"), ROTATE("rotate"), VIEW("view");
+        MOVE("move"), SLIDE("slide"), LIFT("lift"), ROTATE("rotate"), EDIT("edit"), VIEW("view");
 
         public final String key;
         AnchorTool(String key) { this.key = key; }
@@ -238,10 +254,13 @@ public class BuildPipelineClient {
 
     public static AnchorTool getAnchorTool() { return anchorTool; }
 
-    /** Tools on offer for the current anchor (rotating needs a generator shape). */
+    /** Tools on offer for the current anchor (rotating and editing need a generator shape). */
     public static java.util.List<AnchorTool> availableAnchorTools() {
         java.util.List<AnchorTool> tools = new java.util.ArrayList<>(java.util.List.of(AnchorTool.values()));
-        if (!canRotateAnchor()) tools.remove(AnchorTool.ROTATE);
+        if (!canRotateAnchor()) {
+            tools.remove(AnchorTool.ROTATE);
+            tools.remove(AnchorTool.EDIT);
+        }
         return tools;
     }
 
@@ -274,6 +293,7 @@ public class BuildPipelineClient {
             case SLIDE -> nudgeAnchorRelative(0, n, 0);
             case LIFT -> nudgeAnchorRelative(0, 0, n);
             case ROTATE -> rotateAnchor(direction);
+            case EDIT -> Minecraft.getInstance().setScreen(new io.github.watdafawx.shapewright.screen.ShapeGeneratorScreen(true));
             case VIEW -> Minecraft.getInstance().setScreen(new io.github.watdafawx.shapewright.screen.AnchorViewScreen());
         }
     }

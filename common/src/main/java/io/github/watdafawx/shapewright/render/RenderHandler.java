@@ -286,6 +286,7 @@ public class RenderHandler {
             case SLIDE -> Items.PISTON;
             case LIFT -> Items.LADDER;
             case ROTATE -> Items.REPEATER;
+            case EDIT -> Items.CRAFTING_TABLE;
             case VIEW -> Items.SPYGLASS;
         });
     }

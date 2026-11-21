@@ -156,9 +156,20 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     // ---- dragging a part: blocks moved but not applied yet ----
     private final double[] dragRest = new double[3];
 
+    // ---- docked side-panel mode (live world fine-tuning while anchored) ----
+    private boolean docked;
+    private int dockW;
+    private boolean lookingAround;
+
     public ShapeGeneratorScreen() {
+        this(false);
+    }
+
+    public ShapeGeneratorScreen(boolean docked) {
         super(Component.translatable("shapewright.screen.shape_generator"));
-        params = ShapeClientState.getActive();
+        this.docked = docked && BuildPipelineClient.canRotateAnchor();
+        ShapeParams anchored = BuildPipelineClient.getAnchorShape();
+        params = anchored != null ? anchored : ShapeClientState.getActive();
     }
 
     /** Edits part {@code index} (-1: the main shape), as picking it in the parts list does. */
@@ -224,6 +235,22 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         builtW = width;
         builtH = height;
         BlockColorCache.ensureReady();
+        sidebarList = null;
+        sidebarScroll = null;
+        librarySections = null;
+        settingsScroll = null;
+        settings = null;
+        viewTabs = null;
+        layerLabel = null;
+        nameBox = null;
+        search = null;
+
+        if (docked) {
+            buildDocked(root);
+            refresh();
+            return;
+        }
+
         // Opaque enough that the HUD and chat behind it don't show through
         root.surface(Surface.flat(0xE6101010));
         root.padding(Insets.of(8));
@@ -243,11 +270,6 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
         FlowLayout body = Containers.horizontalFlow(Sizing.fill(100), Sizing.expand());
         body.gap(GAP);
-        sidebarList = null;
-        sidebarScroll = null;
-        librarySections = null;
-        settingsScroll = null;
-        settings = null;
         if (compact) {
             FlowLayout shared = Ui.panel(Containers.verticalFlow(Sizing.fixed(leftW), Sizing.fill(100)));
             shared.gap(4);
@@ -284,18 +306,81 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         redoButton = textButton("shapewright.screen.redo_short", "shapewright.screen.redo_design", this::redo);
         ButtonComponent copy = textButton("shapewright.screen.copy_code", "shapewright.screen.copy_code.description", this::copyCode);
         ButtonComponent paste = textButton("shapewright.screen.paste_code", "shapewright.screen.paste_code.description", this::pasteCode);
-        // Title, header, spacer and four buttons: six gaps, plus the margins
+        boolean canDock = BuildPipelineClient.canRotateAnchor();
+        ButtonComponent side = canDock ? textButton("shapewright.screen.dock_side", "shapewright.screen.dock_side.description", () -> {
+            docked = true;
+            rebuild();
+        }) : null;
+        // Title, header, spacer and buttons: gaps, plus the margins
         int fixed = font.width(titleText) + 4 + buttonW("shapewright.screen.undo_short") + buttonW("shapewright.screen.redo_short")
-                + 8 + buttonW("shapewright.screen.copy_code") + buttonW("shapewright.screen.paste_code") + 6 * 4;
+                + 8 + buttonW("shapewright.screen.copy_code") + buttonW("shapewright.screen.paste_code") + 6 * 4
+                + (canDock ? buttonW("shapewright.screen.dock_side") + 4 : 0);
         header = Ui.label(Component.empty(), ACCENT);
         header.horizontalSizing(Sizing.fixed(Math.max(20, inner - fixed)));
         top.child(header);
         top.child(Ui.hspace());
+        if (side != null) top.child(w(side));
         top.child(w(undoButton));
         top.child(w(redoButton).margins(Insets.right(8)));
         top.child(w(copy));
         top.child(w(paste));
         return top;
+    }
+
+    /** Docked left side panel: transparent world behind, live updates to the anchored preview. */
+    private void buildDocked(FlowLayout root) {
+        root.surface(Surface.BLANK);
+        root.padding(Insets.of(6));
+        dockW = Math.min(230, Math.max(185, width / 3));
+        compact = true;
+        settingsMaxW = dockW - SETTINGS_CHROME;
+
+        FlowLayout panel = Containers.verticalFlow(Sizing.fixed(dockW), Sizing.fill(100));
+        panel.surface(Surface.flat(0xCC121212).and(Surface.outline(0xFF3C3C3C)));
+        panel.padding(Insets.of(5));
+        panel.gap(4);
+
+        FlowLayout top = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        top.gap(3).verticalAlignment(VerticalAlignment.CENTER);
+        undoButton = textButton("shapewright.screen.undo_short", "shapewright.screen.undo_design", this::undo);
+        redoButton = textButton("shapewright.screen.redo_short", "shapewright.screen.redo_design", this::redo);
+        ButtonComponent full = textButton("shapewright.screen.dock_full", "shapewright.screen.dock_full.description", () -> {
+            docked = false;
+            rebuild();
+        });
+        int topFixed = buttonW("shapewright.screen.undo_short") + buttonW("shapewright.screen.redo_short")
+                + buttonW("shapewright.screen.dock_full") + 9;
+        header = Ui.label(Component.empty(), ACCENT);
+        header.horizontalSizing(Sizing.fixed(Math.max(20, dockW - 10 - topFixed)));
+        top.child(header);
+        top.child(Ui.hspace());
+        top.child(w(undoButton));
+        top.child(w(redoButton));
+        top.child(w(full));
+        panel.child(top);
+
+        panel.child(buildSettingsScroll());
+
+        FlowLayout bottom = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        bottom.gap(3).verticalAlignment(VerticalAlignment.CENTER);
+        ButtonComponent build = textButton("shapewright.screen.use_shape", "shapewright.screen.use_shape.description", () -> {
+            ShapeClientState.setActive(params);
+            BuildPipelineClient.updateAnchorShape(params);
+            BuildPipelineClient.buildAnchor();
+            onClose();
+        });
+        ButtonComponent release = textButton("shapewright.screen.anchor_release", null, () -> {
+            BuildPipelineClient.clearAnchor();
+            onClose();
+        });
+        ButtonComponent done = textButton("gui.done", null, this::onClose);
+        bottom.child(w(build));
+        bottom.child(w(release));
+        bottom.child(Ui.hspace());
+        bottom.child(w(done));
+        panel.child(bottom);
+
+        root.child(panel);
     }
 
     /** Name box, save and palette on the left; build and done on the right. */
@@ -860,7 +945,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                     return w(box);
                 }));
             } else {
-                list.add(new Row(Section.DESIGN, I18n.get("shapewright.shape.param.size"), null,
+                list.add(new Row(Section.DESIGN, I18n.get(sizeLabelKey(type)), null,
                         () -> number(current().size(), 1, true, v -> setCurrent(current().withSize((int) v)))));
             }
             list.add(new Row(Section.DESIGN, I18n.get("shapewright.shape.param.orientation"), null, () -> choice(
@@ -876,6 +961,19 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                 list.add(new Row(Section.DESIGN, I18n.get("shapewright.shape.param.hollow"), null, () -> toggle(current().hollow(),
                         I18n.get(current().hollow() ? "options.on" : "options.off"),
                         () -> setCurrent(current().withHollow(!current().hollow())))));
+            }
+            if (type == ShapeType.FLOOR && editing < 0) {
+                list.add(new Row(Section.DESIGN, I18n.get("shapewright.floor_designer.row"), "shapewright.floor_designer.row.description",
+                        () -> fixedButton(I18n.get("shapewright.floor_designer.open"), fieldW, () -> {
+                            if (minecraft != null) {
+                                minecraft.setScreen(new FloorDesignerScreen(this, name -> {
+                                    params = ShapeParams.defaults(ShapeType.SCHEMATIC).withSchematic(name);
+                                    templateName = null;
+                                    setName(name);
+                                    preview.layer = -1;
+                                }));
+                            }
+                        })));
             }
         }
         if (editing < 0) {
@@ -927,15 +1025,41 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         return Section.SHAPE;
     }
 
-    /** Super glue (only with Create) and ground blending are offered on the main shape only. */
+    /** Per-shape label for the main size parameter so non-radial shapes aren't mislabelled as "Radius". */
+    private static String sizeLabelKey(ShapeType type) {
+        return switch (type) {
+            case FLOOR, BOX, WEDGE, ROOF, STAIRS, PYRAMID -> "shapewright.shape.param.size.half_width";
+            case ARCH -> "shapewright.shape.param.size.half_span";
+            case ELLIPSOID -> "shapewright.shape.param.size.radius_x";
+            default -> "shapewright.shape.param.size";
+        };
+    }
+
+    /** Super glue (only with Create), ground blending, and shape params that have no effect in the current mode. */
     private boolean hidden(ShapeType.ParamSpec spec) {
-        if (editing >= 0 && ShapeType.isBuildSetting(spec.key())) return true;
-        if (spec.key().equals(ShapeType.SUPER_GLUE)) return !CreateGlue.isAvailable();
-        if (spec.key().equals(ShapeType.BEARING)) return !CreateGlue.isAvailable() || params.getInt(ShapeType.SUPER_GLUE) != 1;
-        if (spec.key().equals(ShapeType.PATH_SPACING) || spec.key().equals(ShapeType.PATH_ALIGN)) {
+        String key = spec.key();
+        if (editing >= 0 && ShapeType.isBuildSetting(key)) return true;
+        if (key.equals(ShapeType.SUPER_GLUE)) return !CreateGlue.isAvailable();
+        if (key.equals(ShapeType.BEARING)) return !CreateGlue.isAvailable() || params.getInt(ShapeType.SUPER_GLUE) != 1;
+        if (key.equals(ShapeType.PATH_SPACING) || key.equals(ShapeType.PATH_ALIGN)) {
             return params.sizing() != ShapeParams.Sizing.PATH;
         }
-        return editing >= 0 && (spec.key().equals(TerrainBlender.ENABLED) || spec.key().equals(TerrainBlender.MARGIN));
+        if (editing >= 0 && (key.equals(TerrainBlender.ENABLED) || key.equals(TerrainBlender.MARGIN))) return true;
+
+        ShapeParams cur = current();
+        return switch (cur.type()) {
+            case ROOF -> (key.equals("ridge_length") && cur.getInt("roof_style") != 1)
+                    || (key.equals("gable_ends") && cur.getInt("roof_style") == 1);
+            case PIPE -> (key.equals("bend_radius") || key.equals("pipe_arm")) && cur.getInt("bend") == 0;
+            case TOWER -> key.equals("battlement") && cur.getInt("roof") == 1;
+            case DOME -> key.equals("wall") && !cur.hollow();
+            case FRUSTUM -> (key.equals("wall") || key.equals("caps")) && !cur.hollow();
+            case PRISM, STAR -> key.equals("caps") && !cur.hollow();
+            case FLOOR -> (key.equals("tile") || key.equals("invert")) && cur.getInt("pattern") == 0;
+            case GEAR -> (key.equals("rim_width") && !cur.hollow())
+                    || (cur.hollow() && (key.startsWith("frame_") || key.startsWith("inner_") || key.startsWith("hub_")));
+            default -> false;
+        };
     }
 
     // ---- controls: all fieldW wide and CONTROL_H high ----
@@ -1200,6 +1324,8 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             BuildPipelineClient.clearAnchor();
             BuildModes.CLIENT.setBuildMode(BuildModeEnum.SHAPE);
             PacketHandler.sendToServer(new BuildModeHintC2SPacket());
+        } else {
+            BuildPipelineClient.updateAnchorShape(params);
         }
         if (minecraft != null && minecraft.player != null) {
             minecraft.player.displayClientMessage(Component.translatable(BuildModeEnum.SHAPE.getNameKey()), true);
@@ -1207,11 +1333,11 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         onClose();
     }
 
-    /** Picking a shape type changes what is being edited: the main shape (keeping its parts) or a part. */
+    /** Picking a shape type changes what is being edited: a fresh main shape or a part's shape. */
     private void selectType(ShapeType type) {
-        if (type == current().type()) return;
+        if (type == current().type() && (editing >= 0 || params.parts().isEmpty())) return;
         if (editing < 0) {
-            params = ShapeParams.defaults(type).withSizing(params.sizing()).withParts(params.parts());
+            params = ShapeParams.defaults(type).withSizing(params.sizing());
             templateName = null;
             setName(null);
         } else {
@@ -1341,6 +1467,10 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         lastEditTime = structural ? 0 : now;
         lastSeen = params;
         lastSeenEditing = editing;
+        if (docked) {
+            ShapeClientState.setActive(params);
+            BuildPipelineClient.updateAnchorShape(params);
+        }
     }
 
     /** The main shape type and each part's type: what changes when a design changes shape rather than a value. */
@@ -1371,6 +1501,10 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
         lastSeen = params;
         lastSeenEditing = editing;
         lastEditTime = 0; // the next edit starts a new step
+        if (docked) {
+            ShapeClientState.setActive(params);
+            BuildPipelineClient.updateAnchorShape(params);
+        }
         refresh();
     }
 
@@ -1505,6 +1639,37 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
             preview.scroll(params, amount);
             return true;
         }
+    }
+
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (docked) return;
+        super.renderBackground(g, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (docked && mouseX > dockW + 6) {
+            lookingAround = true;
+            return true;
+        }
+        lookingAround = false;
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (docked && lookingAround && minecraft != null && minecraft.player != null) {
+            minecraft.player.turn(deltaX * 5.0, deltaY * 5.0);
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        lookingAround = false;
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override

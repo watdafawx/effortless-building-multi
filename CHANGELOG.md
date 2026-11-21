@@ -1,3 +1,15 @@
+## 5.4.0
+
+New:
+- **Floor Designer** (opened from Floor -> `Floor Designer...` in the Shape Generator): generate multi-block symmetrical floors with 10 styles (**Random Art** procedural composer, Mandala, Floral Mosaic, Sunburst Star, Crescent Emblem, Compass Rose, Ornate Tile, Royal Medallion, Labyrinth, Rose Window, Gradient Fade), 6 outlines (Quatrefoil, Circle, Square, Octagon, Diamond, Scalloped), 5 customizable block slots, 6 curated color themes, and 8-way symmetry touch-up painting. Saves as a multi-block schematic ready to place.
+- **Live docked side-panel editor** for anchored shapes: new **Edit Shape** tool in the anchor quick-controls bar (and `Side` / `Full` toggle in Shape Generator) docks settings to the left over the live world so you can fine-tune properties in real time and drag outside the panel to look around.
+- 7 new built-in Designs: Gazebo, Cottage Shell, Windmill, Aqueduct Span, Portal Frame, Pagoda Tier, Twisted Spire.
+
+Fixes:
+- Editing shape properties while a preview is anchored now updates the anchored preview immediately.
+- Switching from a multi-part Design back to a base shape in the Shapes tab now clears the previous design's parts.
+- Shape Generator now uses accurate size labels (`Half-width`, `Half-span`, `Radius X`, `Radius`) per shape and hides parameters that have no effect in the current mode.
+
 ## 5.3.1
 
 Fixed:
