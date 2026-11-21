@@ -1,3 +1,10 @@
+## 5.5.0
+
+New:
+- **Wall / Facade Designer** (opened from Box -> `Wall Designer...` in the Shape Generator): generate vertical multi-block architectural wall bays with 6 styles (`Random Facade`, `Medieval Bay`, `Gothic Arch`, `Castle Wall`, `Classical`, `Timber Frame`), open-window and battlement toggles, horizontal mirror paint, and shared JSON-extensible 5-block themes. Saves as a schematic ready for 1-click or Path sizing.
+- **Catenary Cable** shape: hanging rope, chain, or suspension bridge cable with configurable half-span, sag, thickness, and asymmetric end height.
+- **Docked side-panel nudge & rotate**: quick `X- / X+ / Y- / Y+ / Z- / Z+` (Shift = 5 blocks) and `90° Rotate` buttons right inside the live anchored side panel.
+
 ## 5.4.1
 
 New:

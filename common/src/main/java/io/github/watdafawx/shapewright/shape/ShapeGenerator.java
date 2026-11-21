@@ -355,6 +355,7 @@ public final class ShapeGenerator {
             case OCTAHEDRON -> octahedron(p, local);
             case FRUSTUM -> frustum(p, local);
             case ROOF -> roof(p, local);
+            case CATENARY -> catenary(p, local);
             case SCHEMATIC -> { }
         }
         if (p.hollow() && shellIn3D(p.type())) local = shell(local);
@@ -1157,6 +1158,30 @@ public final class ShapeGenerator {
                         : ridgeHeight * (0.75 + 0.25 * (side - bend) / (run - bend));
             }
             default -> { return pitch * side; }
+        }
+    }
+
+    /** Hanging cable / catenary spanning [-size, +size] along u, sagging {@code sag} blocks in the middle. */
+    private static void catenary(ShapeParams p, Set<Cell> out) {
+        int half = Math.max(1, p.size());
+        int sag = p.getInt("sag");
+        int thick = Math.max(1, p.getInt("thickness"));
+        int endDrop = p.getInt("end_drop");
+        double rad = (thick - 1) * 0.5;
+        int steps = Math.max(half * 8, 32);
+        for (int i = 0; i <= steps; i++) {
+            double t = -1.0 + 2.0 * i / steps; // -1..1
+            double cu = t * half;
+            double cv = sag * t * t + endDrop * (t + 1.0) * 0.5;
+            int u0 = (int) Math.floor(cu - rad), u1 = (int) Math.ceil(cu + rad);
+            int v0 = (int) Math.floor(cv - rad), v1 = (int) Math.ceil(cv + rad);
+            int w0 = (int) Math.floor(-rad), w1 = (int) Math.ceil(rad);
+            for (int u = u0; u <= u1; u++)
+                for (int v = v0; v <= v1; v++)
+                    for (int w = w0; w <= w1; w++)
+                        if (Math.sqrt((u - cu) * (u - cu) + (v - cv) * (v - cv) + w * w) <= rad + 0.55) {
+                            out.add(new Cell(u, v, w));
+                        }
         }
     }
 

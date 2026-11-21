@@ -169,7 +169,12 @@ public enum ShapeType {
             ParamSpec.length("overhang", 0, 0),
             ParamSpec.length("thickness", 1, 1),
             ParamSpec.length("ridge_length", 0, 0),
-            ParamSpec.choice("gable_ends", 0, "open", "closed")));
+            ParamSpec.choice("gable_ends", 0, "open", "closed"))),
+    /** Hanging cable / rope / bridge catenary spanning 2 * size + 1 blocks with configurable sag and end height offset. */
+    CATENARY(10, false, ShapeParams.Orientation.UPRIGHT_NS, List.of(
+            ParamSpec.length("sag", 4, 0),
+            ParamSpec.length("thickness", 1, 1),
+            ParamSpec.offset("end_drop")));
 
     /** Size (main radius in blocks) the parameter defaults are designed for. */
     public final int defaultSize;

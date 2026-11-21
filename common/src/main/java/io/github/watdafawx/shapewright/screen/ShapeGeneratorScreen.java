@@ -362,6 +362,31 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
 
         panel.child(buildSettingsScroll());
 
+        // Quick nudge + rotate row right in the docked panel (Shift = 5 blocks)
+        FlowLayout nudgeRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        nudgeRow.gap(2).verticalAlignment(VerticalAlignment.CENTER);
+        String[][] moves = {{"X-", "-1,0,0"}, {"X+", "1,0,0"}, {"Y-", "0,-1,0"}, {"Y+", "0,1,0"}, {"Z-", "0,0,-1"}, {"Z+", "0,0,1"}};
+        for (String[] m : moves) {
+            String[] d = m[1].split(",");
+            nudgeRow.child(w(Components.button(Component.literal(m[0]), b -> {
+                int step = Screen.hasShiftDown() ? 5 : 1;
+                BuildPipelineClient.nudgeAnchor(Integer.parseInt(d[0]) * step, Integer.parseInt(d[1]) * step, Integer.parseInt(d[2]) * step);
+            })).sizing(Sizing.fixed(22), Sizing.fixed(CONTROL_H))
+                    .tooltip(Component.translatable("shapewright.screen.anchor_move.description")));
+        }
+        nudgeRow.child(Ui.hspace());
+        nudgeRow.child(w(Components.button(Component.literal("↻"), b -> {
+            BuildPipelineClient.rotateAnchor(1);
+            ShapeParams updated = BuildPipelineClient.getAnchorShape();
+            if (updated != null) {
+                params = updated;
+                lastSeen = params;
+                refresh();
+            }
+        })).sizing(Sizing.fixed(20), Sizing.fixed(CONTROL_H))
+                .tooltip(Component.translatable("shapewright.anchor_tool.rotate")));
+        panel.child(nudgeRow);
+
         FlowLayout bottom = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
         bottom.gap(3).verticalAlignment(VerticalAlignment.CENTER);
         ButtonComponent build = textButton("shapewright.screen.use_shape", "shapewright.screen.use_shape.description", () -> {
@@ -976,6 +1001,19 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
                             }
                         })));
             }
+            if (type == ShapeType.BOX && editing < 0) {
+                list.add(new Row(Section.DESIGN, I18n.get("shapewright.wall_designer.row"), "shapewright.wall_designer.row.description",
+                        () -> fixedButton(I18n.get("shapewright.wall_designer.open"), fieldW, () -> {
+                            if (minecraft != null) {
+                                minecraft.setScreen(new WallDesignerScreen(this, name -> {
+                                    params = ShapeParams.defaults(ShapeType.SCHEMATIC).withSchematic(name);
+                                    templateName = null;
+                                    setName(name);
+                                    preview.layer = -1;
+                                }));
+                            }
+                        })));
+            }
         }
         if (editing < 0) {
             // A center axle in its own block; 2 by 2 when the shape has no single middle block
@@ -1030,7 +1068,7 @@ public class ShapeGeneratorScreen extends BaseOwoScreen<FlowLayout> {
     private static String sizeLabelKey(ShapeType type) {
         return switch (type) {
             case FLOOR, BOX, WEDGE, ROOF, STAIRS, PYRAMID -> "shapewright.shape.param.size.half_width";
-            case ARCH -> "shapewright.shape.param.size.half_span";
+            case ARCH, CATENARY -> "shapewright.shape.param.size.half_span";
             case ELLIPSOID -> "shapewright.shape.param.size.radius_x";
             default -> "shapewright.shape.param.size";
         };
